@@ -1,10 +1,105 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <rect x="0" y="0" width="1024" height="1024" rx="200" ry="200" fill="#019C37"/>
+  <defs>
+    <!-- Background squircle: lighter emerald at top, deeper forest at bottom -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2DB85A"/>
+      <stop offset="0.55" stop-color="#059A37"/>
+      <stop offset="1" stop-color="#00692A"/>
+    </linearGradient>
+    <!-- Soft top-to-mid gloss across the background -->
+    <linearGradient id="bgTopGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.32"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Bottom inner shade for rounded depth -->
+    <linearGradient id="bgBottomShade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="0.65" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#00310F" stop-opacity="0.45"/>
+    </linearGradient>
+    <!-- Face body: warm butter → deep amber -->
+    <linearGradient id="faceGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7D26B"/>
+      <stop offset="0.55" stop-color="#E8B84B"/>
+      <stop offset="1" stop-color="#B8862A"/>
+    </linearGradient>
+    <!-- Face top highlight -->
+    <linearGradient id="faceGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF4C8" stop-opacity="0.75"/>
+      <stop offset="0.4" stop-color="#FFF4C8" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Eye bead: bright cobalt center, deep navy rim -->
+    <radialGradient id="eyeGrad" cx="0.38" cy="0.32" r="0.78">
+      <stop offset="0" stop-color="#5A7DE8"/>
+      <stop offset="0.45" stop-color="#2847B8"/>
+      <stop offset="1" stop-color="#0C1C5E"/>
+    </radialGradient>
+    <!-- Soft drop shadow filter (for face + feet), gentle and anchored -->
+    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="6" result="offBlur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.55"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Clip so gloss layers stay inside the squircle -->
+    <clipPath id="squircleClip">
+      <rect x="0" y="0" width="1024" height="1024" rx="200" ry="200"/>
+    </clipPath>
+  </defs>
+
+  <!-- 1. Background squircle with vertical gradient -->
+  <rect x="0" y="0" width="1024" height="1024" rx="200" ry="200" fill="url(#bgGrad)"/>
+
+  <!-- 2. Background depth layers clipped to squircle -->
+  <g clip-path="url(#squircleClip)">
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bgBottomShade)"/>
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bgTopGloss)"/>
+  </g>
+
+  <!-- 3. Thin inner rim highlight at the very top edge -->
+  <rect x="3" y="3" width="1018" height="1018" rx="198.5" ry="198.5"
+        fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2"/>
+
+  <!-- Character group: preserves the original (translate -38 -104, scale 11) mapping -->
   <g transform="translate(-38 -104) scale(11)">
-    <rect x="26" y="78" width="14" height="14" rx="3" ry="3" fill="#E8B84B"/>
-    <rect x="60" y="78" width="14" height="14" rx="3" ry="3" fill="#E8B84B"/>
-    <rect x="11" y="20" width="78" height="60" rx="20" ry="20" fill="#E8B84B"/>
-    <circle cx="35" cy="42" r="9" fill="#17328F"/>
-    <circle cx="65" cy="42" r="9" fill="#17328F"/>
+    <!-- Feet (shadowed, same gradient as face so they read as one form) -->
+    <g filter="url(#softShadow)">
+      <rect x="26" y="78" width="14" height="14" rx="3" ry="3" fill="url(#faceGrad)"/>
+      <rect x="60" y="78" width="14" height="14" rx="3" ry="3" fill="url(#faceGrad)"/>
+    </g>
+
+    <!-- Face body with soft drop shadow -->
+    <g filter="url(#softShadow)">
+      <rect x="11" y="20" width="78" height="60" rx="20" ry="20" fill="url(#faceGrad)"/>
+    </g>
+
+    <!-- Face top highlight (gloss) -->
+    <rect x="11" y="20" width="78" height="32" rx="20" ry="20" fill="url(#faceGloss)"/>
+
+    <!-- Subtle lower-face inner shade for a pillow feel -->
+    <rect x="11" y="20" width="78" height="60" rx="20" ry="20"
+          fill="none" stroke="#8A5E14" stroke-opacity="0.18" stroke-width="0.6"/>
+
+    <!-- Eyes as gradient beads -->
+    <circle cx="35" cy="42" r="9" fill="url(#eyeGrad)"/>
+    <circle cx="65" cy="42" r="9" fill="url(#eyeGrad)"/>
+
+    <!-- Eye rim shade for bead edge -->
+    <circle cx="35" cy="42" r="9" fill="none" stroke="#060D33" stroke-opacity="0.55" stroke-width="0.4"/>
+    <circle cx="65" cy="42" r="9" fill="none" stroke="#060D33" stroke-opacity="0.55" stroke-width="0.4"/>
+
+    <!-- Specular catch-lights -->
+    <ellipse cx="32.3" cy="39.2" rx="2.4" ry="1.7" fill="#ffffff" fill-opacity="0.85"/>
+    <ellipse cx="62.3" cy="39.2" rx="2.4" ry="1.7" fill="#ffffff" fill-opacity="0.85"/>
+
+    <!-- Tiny secondary highlight dots for a wetter bead read -->
+    <circle cx="37.5" cy="44.8" r="0.9" fill="#ffffff" fill-opacity="0.35"/>
+    <circle cx="67.5" cy="44.8" r="0.9" fill="#ffffff" fill-opacity="0.35"/>
   </g>
 </svg>
