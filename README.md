@@ -1,6 +1,6 @@
 # Claudinha
 
-**A desktop companion for Claude Code,** with auto-tiled "Wall" view of many terminals, "Kanban" view with agent status, and other helpful visibility and orchestration features.
+**A desktop companion for Claude Code,** with auto-tiled "Wall" view of many terminals, "Kanban" view with agent status, and other helpful visibility and orchestration features (and the whole app in Portuguese pra minhas brasileiras :)
 
 macOS, Windows, and Linux.
 
@@ -57,10 +57,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
 
 1. Launch Claudinha.
 2. Create a **workspace** by pointing it at a project directory (any git repo).
-3. Spawn a **terminal** in the workspace — Claudinha creates a git worktree for it and starts a Claude Code session inside.
-4. Open as many terminals as you need. Switch to the Kanban view any time to see everything at a glance.
+3. Spawn a **terminal** in the workspace (or 8 Terminals) — Claudinha creates a git worktree for each and starts a Claude Code session inside.
+4. The Kanban view is my personal favorite, but the wall is also fun (I mostly built it because of Andrej Karpathy's tweet on March 10: https://x.com/karpathy/status/2031616709560610993?s=20).
 
-Terminology: a **workspace** is a project you've opened; a **terminal** (also called a session) is a single Claude Code instance running in its own worktree under that workspace.
+Terminology: a **workspace** is a project you've opened which can contain unlimited Terminals from multiple repos; a **terminal** (also called a session) is a single Claude Code instance running in its own worktree under that workspace.
 
 ### Wall view — every terminal, all at once
 
@@ -68,7 +68,7 @@ The Wall is Claudinha's default layout: an auto-tiled grid that packs every term
 
 ### Kanban view — agent status at a glance
 
-The Kanban view groups every session across every workspace by repository and shows where each agent is in its loop — **idle**, **working**, **awaiting permission**, **done**, or **failed**. The repo rail on the left lets you zoom into a single project; the board updates live as Claude Code hooks fire. It's the fastest way to answer "which of my sessions need me right now?" when you're running eight of them in parallel.
+The Kanban view is Claudinha's default layout: it groups every session across every workspace by repository and shows where each agent is in its loop — **idle**, **working**, **awaiting permission**, **done**, or **failed**. The repo rail on the left lets you zoom into a single project; the board updates live as Claude Code hooks fire. It's the fastest way to answer "which of my sessions need me right now?" when you're running six of them in parallel. Or 20 of them.
 
 ### Git worktrees per terminal
 
