@@ -665,6 +665,7 @@ export const en = {
     actionMerged: 'Merged',
     actionConflict: 'Conflict',
     actionMainDirty: 'Main dirty',
+    actionMainDirtyResolve: 'Main has uncommitted changes — click to resolve',
     actionFailed: 'Action failed',
     newTerminalAria: 'New terminal',
     collapseSessionList: 'Collapse session list',
@@ -767,6 +768,30 @@ export const en = {
     close: 'Close',
     retry: 'Retry',
     bodyHeader: 'Claude reported the following:'
+  },
+
+  dirtyMainModal: {
+    title: 'Uncommitted changes on main',
+    subtitleFmt: (repoLabel: string, baseBranch: string): string =>
+      `${repoLabel} · ${baseBranch} — clean these up before merging.`,
+    fileListHeader: 'Files:',
+    moreFiles: (n: number): string => `…and ${n} more`,
+    commitAction: 'Commit all',
+    stashAction: 'Stash',
+    discardAction: 'Discard',
+    discardConfirm: 'Discard — are you sure?',
+    discardConfirmHint: 'Click again to discard. This cannot be undone.',
+    revealAction: 'Reveal in Finder',
+    retryAction: 'Retry merge',
+    closeAction: 'Close',
+    commitMessageLabel: 'Commit message',
+    commitMessageDefault: 'WIP before merge from Claudinha',
+    stashMessageDefault: 'Claudinha: dirty-main stash before merge',
+    commitConfirm: 'Commit',
+    commitCancel: 'Cancel',
+    busyMessage: 'A merge is in progress for this repo. Try again when it finishes.',
+    emptyMessage: 'Nothing left to resolve.',
+    errorPrefix: 'Action failed:'
   },
 
   contextBar: {

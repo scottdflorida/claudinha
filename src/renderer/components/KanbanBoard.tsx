@@ -1,8 +1,9 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { PaneStatus } from '../../shared/types'
 import type { RendererPane } from '../hooks/usePaneState'
 import { KanbanColumn } from './KanbanColumn'
 import { DiffViewerModal } from './DiffViewerModal'
+import { DirtyMainModal } from './DirtyMainModal'
 import { useStrings } from '../lib/strings'
 
 interface KanbanBoardProps {
@@ -60,6 +61,53 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
     setDiffPane({ paneId, paneName })
   }, [])
 
+  // Dirty-main resolution modal state. The board owns it (not each card) so
+  // the dialog overlays the entire Kanban view regardless of which column the
+  // offending card lives in. Auto-opens once per dirty-main transition —
+  // mirrors CompletionActionBar's auto-open-on-error pattern so the user
+  // doesn't have to hunt for the small chip on a busy board.
+  const [dirtyMainPaneId, setDirtyMainPaneId] = useState<string | null>(null)
+  const autoOpenedFor = useRef<Set<string>>(new Set())
+  const previousDirtyPanes = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    const nowDirty = new Set<string>()
+    for (const pane of panes) {
+      if (pane.completionStatus?.state === 'dirty-main') {
+        nowDirty.add(pane.id)
+      }
+    }
+    // Detect panes that just transitioned INTO dirty-main (present now, absent
+    // last tick). If no modal is already open, auto-open for the first such
+    // pane and mark it as auto-opened so a dismiss + new dirty-main lands
+    // back on the modal rather than suppressing it permanently.
+    let paneToAutoOpen: string | null = null
+    for (const paneId of nowDirty) {
+      if (!previousDirtyPanes.current.has(paneId)) {
+        paneToAutoOpen = paneId
+        break
+      }
+    }
+    // Clear auto-open marker for panes that left dirty-main so a future
+    // re-entry retriggers.
+    for (const paneId of autoOpenedFor.current) {
+      if (!nowDirty.has(paneId)) autoOpenedFor.current.delete(paneId)
+    }
+    if (paneToAutoOpen && !dirtyMainPaneId && !autoOpenedFor.current.has(paneToAutoOpen)) {
+      autoOpenedFor.current.add(paneToAutoOpen)
+      setDirtyMainPaneId(paneToAutoOpen)
+    }
+    previousDirtyPanes.current = nowDirty
+  }, [panes, dirtyMainPaneId])
+
+  const onResolveDirtyMain = useCallback((paneId: string) => {
+    setDirtyMainPaneId(paneId)
+  }, [])
+
+  const dirtyMainPane = dirtyMainPaneId
+    ? panes.find((p) => p.id === dirtyMainPaneId) ?? null
+    : null
+
   return (
     <>
       <div
@@ -80,6 +128,7 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
             onCardClick={onCardClick}
             onDiffClick={onDiffClick}
             onCloseCard={onCloseCard}
+            onResolveDirtyMain={onResolveDirtyMain}
           />
         ))}
       </div>
@@ -88,6 +137,12 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
           paneId={diffPane.paneId}
           paneName={diffPane.paneName}
           onClose={() => setDiffPane(null)}
+        />
+      )}
+      {dirtyMainPane && (
+        <DirtyMainModal
+          pane={dirtyMainPane}
+          onClose={() => setDirtyMainPaneId(null)}
         />
       )}
     </>

@@ -18,6 +18,8 @@ interface KanbanCardProps {
   onDiffClick?: () => void
   /** Click on the X — routes to the shared close-pane flow. */
   onClose?: () => void
+  /** Click on the "Main dirty" chip — opens the resolution modal. */
+  onResolveDirtyMain?: () => void
 }
 
 /**
@@ -64,7 +66,7 @@ const TONE_CLASSES: Record<'neutral' | 'good' | 'warn' | 'bad', string> = {
   bad: 'text-danger-fg'
 }
 
-export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, onClose }: KanbanCardProps): React.JSX.Element {
+export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, onClose, onResolveDirtyMain }: KanbanCardProps): React.JSX.Element {
   const t = useStrings()
   const agentName = resolvePaneDisplayName(pane)
   const activity = activityFor(pane, t)
@@ -218,12 +220,26 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, 
           </span>
         )}
         {sync && (
-          <span
-            className={`shrink-0 text-[11px] ${TONE_CLASSES[sync.tone]}`}
-            title={sync.label}
-          >
-            {sync.label}
-          </span>
+          pane.completionStatus?.state === 'dirty-main' && onResolveDirtyMain ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onResolveDirtyMain()
+              }}
+              className={`shrink-0 text-[11px] ${TONE_CLASSES[sync.tone]} underline-offset-2 hover:underline focus:outline-none focus-visible:underline`}
+              title={t.kanban.actionMainDirtyResolve}
+            >
+              {sync.label}
+            </button>
+          ) : (
+            <span
+              className={`shrink-0 text-[11px] ${TONE_CLASSES[sync.tone]}`}
+              title={sync.label}
+            >
+              {sync.label}
+            </span>
+          )
         )}
         {onClose && (
           <button

@@ -918,6 +918,17 @@ export class CompletionExecutor {
     this.broadcastStatus(paneId, { state: 'ready' })
   }
 
+  /**
+   * Whether a merge is currently active (or the queue is paused on a conflict)
+   * for the given main repo root. Used by the dirty-main resolution handlers
+   * to refuse in-app git writes while a merge holds the repo's index.lock —
+   * see L-022 for the reader/writer contention this avoids.
+   */
+  isRepoMergeBusy(repoRoot: string): boolean {
+    return this.mergeQueue.getActive(repoRoot) !== null ||
+      this.mergeQueue.isPaused(repoRoot)
+  }
+
   // ---------------------------------------------------------------------------
   // Internal helpers
   // ---------------------------------------------------------------------------

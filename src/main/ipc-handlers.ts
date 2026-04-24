@@ -101,6 +101,12 @@ import type {
   RepoClaudeMdSaveResult,
   RepoDiffGetPayload,
   RepoDiffGetResult,
+  GitCommitDirtyMainPayload,
+  GitCommitDirtyMainResult,
+  GitStashDirtyMainPayload,
+  GitStashDirtyMainResult,
+  GitDiscardDirtyMainPayload,
+  GitDiscardDirtyMainResult,
   PaneSetUserNamePayload,
   AppConfigSetPayload,
   AppConfigChangedPayload,
@@ -128,6 +134,11 @@ import type { CompletionExecutor } from './completion-executor'
 import type { InspectorService } from './inspector'
 import type { PlanApprovalSequencer } from './plan-approval-sequencer'
 import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff } from './git-status'
+import {
+  commitDirtyMain,
+  stashDirtyMain,
+  discardDirtyMain
+} from './git-dirty-main'
 import { worktreePathToRepoPath, normaliseRepoPath, repoNameFromWorktreePath } from './repo-path'
 import { readClaudeMd, writeAndCommitClaudeMd } from './repo-claude-md'
 import {
@@ -2193,6 +2204,85 @@ export function registerIpcHandlers(
       }
       shell.showItemInFolder(p)
       return { ok: true }
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // git:{commit,stash,discard}-dirty-main — Kanban dirty-main resolution modal.
+  //
+  // Each action takes the absolute repo root (from DirtyMainContext.path) and
+  // the file list the user saw in the modal. The helpers re-apply the
+  // Claudinha infrastructure filter so .worktrees/ and .claude/ can never be
+  // committed / stashed / discarded, even if the renderer passes them in.
+  //
+  // We refuse the write when a merge is currently active on that repo or the
+  // queue is paused on a conflict (L-022: readers holding index.lock can
+  // already race writers; serialising with the active merge keeps us from
+  // adding another writer to the contention). After a successful action we
+  // trigger a git-status poll on every pane in the repo so the "Main dirty"
+  // chip clears without waiting for the 30s tick.
+  // -------------------------------------------------------------------------
+
+  function triggerGitStatusRefreshForRepo(repoPath: string): void {
+    // Repoll every pane whose worktree lives under this repo — the Kanban
+    // rail's chips read per-pane state, but the dirty-main flag is a repo
+    // property, so we refresh all of them. Cheap: 30s poll → ~instant.
+    for (const pane of sessionRegistry.getAllPanes().values()) {
+      const paneRepoRoot = worktreePathToRepoPath(pane.worktreePath)
+      if (paneRepoRoot === repoPath) {
+        gitStatusPoller.triggerCheck(pane.id)
+      }
+    }
+  }
+
+  ipcMain.handle(
+    IPC.GIT_COMMIT_DIRTY_MAIN,
+    async (_event, payload: GitCommitDirtyMainPayload): Promise<GitCommitDirtyMainResult> => {
+      const { repoPath, message, files } = payload
+      if (typeof repoPath !== 'string' || !path.isAbsolute(repoPath)) {
+        return { error: 'Invalid repo path.' }
+      }
+      if (completionExecutor.isRepoMergeBusy(repoPath)) {
+        return { error: 'A merge is in progress for this repo — try again when it finishes.' }
+      }
+      const err = await commitDirtyMain(repoPath, message, files ?? [])
+      if (err) return { error: err }
+      triggerGitStatusRefreshForRepo(repoPath)
+      return { error: null }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.GIT_STASH_DIRTY_MAIN,
+    async (_event, payload: GitStashDirtyMainPayload): Promise<GitStashDirtyMainResult> => {
+      const { repoPath, message, files } = payload
+      if (typeof repoPath !== 'string' || !path.isAbsolute(repoPath)) {
+        return { error: 'Invalid repo path.' }
+      }
+      if (completionExecutor.isRepoMergeBusy(repoPath)) {
+        return { error: 'A merge is in progress for this repo — try again when it finishes.' }
+      }
+      const err = await stashDirtyMain(repoPath, message, files ?? [])
+      if (err) return { error: err }
+      triggerGitStatusRefreshForRepo(repoPath)
+      return { error: null }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.GIT_DISCARD_DIRTY_MAIN,
+    async (_event, payload: GitDiscardDirtyMainPayload): Promise<GitDiscardDirtyMainResult> => {
+      const { repoPath, files } = payload
+      if (typeof repoPath !== 'string' || !path.isAbsolute(repoPath)) {
+        return { error: 'Invalid repo path.' }
+      }
+      if (completionExecutor.isRepoMergeBusy(repoPath)) {
+        return { error: 'A merge is in progress for this repo — try again when it finishes.' }
+      }
+      const err = await discardDirtyMain(repoPath, files ?? [])
+      if (err) return { error: err }
+      triggerGitStatusRefreshForRepo(repoPath)
+      return { error: null }
     }
   )
 

@@ -231,6 +231,13 @@ export const IPC = {
   // renderer → main (invoke/reply) — Kanban diff viewer modal
   REPO_DIFF_GET: 'repo:diff-get',
 
+  // renderer → main (invoke/reply) — Kanban dirty-main resolution modal.
+  // Each operates on the filtered file set that surfaced in the dirty-main
+  // completion status; .worktrees/ and .claude/ are never touched.
+  GIT_COMMIT_DIRTY_MAIN: 'git:commit-dirty-main',
+  GIT_STASH_DIRTY_MAIN: 'git:stash-dirty-main',
+  GIT_DISCARD_DIRTY_MAIN: 'git:discard-dirty-main',
+
   // renderer → main (fire-and-forget) — set per-pane user name override (Kanban inline rename)
   PANE_SET_USER_NAME: 'pane:set-user-name',
 
@@ -1318,3 +1325,54 @@ export interface InspectorAskLlmResult {
 
 /** workspace-keeper:summary — main → renderer broadcast of fresh summary */
 export type InspectorSummaryPayload = WorkspaceSummary
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — Kanban dirty-main resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * git:commit-dirty-main — stage the filtered dirty-main files and commit them
+ * on the repo's current branch with the given message.
+ *
+ * `repoPath` is the absolute repo root surfaced in DirtyMainContext.path.
+ * `files` mirrors the filtered set the renderer displayed — the handler
+ * re-applies the Claudinha-infrastructure filter so .worktrees/ and .claude/
+ * can never sneak in, even if the renderer passes them.
+ */
+export interface GitCommitDirtyMainPayload {
+  repoPath: string
+  message: string
+  files: string[]
+}
+
+export interface GitCommitDirtyMainResult {
+  error: string | null
+}
+
+/**
+ * git:stash-dirty-main — stash the filtered dirty-main files (including
+ * untracked) with the given message.
+ */
+export interface GitStashDirtyMainPayload {
+  repoPath: string
+  message: string
+  files: string[]
+}
+
+export interface GitStashDirtyMainResult {
+  error: string | null
+}
+
+/**
+ * git:discard-dirty-main — DESTRUCTIVE. Reverts tracked modifications and
+ * removes untracked files/directories in the filtered set. The handler parses
+ * porcelain codes to route tracked vs untracked per file.
+ */
+export interface GitDiscardDirtyMainPayload {
+  repoPath: string
+  files: string[]
+}
+
+export interface GitDiscardDirtyMainResult {
+  error: string | null
+}

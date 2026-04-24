@@ -680,6 +680,7 @@ export const ptBR: Strings = {
     actionMerged: 'Mesclado',
     actionConflict: 'Conflito',
     actionMainDirty: 'Main modificada',
+    actionMainDirtyResolve: 'Main tem mudanças não commitadas — clique para resolver',
     actionFailed: 'Ação falhou',
     newTerminalAria: 'Novo terminal',
     collapseSessionList: 'Recolher lista de sessões',
@@ -784,6 +785,30 @@ export const ptBR: Strings = {
     close: 'Fechar',
     retry: 'Tentar novamente',
     bodyHeader: 'O Claude relatou o seguinte:'
+  },
+
+  dirtyMainModal: {
+    title: 'Mudanças não commitadas na main',
+    subtitleFmt: (repoLabel: string, baseBranch: string): string =>
+      `${repoLabel} · ${baseBranch} — resolva essas mudanças antes do merge.`,
+    fileListHeader: 'Arquivos:',
+    moreFiles: (n: number): string => `…e mais ${n}`,
+    commitAction: 'Commit de tudo',
+    stashAction: 'Guardar (stash)',
+    discardAction: 'Descartar',
+    discardConfirm: 'Descartar — tem certeza?',
+    discardConfirmHint: 'Clique de novo para descartar. Isso não pode ser desfeito.',
+    revealAction: 'Mostrar no Finder',
+    retryAction: 'Tentar merge',
+    closeAction: 'Fechar',
+    commitMessageLabel: 'Mensagem do commit',
+    commitMessageDefault: 'WIP antes do merge pela Claudinha',
+    stashMessageDefault: 'Claudinha: stash antes do merge',
+    commitConfirm: 'Commit',
+    commitCancel: 'Cancelar',
+    busyMessage: 'Há um merge em andamento neste repo. Tente novamente quando terminar.',
+    emptyMessage: 'Nada mais para resolver.',
+    errorPrefix: 'Ação falhou:'
   },
 
   contextBar: {
