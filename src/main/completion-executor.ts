@@ -13,6 +13,7 @@ import type { PaneTransitionBuffer } from './pane-transition-buffer'
 import type { WorkspaceManager } from './workspace-manager'
 import { MergeQueue, type MergeQueueEntry } from './merge-queue'
 import { getGlobalCompletionPolicy } from './completion-policy-store'
+import { trackMergeCompleted, trackPrOpened } from './analytics/completion-instrumentation'
 import {
   gitCommitAll,
   getMainRepoPath,
@@ -377,6 +378,7 @@ export class CompletionExecutor {
           const isConflict = rebaseErr.toLowerCase().includes('conflict')
           if (isConflict) {
             this.broadcastStatus(paneId, { state: 'conflict' })
+            trackMergeCompleted('paused_conflict', strategy)
             // Pause the queue for this repo — subsequent merges are very
             // likely to hit the same conflict surface until this one resolves.
             this.mergeQueue.pause(repoRoot)
@@ -384,6 +386,7 @@ export class CompletionExecutor {
             return
           }
           this.broadcastStatus(paneId, { state: 'error', errorMessage: `Rebase failed: ${rebaseErr}` })
+          trackMergeCompleted('failed', strategy)
           this.mergeQueue.complete(paneId)
           return
         }
@@ -403,17 +406,20 @@ export class CompletionExecutor {
         const isConflict = mergeErr.toLowerCase().includes('conflict')
         if (isConflict) {
           this.broadcastStatus(paneId, { state: 'conflict' })
+          trackMergeCompleted('paused_conflict', strategy)
           this.mergeQueue.pause(repoRoot)
           this.mergeQueue.complete(paneId)
           return
         }
         this.broadcastStatus(paneId, { state: 'error', errorMessage: `Merge failed: ${mergeErr}` })
+        trackMergeCompleted('failed', strategy)
         this.mergeQueue.complete(paneId)
         return
       }
 
       // 6. Success
       this.broadcastStatus(paneId, { state: 'merged' })
+      trackMergeCompleted('succeeded', strategy)
       this.gitStatusPoller.triggerCheck(paneId)
       // Also refresh status for all other panes in the same repo — their
       // "commits ahead" count is now stale since main just moved forward.
@@ -430,6 +436,7 @@ export class CompletionExecutor {
         state: 'error',
         errorMessage: err instanceof Error ? err.message : String(err)
       })
+      trackMergeCompleted('failed', entry.strategy)
       this.mergeQueue.complete(paneId)
     } finally {
       this.activeOperations.delete(paneId)
@@ -510,6 +517,7 @@ export class CompletionExecutor {
 
       // 5. Success
       this.broadcastStatus(paneId, { state: 'pr-created', prUrl: prResult.prUrl })
+      trackPrOpened(draft)
       return { error: null, prUrl: prResult.prUrl }
     } finally {
       this.activeOperations.delete(paneId)

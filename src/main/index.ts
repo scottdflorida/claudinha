@@ -19,6 +19,7 @@ import {
   stopMemorySnapshots
 } from './analytics/performance-instrumentation'
 import { trackUnhandledError } from './analytics/error-instrumentation'
+import { trackAppSessionStarted } from './analytics/system-instrumentation'
 import { WindowManager } from './window-manager'
 import { SessionRegistry } from './session-registry'
 import { PtyPool } from './pty-pool'
@@ -628,6 +629,9 @@ app.whenReady().then(() => {
       }
     }
   })
+
+  // System telemetry — once per app launch, before first window.
+  trackAppSessionStarted()
 
   // Launch Manager window as the app's entry point
   const managerWindow = createManagerWindow()

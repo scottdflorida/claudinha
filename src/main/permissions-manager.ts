@@ -4,6 +4,7 @@ import path from 'path'
 import { app } from 'electron'
 import { resolveEffectivePermissions } from './permissions-store'
 import { sanitizePermissionRules } from '../shared/permission-rule'
+import { trackSettingsMergeError } from './analytics/error-instrumentation'
 
 // ---------------------------------------------------------------------------
 // Internal types for .claude/settings.json structure
@@ -153,12 +154,14 @@ export class PermissionsManager {
       try {
         existing = JSON.parse(raw) as ClaudeSettings
         hadExisting = true
-      } catch {
+      } catch (err) {
         // Malformed JSON — log warning and start fresh (B-056)
         console.warn(
           '[permissions] settings.json is malformed JSON — writing fresh file:',
           settingsPath
         )
+        const errName = err instanceof Error ? err.constructor.name : 'ParseError'
+        trackSettingsMergeError(errName)
         existing = {}
         hadExisting = false
       }
@@ -175,6 +178,8 @@ export class PermissionsManager {
       // Claude Code will use its own defaults; Claudinha hooks won't fire but the
       // session can still run (PTY fallback will activate via B-054).
       console.error('[permissions] failed to write settings.json (read-only?):', settingsPath, err)
+      const errName = err instanceof Error ? err.constructor.name : 'WriteError'
+      trackSettingsMergeError(errName)
     }
   }
 

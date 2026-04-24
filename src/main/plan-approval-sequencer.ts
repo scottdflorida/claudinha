@@ -2,6 +2,11 @@ import path from 'path'
 import type { PaneState, PaneStatus } from '../shared/types'
 import type { SessionRegistry } from './session-registry'
 import type { PtyPool } from './pty-pool'
+import {
+  trackPlanSequenceStarted,
+  trackPlanSequenceCompleted,
+  type PlanSequenceOutcome
+} from './analytics/plan-sequence-instrumentation'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -57,6 +62,12 @@ interface RepoSequenceContext {
   watchdog: ReturnType<typeof setTimeout> | null
   /** Fires whenever the sequencer's externally visible state changes. */
   onStateChange: () => void
+  /**
+   * Terminal-outcome hint used to pick the analytics event's outcome when the
+   * sequence ends. `'stopping'` means the user clicked Stop; `'watchdog'` means
+   * a watchdog fired; otherwise the natural drain path reports 'succeeded'.
+   */
+  terminalOutcome: PlanSequenceOutcome | null
 }
 
 /**
@@ -153,9 +164,11 @@ export class PlanApprovalSequencer {
       currentPaneId: null,
       unsubscribeCurrent: null,
       watchdog: null,
-      onStateChange
+      onStateChange,
+      terminalOutcome: null
     }
     this.contexts.set(key, ctx)
+    trackPlanSequenceStarted()
     ctx.onStateChange()
     // Capture the seeded count BEFORE processNext, which shifts panes off
     // `ctx.queue` (the same array) as each is approved.
@@ -176,7 +189,10 @@ export class PlanApprovalSequencer {
     ctx.queue = []
     // Flag the state so processNext (when the in-flight pane completes)
     // tears down instead of re-scanning for new work.
-    if (ctx.state === 'running') ctx.state = 'stopping'
+    if (ctx.state === 'running') {
+      ctx.state = 'stopping'
+      ctx.terminalOutcome = 'cancelled'
+    }
     // If nothing is in flight, finish the teardown immediately.
     if (!ctx.currentPaneId) {
       this.teardown(ctx)
@@ -318,6 +334,9 @@ export class PlanApprovalSequencer {
       console.warn(
         `[plan-approval-sequencer] watchdog fired for pane ${paneId} after ${WATCHDOG_TIMEOUT_MS} ms`
       )
+      // Single watchdog trip taints the whole sequence's outcome so whatever
+      // drain path follows reports 'watchdog_timeout'.
+      if (ctx.terminalOutcome === null) ctx.terminalOutcome = 'watchdog_timeout'
       this.clearCurrentSubscriptions(ctx)
       ctx.currentPaneId = null
       if (ctx.state === 'stopping') {
@@ -339,7 +358,11 @@ export class PlanApprovalSequencer {
     const wasRunning = ctx.state !== 'idle'
     ctx.state = 'idle'
     this.contexts.delete(this.contextKey(ctx.workspaceId, ctx.repoPath))
-    if (wasRunning) ctx.onStateChange()
+    if (wasRunning) {
+      const outcome: PlanSequenceOutcome = ctx.terminalOutcome ?? 'succeeded'
+      trackPlanSequenceCompleted(outcome, ctx.approved.size)
+      ctx.onStateChange()
+    }
   }
 
   private clearCurrentSubscriptions(ctx: RepoSequenceContext): void {

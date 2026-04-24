@@ -491,6 +491,9 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
 
   // Global keyboard shortcuts (renderer-side, B-062 + B-063)
   useEffect(() => {
+    const trackShortcut = (action: string): void => {
+      ipcSend(IPC.ANALYTICS_TRACK_SHORTCUT, { action })
+    }
     const handler = (e: KeyboardEvent) => {
       const isMac = navigator.platform.startsWith('Mac')
       const meta = isMac ? e.metaKey : e.ctrlKey
@@ -500,6 +503,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       if (e.key === 'P') {
         e.preventDefault()
         showManagerWindow()
+        trackShortcut('show_manager')
         return
       }
 
@@ -507,6 +511,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       if (e.key === 'N') {
         e.preventDefault()
         setIsSpawnDialogOpen(true)
+        trackShortcut('new_pane')
         return
       }
 
@@ -514,6 +519,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       if (e.key === 'T') {
         e.preventDefault()
         ipcSend(IPC.WINDOW_NEW, {})
+        trackShortcut('new_window')
         return
       }
 
@@ -521,6 +527,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       if (e.key === 'W' && focusedPaneId) {
         e.preventDefault()
         requestClosePane(focusedPaneId)
+        trackShortcut('close_pane')
         return
       }
 
@@ -530,6 +537,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
         const idx = panes.findIndex((p) => p.id === focusedPaneId)
         const next = panes[(idx + 1) % panes.length]
         setFocusedPane(next.id)
+        trackShortcut('focus_next')
         return
       }
 
@@ -539,6 +547,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
         const idx = panes.findIndex((p) => p.id === focusedPaneId)
         const prev = panes[(idx - 1 + panes.length) % panes.length]
         setFocusedPane(prev.id)
+        trackShortcut('focus_prev')
         return
       }
 
@@ -547,6 +556,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       if (!isNaN(num) && num >= 1 && num <= 9 && num <= panes.length) {
         e.preventDefault()
         setFocusedPane(panes[num - 1].id)
+        trackShortcut('focus_by_number')
         return
       }
 
@@ -558,6 +568,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
         document.dispatchEvent(
           new CustomEvent('claudinha:open-window-picker', { detail: { paneId: focusedPaneId } })
         )
+        trackShortcut('move_pane')
         return
       }
 
@@ -565,6 +576,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       if (e.key.toUpperCase() === 'E') {
         e.preventDefault()
         handleGlobalEffortToggle()
+        trackShortcut('global_effort')
         return
       }
 
@@ -572,6 +584,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       if (e.key.toUpperCase() === 'I') {
         e.preventDefault()
         void openFeedbackUrl()
+        trackShortcut('feedback')
         return
       }
 
@@ -581,6 +594,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
         document.dispatchEvent(
           new CustomEvent('claudinha:open-completion-menu', { detail: { paneId: focusedPaneId, menu: 'merge' } })
         )
+        trackShortcut('open_merge_menu')
         return
       }
 
@@ -590,6 +604,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
         document.dispatchEvent(
           new CustomEvent('claudinha:open-completion-menu', { detail: { paneId: focusedPaneId, menu: 'pr' } })
         )
+        trackShortcut('open_pr_menu')
         return
       }
 
@@ -597,6 +612,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       if (e.key.toUpperCase() === 'K' && workspaceId) {
         e.preventDefault()
         handleViewModeChange(viewMode === 'wall' ? 'kanban' : 'wall')
+        trackShortcut('toggle_view_mode')
         return
       }
     }

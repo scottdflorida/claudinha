@@ -39,6 +39,7 @@ export const IPC = {
   WINDOW_LIST: 'window:list',
   ANALYTICS_GET_CONSENT: 'analytics:get-consent',
   ANALYTICS_SET_CONSENT: 'analytics:set-consent',
+  ANALYTICS_TRACK_SHORTCUT: 'analytics:track-shortcut',
   SESSION_HISTORY_LIST: 'session-history:list',
 
   // renderer → main (invoke/reply) — worktree close with git operations

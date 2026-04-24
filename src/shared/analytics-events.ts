@@ -232,6 +232,90 @@ export interface AppSessionStartedEvent extends AnalyticsEventBase {
 }
 
 // ---------------------------------------------------------------------------
+// Workspace lifecycle events
+// ---------------------------------------------------------------------------
+
+/** A workspace was created (any type) */
+export interface WorkspaceCreatedEvent extends AnalyticsEventBase {
+  event_name: 'workspace_created'
+  /** WorkspaceType enum: "general" | "repo" | "worktree-branch" */
+  workspace_type: string
+  /** Total non-archived workspaces after creation */
+  workspace_count: number
+}
+
+/** A workspace was archived (soft-delete) */
+export interface WorkspaceArchivedEvent extends AnalyticsEventBase {
+  event_name: 'workspace_archived'
+  workspace_type: string
+  /** Total archived workspaces after archive */
+  archived_count: number
+}
+
+/** A previously archived workspace was restored */
+export interface WorkspaceUnarchivedEvent extends AnalyticsEventBase {
+  event_name: 'workspace_unarchived'
+  workspace_type: string
+}
+
+/** An archived workspace was permanently deleted */
+export interface WorkspaceDeletedArchivedEvent extends AnalyticsEventBase {
+  event_name: 'workspace_deleted_archived'
+  workspace_type: string
+}
+
+// ---------------------------------------------------------------------------
+// Completion events (merge queue + PR outcomes)
+// ---------------------------------------------------------------------------
+
+/** A completion attempt finished with a terminal outcome */
+export interface MergeCompletedEvent extends AnalyticsEventBase {
+  event_name: 'merge_completed'
+  /** "succeeded" | "failed" | "paused_conflict" | "aborted" */
+  outcome: string
+  /** MergeStrategy enum: "rebase-ff" | "squash" | "merge-commit" */
+  strategy: string
+}
+
+/** A PR was opened as part of completion */
+export interface PrOpenedEvent extends AnalyticsEventBase {
+  event_name: 'pr_opened'
+  /** True for draft PRs */
+  draft: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Plan approval sequencer events
+// ---------------------------------------------------------------------------
+
+/** The plan-approval sequencer started processing a repo's queue */
+export interface PlanSequenceStartedEvent extends AnalyticsEventBase {
+  event_name: 'plan_sequence_started'
+}
+
+/** The plan-approval sequencer finished (or was stopped) */
+export interface PlanSequenceCompletedEvent extends AnalyticsEventBase {
+  event_name: 'plan_sequence_completed'
+  /** "succeeded" | "cancelled" | "watchdog_timeout" */
+  outcome: string
+  /** Bucketed approved count: "0" | "1" | "2-5" | "6+" */
+  approved_count_bucket: string
+}
+
+// ---------------------------------------------------------------------------
+// Consent lifecycle
+// ---------------------------------------------------------------------------
+
+/** User made (or updated) an analytics consent choice */
+export interface AnalyticsConsentSetEvent extends AnalyticsEventBase {
+  event_name: 'analytics_consent_set'
+  /** "granted" | "denied" */
+  consent: string
+  /** Where the choice was made: "firstrun" | "settings" */
+  mode: string
+}
+
+// ---------------------------------------------------------------------------
 // Discriminated union of all event types
 // ---------------------------------------------------------------------------
 
@@ -256,6 +340,15 @@ export type AnalyticsEvent =
   | FallbackActivatedEvent
   | SettingsMergeErrorEvent
   | AppSessionStartedEvent
+  | WorkspaceCreatedEvent
+  | WorkspaceArchivedEvent
+  | WorkspaceUnarchivedEvent
+  | WorkspaceDeletedArchivedEvent
+  | MergeCompletedEvent
+  | PrOpenedEvent
+  | PlanSequenceStartedEvent
+  | PlanSequenceCompletedEvent
+  | AnalyticsConsentSetEvent
 
 // ---------------------------------------------------------------------------
 // Event creation helper — enforces common fields on every event
@@ -319,4 +412,20 @@ export function bucketFeedbackLength(chars: number): string {
 
 export function roundToNearest(value: number, nearest: number): number {
   return Math.round(value / nearest) * nearest
+}
+
+/** Bucket a pane's age (ms since spawn) into the three bands documented in the catalog. */
+export function bucketPaneAge(ageMs: number): string {
+  const minutes = ageMs / 60_000
+  if (minutes < 1) return '<1m'
+  if (minutes < 10) return '1-10m'
+  return '10m+'
+}
+
+/** Bucket an approved-count (plan approval sequencer) into a small set of bands. */
+export function bucketApprovedCount(count: number): string {
+  if (count <= 0) return '0'
+  if (count === 1) return '1'
+  if (count <= 5) return '2-5'
+  return '6+'
 }

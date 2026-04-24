@@ -1,8 +1,11 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
 import { IPC } from '../../shared/ipc-channels'
 import type { ConsentState } from '../../shared/types'
+import { makeEvent } from '../../shared/analytics-events'
+import type { EventContext } from '../../shared/analytics-events'
+import { trackEvent } from './analytics-bus'
 
 // ---------------------------------------------------------------------------
 // Analytics consent and configuration (B-076)
@@ -41,8 +44,30 @@ function getConsent(): ConsentState {
   return store.get('analytics.consent', 'pending')
 }
 
-function setConsent(state: ConsentState): void {
+function setConsent(state: ConsentState, source: 'firstrun' | 'settings' = 'settings'): void {
   store.set('analytics.consent', state)
+  // Emit `analytics_consent_set` after persistence. The bus gate
+  // (`isAnalyticsEnabled`) drops the event when the user denies consent, so a
+  // denial never leaks — the grant/denial distribution we observe only covers
+  // users who landed on "granted".
+  if (state === 'granted' || state === 'denied') {
+    try {
+      const ctx: EventContext = {
+        installation_id: getOrCreateInstallationId(),
+        app_version: app.getVersion(),
+        platform: process.platform
+      }
+      trackEvent(
+        makeEvent(ctx, {
+          event_name: 'analytics_consent_set',
+          consent: state,
+          mode: source
+        })
+      )
+    } catch {
+      // Never throw from instrumentation
+    }
+  }
 }
 
 /**
@@ -71,12 +96,15 @@ export function registerAnalyticsIpc(): void {
     return getConsent()
   })
 
-  // Renderer can update consent (e.g. from Settings UI)
+  // Renderer can update consent (e.g. from Settings UI). The dialog-vs-settings
+  // distinction comes from whether consent was still 'pending' at the time of
+  // the call — pending means this is the first-run consent dialog resolving.
   ipcMain.handle(IPC.ANALYTICS_SET_CONSENT, (_event, state: ConsentState): void => {
     if (state !== 'granted' && state !== 'denied' && state !== 'pending') {
       throw new Error(`Invalid consent state: ${state}`)
     }
-    setConsent(state)
+    const source: 'firstrun' | 'settings' = getConsent() === 'pending' ? 'firstrun' : 'settings'
+    setConsent(state, source)
   })
 }
 

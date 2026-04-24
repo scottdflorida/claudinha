@@ -12,6 +12,7 @@ import type { StatusDetector } from './status-detector'
 import type { GitStatusPoller } from './git-status-poller'
 import type { InspectorService } from './inspector'
 import { CLAUDE_PATTERNS } from './claude-patterns'
+import { trackHookFailure } from './analytics/error-instrumentation'
 
 // ---------------------------------------------------------------------------
 // Hook event → status mapping (PRD F6)
@@ -235,6 +236,7 @@ export class HookListener {
       payload = JSON.parse(raw) as HookPayload
     } catch {
       console.warn('[hook-listener] failed to parse JSON:', raw.slice(0, 200))
+      trackHookFailure('parse-error')
       return
     }
 

@@ -11,8 +11,16 @@ import {
   trackPaneMoved,
   trackWindowCreated,
   trackWindowClosed,
-  trackFeedbackSubmitted
+  trackFeedbackSubmitted,
+  trackSpawnModeSelected,
+  trackKeyboardShortcutUsed
 } from './analytics/usage-instrumentation'
+import {
+  trackWorkspaceCreated,
+  trackWorkspaceArchived,
+  trackWorkspaceUnarchived,
+  trackWorkspaceDeletedArchived
+} from './analytics/workspace-instrumentation'
 import {
   registerPaneSpawnMode,
   deregisterPaneSession,
@@ -608,6 +616,7 @@ export function registerIpcHandlers(
     workspaceManager.addDroneToHive(resolvedHiveId, paneId)
     registerPaneSpawnMode(paneId, mode)
     trackPaneSpawned(mode, sessionRegistry.getPanesForWindow(windowId).length)
+    trackSpawnModeSelected(mode)
 
     const spawnedPayload: PaneSpawnedPayload = {
       paneId,
@@ -1399,6 +1408,10 @@ export function registerIpcHandlers(
       name: payload.name,
       constraint: payload.constraint as import('../shared/types').WorkspaceConstraint
     })
+    trackWorkspaceCreated(
+      workspace.type,
+      workspaceManager.getActiveWorkspaces().length + workspaceManager.getDormantWorkspaces().length
+    )
 
     // Create a window for the new workspace
     const newWin = windowManager.createWindow()
@@ -1533,25 +1546,31 @@ export function registerIpcHandlers(
 
   // workspace:archive — move a dormant workspace into the archived state
   ipcMain.handle(IPC.WORKSPACE_ARCHIVE, (_event, payload: { workspaceId: string }) => {
+    const workspaceTypeAtArchive = workspaceManager.getWorkspace(payload.workspaceId)?.type ?? 'unknown'
     const success = workspaceManager.archiveWorkspace(payload.workspaceId)
     if (!success) return { error: 'Workspace not found or not dormant.' }
     workspaceManager.pushManagerUpdate()
+    trackWorkspaceArchived(workspaceTypeAtArchive, workspaceManager.getArchivedWorkspaces().length)
     return { error: null }
   })
 
   // workspace:unarchive — restore an archived workspace back to dormant
   ipcMain.handle(IPC.WORKSPACE_UNARCHIVE, (_event, payload: { workspaceId: string }) => {
+    const workspaceTypeAtUnarchive = workspaceManager.getWorkspace(payload.workspaceId)?.type ?? 'unknown'
     const success = workspaceManager.unarchiveWorkspace(payload.workspaceId)
     if (!success) return { error: 'Workspace not found or not archived.' }
     workspaceManager.pushManagerUpdate()
+    trackWorkspaceUnarchived(workspaceTypeAtUnarchive)
     return { error: null }
   })
 
   // workspace:delete-archived — permanently remove an archived workspace
   ipcMain.handle(IPC.WORKSPACE_DELETE_ARCHIVED, (_event, payload: { workspaceId: string }) => {
+    const workspaceTypeAtDelete = workspaceManager.getWorkspace(payload.workspaceId)?.type ?? 'unknown'
     const success = workspaceManager.deleteArchivedWorkspace(payload.workspaceId)
     if (!success) return { error: 'Workspace not found or not archived.' }
     workspaceManager.pushManagerUpdate()
+    trackWorkspaceDeletedArchived(workspaceTypeAtDelete)
     return { error: null }
   })
 
@@ -2602,4 +2621,32 @@ export function registerIpcHandlers(
       return { report }
     }
   )
+
+  // -------------------------------------------------------------------------
+  // analytics:track-shortcut — renderer-originated keyboard-shortcut usage
+  // signal. Payload is just the symbolic action name (e.g. "new_pane") — never
+  // a key sequence. Validated against a small enum to keep the catalog honest
+  // if the renderer ever sends an unknown value.
+  // -------------------------------------------------------------------------
+  const ALLOWED_SHORTCUT_ACTIONS: ReadonlySet<string> = new Set([
+    'new_pane',
+    'new_window',
+    'close_pane',
+    'focus_next',
+    'focus_prev',
+    'focus_by_number',
+    'move_pane',
+    'show_manager',
+    'feedback',
+    'global_effort',
+    'open_merge_menu',
+    'open_pr_menu',
+    'toggle_view_mode'
+  ])
+  ipcMain.on(IPC.ANALYTICS_TRACK_SHORTCUT, (_event, payload: { action?: unknown }) => {
+    const action = typeof payload?.action === 'string' ? payload.action : null
+    if (!action) return
+    if (!ALLOWED_SHORTCUT_ACTIONS.has(action)) return
+    trackKeyboardShortcutUsed(action)
+  })
 }

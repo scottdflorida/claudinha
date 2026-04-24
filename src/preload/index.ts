@@ -30,7 +30,9 @@ const SEND_CHANNELS = new Set<IpcChannel>([
   IPC.MANAGER_SHOW,
   // Completion actions
   IPC.COMPLETION_DISMISS,
-  IPC.COMPLETION_CLEAR_STATE
+  IPC.COMPLETION_CLEAR_STATE,
+  // Analytics — renderer-originated event signals (fire-and-forget)
+  IPC.ANALYTICS_TRACK_SHORTCUT
 ])
 
 /** Channels the renderer may INVOKE on main (request/reply) */
