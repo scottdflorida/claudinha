@@ -27,12 +27,19 @@
     "generate:icon": "node scripts/generate-icon.mjs",
     "postinstall": "electron-rebuild"
   },
+  "files": [
+    "out",
+    "bin",
+    "assets"
+  ],
   "dependencies": {
+    "@electron/rebuild": "^3.7.1",
     "@fontsource-variable/fraunces": "^5.2.9",
     "@fontsource-variable/inter": "^5.2.8",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-serialize": "^0.13.0",
     "@xterm/xterm": "^5.5.0",
+    "electron": "^33.2.1",
     "electron-store": "^8.2.0",
     "lucide-react": "^1.8.0",
     "node-pty": "^1.0.0",
@@ -41,7 +48,6 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.1",
     "@resvg/resvg-js": "^2.6.2",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.10.0",
@@ -50,7 +56,6 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.1.1",
     "autoprefixer": "^10.4.20",
-    "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "happy-dom": "^20.8.8",

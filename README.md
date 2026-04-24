@@ -17,35 +17,33 @@ Running several Claude Code sessions in parallel from the terminal is powerful b
 
 ## Requirements
 
-- **Node.js 20+** (only for the `npm install -g` install path; not needed if you use a prebuilt installer)
+- **Node.js 20+** and **npm 10+**
 - **[Claude Code CLI](https://github.com/anthropics/claude-code)** installed and on your `PATH` (`npm install -g @anthropic-ai/claude-code`)
 - **git** available on your `PATH`
+- A working C/C++ toolchain (for compiling `node-pty` — see *Troubleshooting* below)
 - macOS, Windows, or Linux
 
 ---
 
 ## Install
 
-### Prebuilt installers (recommended)
-
-Download the latest artifact for your platform from the [Releases](https://github.com/scottdflorida/claudinha/releases) page:
-
-| Platform | File |
-|----------|------|
-| macOS | `Claudinha-x.x.x.dmg` or `-mac.zip` |
-| Windows | `Claudinha-Setup-x.x.x.exe` |
-| Linux | `Claudinha-x.x.x.AppImage` |
-
-> **Note on unsigned builds.** v0.1.x artifacts are **not** code-signed or notarized. On macOS, Gatekeeper will refuse to open the app on first launch — right-click the app in Finder, choose **Open**, then confirm. On Windows, SmartScreen may warn; choose **More info → Run anyway**. Signed builds are planned for a later release.
-
-### npm
-
 ```bash
 npm install -g claudinha
 claudinha
 ```
 
-The global install pulls the Electron runtime and native modules (`node-pty`) and rebuilds them for your platform. First install takes a minute or two.
+First install takes a minute or two: npm pulls the Electron runtime (~150 MB) and then rebuilds the native `node-pty` module for your platform. `claudinha` on its own launches the app.
+
+### Troubleshooting first-install failures
+
+Most install failures come from the native-module rebuild (`node-pty`). If `npm install -g claudinha` errors out with `node-gyp`, `ELIFECYCLE`, or messages about `C++`, `python`, or `msbuild`, you need a toolchain:
+
+- **macOS:** `xcode-select --install`
+- **Debian/Ubuntu:** `sudo apt-get install build-essential python3`
+- **Fedora/RHEL:** `sudo dnf groupinstall "Development Tools" && sudo dnf install python3`
+- **Windows:** install the [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload
+
+Then retry the install. If it still fails, open an issue with the full `npm install` log.
 
 ### From source
 
