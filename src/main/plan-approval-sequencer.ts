@@ -1,7 +1,7 @@
-import path from 'path'
 import type { PaneState, PaneStatus } from '../shared/types'
 import type { SessionRegistry } from './session-registry'
 import type { PtyPool } from './pty-pool'
+import { worktreePathToRepoPath } from './repo-path'
 import {
   trackPlanSequenceStarted,
   trackPlanSequenceCompleted,
@@ -85,12 +85,11 @@ export function isPaneAwaitingPlanApproval(pane: PaneState): boolean {
 }
 
 /**
- * Inspector uses the parent directory of a worktree as the repo rollup
- * groupKey. We repeat that normalisation here so the sequencer picks up the
+ * Mirror the inspector's repo rollup grouping so the sequencer picks up the
  * same panes the UI sees grouped under a given repo card.
  */
 function normaliseRepoPath(worktreePath: string): string {
-  return path.dirname(worktreePath)
+  return worktreePathToRepoPath(worktreePath)
 }
 
 // ---------------------------------------------------------------------------

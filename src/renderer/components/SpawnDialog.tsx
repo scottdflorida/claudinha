@@ -5,7 +5,7 @@ import type { SessionHistoryEntry, WorkspaceType, WorkspaceConstraint } from '..
 import { ipcInvoke } from '../hooks/useIpc'
 import { usePaneState } from '../hooks/usePaneState'
 import { MIN_PANE_COLS, MIN_PANE_ROWS } from '../lib/constants'
-import { wouldExceedMinPaneSize, validateSpawnPayload } from '../lib/spawn-validation'
+import { wouldExceedMinPaneSize, validateSpawnPayload, stripWorktreesSuffix } from '../lib/spawn-validation'
 import { Dialog, DialogCancel, DialogActions } from './ui/Dialog'
 import { Button } from './ui/Button'
 import { TextInput } from './ui/TextInput'
@@ -111,11 +111,15 @@ export function SpawnDialog({ isOpen, onClose, workspaceType, workspaceConstrain
     }
     // Default chain: repo of the most recently launched pane in this workspace
     // → workspace constraint → the globally remembered last repo → empty.
+    // Strip a trailing `.worktrees` segment so a stale inspector value or a
+    // poisoned localStorage entry can't re-seed the bogus subdir as the repo.
     setRepoPath(
-      lastSpawnedRepoPath ||
-        workspaceConstraint?.repoPath ||
-        localStorage.getItem(LAST_REPO_PATH_KEY) ||
-        ''
+      stripWorktreesSuffix(
+        lastSpawnedRepoPath ||
+          workspaceConstraint?.repoPath ||
+          localStorage.getItem(LAST_REPO_PATH_KEY) ||
+          ''
+      )
     )
     setManualPath(workspaceConstraint?.worktreePath || '')
     setWorktreeName('')
@@ -218,7 +222,7 @@ export function SpawnDialog({ isOpen, onClose, workspaceType, workspaceConstrain
     }
 
     if (mode !== 'manual-path' && repoPath.trim()) {
-      localStorage.setItem(LAST_REPO_PATH_KEY, repoPath.trim())
+      localStorage.setItem(LAST_REPO_PATH_KEY, stripWorktreesSuffix(repoPath.trim()))
     }
 
     onClose()

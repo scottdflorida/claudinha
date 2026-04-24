@@ -16,6 +16,7 @@ import type { SessionRegistry } from './session-registry'
 import type { WorkspaceManager } from './workspace-manager'
 import type { WindowManager } from './window-manager'
 import type { MetricsCollector } from './metrics-collector'
+import { worktreePathToRepoPath } from './repo-path'
 import {
   isClaudinhaInfrastructurePath,
   getMainRepoPath,
@@ -299,13 +300,8 @@ export class InspectorService {
     }
   }
 
-  /**
-   * Derive a per-repo group key from a worktree path. Worktrees created by
-   * Claudinha live as sibling dirs under the repo's parent, so the parent
-   * directory is a stable group key for rollup purposes.
-   */
   private normaliseRepoPath(worktreePath: string): string {
-    return path.dirname(worktreePath)
+    return worktreePathToRepoPath(worktreePath)
   }
 
   /**

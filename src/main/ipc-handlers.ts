@@ -128,6 +128,7 @@ import type { CompletionExecutor } from './completion-executor'
 import type { InspectorService } from './inspector'
 import type { PlanApprovalSequencer } from './plan-approval-sequencer'
 import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff } from './git-status'
+import { worktreePathToRepoPath } from './repo-path'
 import { readClaudeMd, writeAndCommitClaudeMd } from './repo-claude-md'
 import {
   getGlobalCompletionPolicy,
@@ -1816,11 +1817,11 @@ export function registerIpcHandlers(
       if (!git) return false
       if (git.commitsAhead === 0 && !git.hasUncommittedChanges) return false
       if (git.branchName === 'main' || git.branchName === 'master') return false
-      // Per-repo scope (Kanban repo rail). The inspector groups by
-      // `path.dirname(worktreePath)`; mirror that here so per-row and per-repo
-      // affordances pick exactly the same pane set (L-023).
+      // Per-repo scope (Kanban repo rail). Mirror the inspector's grouping
+      // (`worktreePathToRepoPath`) so per-row and per-repo affordances pick
+      // exactly the same pane set (L-023).
       if (repoPath) {
-        const groupKey = path.dirname(pane.worktreePath)
+        const groupKey = worktreePathToRepoPath(pane.worktreePath)
         if (groupKey !== repoPath) return false
       }
       return true
@@ -2024,7 +2025,7 @@ export function registerIpcHandlers(
 
       const panes = sessionRegistry.getPanesForWorkspace(workspaceId)
       const failed = panes.filter((pane) => {
-        if (path.dirname(pane.worktreePath) !== repoPath) return false
+        if (worktreePathToRepoPath(pane.worktreePath) !== repoPath) return false
         return pane.completionActionStatus?.state === 'error'
       })
       for (const pane of failed) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { wouldExceedMinPaneSize, validateSpawnPayload } from '../../src/renderer/lib/spawn-validation'
+import { wouldExceedMinPaneSize, validateSpawnPayload, stripWorktreesSuffix } from '../../src/renderer/lib/spawn-validation'
 import {
   MIN_PANE_COLS,
   MIN_PANE_ROWS,
@@ -110,5 +110,37 @@ describe('validateSpawnPayload', () => {
     it('returns null (no validation rules)', () => {
       expect(validateSpawnPayload('resume-session', '', '', null)).toBeNull()
     })
+  })
+})
+
+describe('stripWorktreesSuffix', () => {
+  it('strips a trailing .worktrees segment on posix paths', () => {
+    expect(stripWorktreesSuffix('/Users/me/Documents/game-studio-research/.worktrees')).toBe(
+      '/Users/me/Documents/game-studio-research'
+    )
+  })
+
+  it('strips a trailing .worktrees segment with a trailing slash', () => {
+    expect(stripWorktreesSuffix('/repo/.worktrees/')).toBe('/repo')
+  })
+
+  it('strips a trailing .worktrees segment on windows-style paths', () => {
+    expect(stripWorktreesSuffix('C:\\Users\\me\\repo\\.worktrees')).toBe('C:\\Users\\me\\repo')
+  })
+
+  it('leaves paths that only contain .worktrees as an inner segment alone', () => {
+    expect(stripWorktreesSuffix('/repo/.worktrees/wt-1234')).toBe('/repo/.worktrees/wt-1234')
+  })
+
+  it('leaves unrelated paths unchanged', () => {
+    expect(stripWorktreesSuffix('/Users/me/Documents/repo')).toBe('/Users/me/Documents/repo')
+  })
+
+  it('leaves an empty string alone', () => {
+    expect(stripWorktreesSuffix('')).toBe('')
+  })
+
+  it('does not strip a path whose final segment merely ends in ".worktrees" text', () => {
+    expect(stripWorktreesSuffix('/repo/my.worktrees')).toBe('/repo/my.worktrees')
   })
 })

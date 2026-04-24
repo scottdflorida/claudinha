@@ -159,10 +159,10 @@ function setup(panes: PaneState[]) {
   const workspace = makeWorkspace()
   const inspector = {
     getRepoRootForGroup: vi.fn((groupKey: string) =>
-      groupKey === '/repos/demo/.worktrees' ? '/repos/demo' : null
+      groupKey === '/repos/demo' ? '/repos/demo' : null
     ),
     getBaseBranchForGroup: vi.fn((groupKey: string) =>
-      groupKey === '/repos/demo/.worktrees' ? 'main' : null
+      groupKey === '/repos/demo' ? 'main' : null
     ),
     onPanePolled: vi.fn(),
     forgetPane: vi.fn(),
@@ -209,7 +209,7 @@ describe('REPO_PUSH_BASE_BRANCH handler', () => {
     const handler = (ipcMain as any)._handleMap.get(IPC.REPO_PUSH_BASE_BRANCH) as Function
     expect(handler).toBeDefined()
 
-    const result = await handler({}, { workspaceId: 'ws-1', repoPath: '/repos/demo/.worktrees' })
+    const result = await handler({}, { workspaceId: 'ws-1', repoPath: '/repos/demo' })
 
     expect(result.error).toBeNull()
     expect(result.baseAheadOfOrigin).toBe(0)
@@ -228,7 +228,7 @@ describe('REPO_PUSH_BASE_BRANCH handler', () => {
     gitPushBaseBranchMock.mockResolvedValueOnce('fatal: rejected (non-fast-forward)')
     setup([])
     const handler = (ipcMain as any)._handleMap.get(IPC.REPO_PUSH_BASE_BRANCH) as Function
-    const result = await handler({}, { workspaceId: 'ws-1', repoPath: '/repos/demo/.worktrees' })
+    const result = await handler({}, { workspaceId: 'ws-1', repoPath: '/repos/demo' })
     expect(result.error).toMatch(/non-fast-forward/i)
   })
 })
@@ -249,7 +249,7 @@ describe('REPO_MERGE_AND_PUSH handler', () => {
     const handler = (ipcMain as any)._handleMap.get(IPC.REPO_MERGE_AND_PUSH) as Function
     const result = await handler({}, {
       workspaceId: 'ws-1',
-      repoPath: '/repos/demo/.worktrees',
+      repoPath: '/repos/demo',
       strategy: 'rebase-ff'
     })
 
@@ -276,7 +276,7 @@ describe('REPO_MERGE_AND_PUSH handler', () => {
     const handler = (ipcMain as any)._handleMap.get(IPC.REPO_MERGE_AND_PUSH) as Function
     const result = await handler({}, {
       workspaceId: 'ws-1',
-      repoPath: '/repos/demo/.worktrees',
+      repoPath: '/repos/demo',
       strategy: 'rebase-ff'
     })
 
@@ -297,7 +297,7 @@ describe('REPO_MERGE_AND_PUSH handler', () => {
     const handler = (ipcMain as any)._handleMap.get(IPC.REPO_MERGE_AND_PUSH) as Function
     await handler({}, {
       workspaceId: 'ws-1',
-      repoPath: '/repos/demo/.worktrees',
+      repoPath: '/repos/demo',
       strategy: 'rebase-ff'
     })
 
@@ -311,7 +311,7 @@ describe('REPO_MERGE_AND_PUSH handler', () => {
     const handler = (ipcMain as any)._handleMap.get(IPC.REPO_MERGE_AND_PUSH) as Function
     const result = await handler({}, {
       workspaceId: 'ws-1',
-      repoPath: '/repos/demo/.worktrees',
+      repoPath: '/repos/demo',
       strategy: 'rebase-ff'
     })
     expect(result.enqueued).toBe(0)
@@ -329,7 +329,7 @@ describe('REPO_MERGE_AND_PUSH handler', () => {
     const handler = (ipcMain as any)._handleMap.get(IPC.REPO_MERGE_AND_PUSH) as Function
     const result = await handler({}, {
       workspaceId: 'ws-1',
-      repoPath: '/repos/demo/.worktrees',
+      repoPath: '/repos/demo',
       strategy: 'rebase-ff'
     })
 

@@ -38,6 +38,21 @@ export function wouldExceedMinPaneSize(
  * Note: manual-path mode has an additional async path-validation step that
  * cannot be captured here — this only checks for empty fields.
  */
+/**
+ * Strip a trailing `.worktrees` segment from a repo path. Claudinha creates
+ * new linked worktrees under `<repoRoot>/.worktrees/<name>`, so an inspector-
+ * derived repoPath or a poisoned localStorage value can end in `.worktrees`.
+ * Submitting that as the "repo path" would spawn `<repo>/.worktrees/.worktrees/<name>`
+ * and split the pane into a bogus `.worktrees` card.
+ */
+export function stripWorktreesSuffix(repoPath: string): string {
+  const normalized = repoPath.replace(/[/\\]+$/, '')
+  if (/[/\\]\.worktrees$/.test(normalized)) {
+    return normalized.replace(/[/\\]\.worktrees$/, '')
+  }
+  return repoPath
+}
+
 export function validateSpawnPayload(
   mode: string,
   repoPath: string,
