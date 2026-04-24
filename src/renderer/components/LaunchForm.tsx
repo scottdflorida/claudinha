@@ -425,7 +425,9 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
       // Clear the cache so the next new-workspace starts fresh.
       cachedLaunchState = {}
 
-      setRepoPath('')
+      // Re-seed the repo field from the just-persisted last-used path so the
+      // next workspace defaults to the same repo instead of a blank field.
+      setRepoPath(localStorage.getItem('claudinha:lastRepoPath') ?? '')
       setRepoPaths([])
       setRepoValidStates([])
       setRepoValid(null)
