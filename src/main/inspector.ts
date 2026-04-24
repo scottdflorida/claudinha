@@ -16,7 +16,7 @@ import type { SessionRegistry } from './session-registry'
 import type { WorkspaceManager } from './workspace-manager'
 import type { WindowManager } from './window-manager'
 import type { MetricsCollector } from './metrics-collector'
-import { worktreePathToRepoPath } from './repo-path'
+import { worktreePathToRepoPath, repoNameFromWorktreePath } from './repo-path'
 import {
   isClaudinhaInfrastructurePath,
   getMainRepoPath,
@@ -288,7 +288,13 @@ export class InspectorService {
       // Kanban card always show the same label for a pane.
       paneName: resolvePaneDisplayName(pane),
       repoPath: this.normaliseRepoPath(pane.worktreePath),
-      repoName: pane.repoName,
+      // Repair legacy panes whose persisted repoName was set from a poisoned
+      // `<repoRoot>/.worktrees` repoPath before L-042's follow-up fix. Derive
+      // the display name from the worktreePath so the parent repo's basename
+      // is shown in the Kanban card, repo rail, and pane header.
+      repoName: pane.repoName === '.worktrees'
+        ? repoNameFromWorktreePath(pane.worktreePath)
+        : pane.repoName,
       branchName: branch,
       filesTouched: cache.filesTouched,
       linesAdded: cache.linesAdded,

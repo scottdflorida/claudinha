@@ -313,6 +313,37 @@ describe('InspectorService.buildSummary — aggregation', () => {
     expect(labels).toEqual(['alpha', 'beta'])
   })
 
+  it('repairs legacy `.worktrees` repoName by deriving from worktreePath', async () => {
+    // Regression: before the L-042 follow-up, pane.repoName was written as
+    // `path.basename(repoPath)` at spawn time. If the caller handed in
+    // `<repoRoot>/.worktrees` (poisoned inspector value, stale localStorage,
+    // user paste), the pane persisted `.worktrees` as its repo name forever.
+    // The inspector re-derives from worktreePath so the Kanban card, repo
+    // rail, and pane header all show the parent repo's basename.
+    const panes = [
+      makePane({
+        id: 'p1',
+        repoName: '.worktrees',
+        worktreePath: '/tmp/repos/game-studio-research/.worktrees/Planner'
+      }),
+      makePane({
+        id: 'p2',
+        repoName: '.worktrees',
+        worktreePath: '/tmp/repos/game-studio-research/.worktrees/wt-152fb9'
+      })
+    ]
+    installGitMock({
+      '/tmp/repos/game-studio-research/.worktrees/Planner': { numstat: '1\t0\ta.ts' },
+      '/tmp/repos/game-studio-research/.worktrees/wt-152fb9': { numstat: '2\t0\tb.ts' }
+    })
+    const { svc } = mkService(panes)
+    await seedCacheForPanes(svc, panes)
+    const summary = svc.buildSummary('workspace-1', panes)
+    expect(summary.panes.every((p) => p.repoName === 'game-studio-research')).toBe(true)
+    expect(summary.repos).toHaveLength(1)
+    expect(summary.repos[0].repoLabel).toBe('game-studio-research')
+  })
+
   it('counts untracked new files (git diff skips these by default)', async () => {
     // Regression: a brand-new file Claude writes without `git add` is
     // untracked. `git diff --numstat` ignores it, but the per-pane header

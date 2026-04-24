@@ -128,7 +128,7 @@ import type { CompletionExecutor } from './completion-executor'
 import type { InspectorService } from './inspector'
 import type { PlanApprovalSequencer } from './plan-approval-sequencer'
 import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff } from './git-status'
-import { worktreePathToRepoPath } from './repo-path'
+import { worktreePathToRepoPath, normaliseRepoPath, repoNameFromWorktreePath } from './repo-path'
 import { readClaudeMd, writeAndCommitClaudeMd } from './repo-claude-md'
 import {
   getGlobalCompletionPolicy,
@@ -345,9 +345,15 @@ export function registerIpcHandlers(
         return { error: 'Repository path is required.' }
       }
 
+      // If the caller handed us `<repoRoot>/.worktrees` (stale inspector value,
+      // poisoned localStorage, user paste), walk up once so we don't nest a
+      // new worktree at `<repoRoot>/.worktrees/.worktrees/<wt>` or label the
+      // pane with `.worktrees` as its repo name (L-042 follow-up).
+      const normalizedRepoPath = normaliseRepoPath(repoPath)
+
       // Pre-validate that the path is a git repository
       try {
-        execFileSync('git', ['rev-parse', '--git-dir'], { cwd: repoPath, timeout: 5_000 })
+        execFileSync('git', ['rev-parse', '--git-dir'], { cwd: normalizedRepoPath, timeout: 5_000 })
       } catch {
         return { error: 'Repository path is not a git repository. Initialize one with git init or choose a different path.' }
       }
@@ -361,12 +367,12 @@ export function registerIpcHandlers(
         .replace(/-{2,}/g, '-')      // collapse consecutive hyphens
         .replace(/^[-.]|[-.]$/g, '') // no leading/trailing hyphens or dots
         || `wt-${suffix}`        // fallback if sanitization empties the string
-      fs.mkdirSync(path.join(repoPath, '.worktrees'), { recursive: true })
-      const wtPath = path.join(repoPath, '.worktrees', wtName)
+      fs.mkdirSync(path.join(normalizedRepoPath, '.worktrees'), { recursive: true })
+      const wtPath = path.join(normalizedRepoPath, '.worktrees', wtName)
       try {
-        ensureRepoHasInitialCommit(repoPath)
+        ensureRepoHasInitialCommit(normalizedRepoPath)
         execFileSync('git', ['worktree', 'add', wtPath, '-b', wtName], {
-          cwd: repoPath,
+          cwd: normalizedRepoPath,
           timeout: 15_000
         })
       } catch (err) {
@@ -378,7 +384,7 @@ export function registerIpcHandlers(
         return { error: 'Failed to create worktree. Check that the repository path is accessible and try again.' }
       }
       resolvedWorktreePath = wtPath
-      repoName = path.basename(repoPath)
+      repoName = repoNameFromWorktreePath(wtPath)
       worktreeName = wtName
     } else if (mode === 'resume-session') {
       // Resume a previous Claude Code session (PE-06)
@@ -397,7 +403,7 @@ export function registerIpcHandlers(
         return { error: 'The session\'s working directory no longer exists.' }
       }
       resolvedWorktreePath = worktreePath
-      repoName = path.basename(repoPath ?? worktreePath)
+      repoName = repoNameFromWorktreePath(worktreePath)
       worktreeName = path.basename(worktreePath)
     } else if (mode === 'manual-path' || mode === 'existing-worktree') {
       // worktreePath is required for these modes
@@ -405,7 +411,7 @@ export function registerIpcHandlers(
         return { error: 'Working directory path is required.' }
       }
       resolvedWorktreePath = worktreePath
-      repoName = path.basename(repoPath ?? worktreePath)
+      repoName = repoNameFromWorktreePath(worktreePath)
       worktreeName = path.basename(worktreePath)
     } else {
       return { error: `Unknown spawn mode: ${mode}` }
@@ -2339,7 +2345,10 @@ export function registerIpcHandlers(
 
       for (let i = 0; i < terminalCount; i++) {
         try {
-          const droneRepoPath = treeRepoPaths[i]
+          // Strip a trailing `.worktrees` off the caller's repo path so
+          // drone worktrees don't nest and their panes don't carry
+          // `.worktrees` as the display repo name (L-042 follow-up).
+          const droneRepoPath = normaliseRepoPath(treeRepoPaths[i])
           // 6 hex chars — matches single-spawn path (line 336) for consistency.
           const droneSuffix = Math.random().toString(16).slice(2, 8)
           const autoName = `wt-${droneSuffix}`
@@ -2420,7 +2429,7 @@ export function registerIpcHandlers(
               stdio: 'pipe'
             })
             resolvedWorktreePath = wtPath
-            repoName = path.basename(droneRepoPath)
+            repoName = repoNameFromWorktreePath(wtPath)
             worktreeName = wtName
 
             // Record shared path for subsequent terminals
@@ -2429,7 +2438,7 @@ export function registerIpcHandlers(
             }
           } else {
             resolvedWorktreePath = spawnPayload.worktreePath!
-            repoName = path.basename(droneRepoPath)
+            repoName = repoNameFromWorktreePath(resolvedWorktreePath)
             worktreeName = path.basename(resolvedWorktreePath)
           }
 

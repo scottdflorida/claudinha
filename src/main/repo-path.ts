@@ -17,3 +17,24 @@ export function worktreePathToRepoPath(worktreePath: string): string {
   }
   return parent
 }
+
+/**
+ * If a user-supplied or stored repo path ends in `.worktrees`, step up once
+ * so the real repo root is used — preventing `<repoRoot>/.worktrees/.worktrees/<wt>`
+ * nesting at spawn time and a `.worktrees` display label on the pane.
+ */
+export function normaliseRepoPath(repoPath: string): string {
+  if (path.basename(repoPath) === '.worktrees') {
+    return path.dirname(repoPath)
+  }
+  return repoPath
+}
+
+/**
+ * Derive the display repo name from a worktree path. Shares a single source
+ * of truth with `worktreePathToRepoPath` so the Kanban card, repo rail, and
+ * pane header all show the parent repo's directory name — never `.worktrees`.
+ */
+export function repoNameFromWorktreePath(worktreePath: string): string {
+  return path.basename(worktreePathToRepoPath(worktreePath))
+}
