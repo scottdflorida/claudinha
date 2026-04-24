@@ -1,0 +1,82 @@
+name: Bug report
+description: Something in Claudinha isn't working the way it should.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill out the sections below so the bug can be reproduced and fixed quickly.
+
+        **Security issues:** please do not file them here — see [SECURITY.md](../../SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem in your own words.
+      placeholder: "When I tried to X, Claudinha did Y instead of Z…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, numbered steps to trigger the bug.
+      placeholder: |
+        1. Open Claudinha
+        2. Create a workspace at …
+        3. Spawn a terminal with …
+        4. Observe …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Claudinha version
+      description: Shown in the About menu, or the `package.json` version if running from source.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: "macOS 15.2, Windows 11 23H2, Ubuntu 24.04, …"
+
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code CLI version
+      description: Run `claude --version`.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: |
+        Paste any relevant logs (View → Toggle Developer Tools → Console) or screenshots.
+        Remove anything sensitive before posting.
+      render: shell

@@ -1,5 +1,12 @@
 name: Release
 
+# Builds unsigned Claudinha installers for macOS, Windows, and Linux
+# whenever a vX.Y.Z tag is pushed, and uploads them to the matching
+# GitHub Release via electron-builder's --publish=always flag.
+#
+# Builds are NOT code-signed or notarized. See README for the user-facing
+# consequences (Gatekeeper / SmartScreen warnings on first launch).
+
 on:
   push:
     tags:
@@ -8,6 +15,7 @@ on:
 jobs:
   release:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -36,19 +44,15 @@ jobs:
         if: matrix.platform == 'mac'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # No signing: CSC_IDENTITY_AUTO_DISCOVERY=false prevents electron-builder
+          # from attempting to pick up a local/keychain identity.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm run dist -- --publish=always --mac
 
       - name: Build and publish (Windows)
         if: matrix.platform == 'win'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CERTIFICATE }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERTIFICATE_PASSWORD }}
         run: npm run dist -- --publish=always --win
 
       - name: Build and publish (Linux)
