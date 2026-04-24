@@ -62,13 +62,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
 
 Terminology: a **workspace** is a project you've opened which can contain unlimited Terminals from multiple repos; a **terminal** (also called a session) is a single Claude Code instance running in its own worktree under that workspace.
 
-### Wall view — every terminal, all at once
-
-The Wall is Claudinha's default layout: an auto-tiled grid that packs every terminal in the workspace into the window. Spawn more terminals and the grid re-tiles to fit; close one and the remaining panes expand. No manual resizing, no window juggling. Each pane shows its git branch, live agent status, and a header with focus/close/move controls. Drag the resize handles if you want custom proportions; hit the toggle to flip the whole workspace into Kanban.
-
 ### Kanban view — agent status at a glance
 
 The Kanban view is Claudinha's default layout: it groups every session across every workspace by repository and shows where each agent is in its loop — **idle**, **working**, **awaiting permission**, **done**, or **failed**. The repo rail on the left lets you zoom into a single project; the board updates live as Claude Code hooks fire. It's the fastest way to answer "which of my sessions need me right now?" when you're running six of them in parallel. Or 20 of them.
+
+### Wall view — every terminal, all at once
+
+The Wall is an auto-tiled grid that packs every terminal in the workspace into the window. Spawn more terminals and the grid re-tiles to fit; close one and the remaining panes expand. No manual resizing, no window juggling. Each pane shows its git branch, live agent status, and a header with focus/close/move controls. Drag the resize handles if you want custom proportions; hit the toggle to flip the whole workspace into Kanban.
 
 ### Git worktrees per terminal
 
