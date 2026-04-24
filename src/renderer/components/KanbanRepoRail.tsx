@@ -20,6 +20,7 @@ import { ipcInvoke } from '../hooks/useIpc'
 import { useInspector } from '../hooks/useInspector'
 import { KanbanRepoCard } from './KanbanRepoCard'
 import { ClaudeMdEditorModal } from './ClaudeMdEditorModal'
+import { Button } from './ui/Button'
 import { useStrings } from '../lib/strings'
 
 interface KanbanRepoRailProps {
@@ -172,14 +173,16 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
   // workspace bound. Opens the SpawnDialog.
   const railCta = (
     <div className="shrink-0 px-3 pt-3 pb-2">
-      <button
+      <Button
         type="button"
+        variant="primary"
+        size="sm"
         onClick={onSpawnClick}
         aria-label={t.kanban.newTerminalAria}
-        className="w-full flex items-center justify-center gap-1.5 text-xs font-[500] text-fg-primary bg-overlay hover:bg-accent-subtle border border-[var(--color-border-subtle)] rounded px-3 py-2 transition-[color,background-color] duration-[80ms]"
+        className="w-full"
       >
         {t.kanban.railNewTerminalButton}
-      </button>
+      </Button>
     </div>
   )
 
