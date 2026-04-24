@@ -23,7 +23,7 @@ import { WindowManager } from './window-manager'
 import { SessionRegistry } from './session-registry'
 import { PtyPool } from './pty-pool'
 import { HookListener } from './hook-listener'
-import { PermissionsManager } from './permissions-manager'
+import { PermissionsManager, healStaleWorktreeSettings } from './permissions-manager'
 import { StatusDetector } from './status-detector'
 import { MetricsCollector } from './metrics-collector'
 import { PaneTransitionBuffer } from './pane-transition-buffer'
@@ -292,6 +292,19 @@ app.whenReady().then(() => {
   hookListener.start()
   // Recover workspace state from any prior crash (active workspaces with no window → dormant)
   workspaceManager.recoverState()
+
+  // Heal stale hook-relay paths in every known worktree's .claude/settings.json.
+  // Picks up worktrees whose settings were written by an earlier install (e.g.
+  // when the app lived at ~/Documents/orchard/) so those ghost absolute paths
+  // stop flooding Claude Code with "No such file or directory" hook errors.
+  {
+    const worktreePaths: string[] = []
+    for (const ws of workspaceManager.getAllWorkspaces()) {
+      for (const t of ws.pausedTerminals) worktreePaths.push(t.worktreePath)
+    }
+    for (const [, pane] of sessionRegistry.getAllPanes()) worktreePaths.push(pane.worktreePath)
+    healStaleWorktreeSettings(permissionsManager, worktreePaths)
+  }
 
   registerIpcHandlers(windowManager, sessionRegistry, ptyPool, hookListener, permissionsManager, statusDetector, metricsCollector, transitionBuffer, workspaceManager, gitStatusPoller, completionExecutor, inspector, planApprovalSequencer)
 

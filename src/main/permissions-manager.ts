@@ -52,6 +52,13 @@ const HOOK_EVENTS = [
   'PostCompact'
 ] as const
 
+// Recognises a Claudinha hook-relay or statusline invocation by script name,
+// regardless of its path prefix. Stale absolute paths from earlier installs
+// (e.g. /Users/.../orchard/scripts/claudinha-hook-relay.sh) match and get
+// swept out when writeSettings runs against the worktree.
+const CLAUDINHA_RELAY_PATTERN = /claudinha-hook-relay\.(?:sh|js)/
+const CLAUDINHA_STATUSLINE_PATTERN = /claudinha-statusline\.(?:sh|js)/
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -279,33 +286,72 @@ export class PermissionsManager {
     for (const [event, claudinhaMatchers] of Object.entries(claudinhaHooks)) {
       const existingMatchers: HookMatcher[] = existingHooks[event] ?? []
 
-      // Collect all Claudinha command strings for this event
-      const claudinhaCommands = new Set(
+      // Current (correct) Claudinha command strings for this event
+      const currentCommands = new Set(
         claudinhaMatchers.flatMap((m) => m.hooks.map((h) => h.command))
       )
 
-      // Check if Claudinha hooks are already present (idempotency on repeated spawns)
-      const alreadyPresent = existingMatchers.some((m) =>
-        m.hooks.some((h) => claudinhaCommands.has(h.command))
+      // Strip any hook entry that *looks* like a Claudinha relay call but isn't
+      // the current path — these are stale entries from an earlier install
+      // (e.g. the app was previously named orchard/). User-authored hooks that
+      // don't match the pattern pass through untouched.
+      const cleaned: HookMatcher[] = []
+      for (const matcher of existingMatchers) {
+        const keptHooks = matcher.hooks.filter(
+          (h) => !CLAUDINHA_RELAY_PATTERN.test(h.command) || currentCommands.has(h.command)
+        )
+        if (keptHooks.length > 0) {
+          cleaned.push({ ...matcher, hooks: keptHooks })
+        }
+      }
+
+      // Check whether the current (correct) Claudinha hook is already present
+      // after cleaning — idempotent on repeated spawns with the same path.
+      const alreadyPresent = cleaned.some((m) =>
+        m.hooks.some((h) => currentCommands.has(h.command))
       )
 
-      if (alreadyPresent) {
-        // Don't duplicate — keep existing hooks as-is
-        existingHooks[event] = existingMatchers
-      } else {
-        // Add Claudinha hooks after any existing user hooks
-        existingHooks[event] = [...existingMatchers, ...claudinhaMatchers]
-      }
+      existingHooks[event] = alreadyPresent ? cleaned : [...cleaned, ...claudinhaMatchers]
     }
 
     result.hooks = existingHooks
   }
 
   private mergeStatusLine(result: ClaudeSettings, existing: ClaudeSettings): void {
-    if (!existing.statusLine) {
-      // Only add statusLine if the user hasn't configured one already
+    const existingCmd = existing.statusLine?.command ?? ''
+    // Rewrite if no statusLine is configured, or if the existing one is a
+    // stale Claudinha statusline (wrong path from an earlier install).
+    // Non-Claudinha user statusLines are preserved.
+    if (!existing.statusLine || CLAUDINHA_STATUSLINE_PATTERN.test(existingCmd)) {
       result.statusLine = buildStatusLineConfig()
     }
-    // Otherwise preserve the user's existing statusLine config
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Startup sweep — heal stale Claudinha entries across known worktrees
+// ---------------------------------------------------------------------------
+
+/**
+ * One-shot pass at app launch: rewrite `.claude/settings.json` in every
+ * worktree the app remembers, so stale hook-relay paths (from a prior install
+ * under a different directory name) stop flooding Claude Code with errors.
+ *
+ * Idempotent: a worktree whose settings already point at the current path
+ * re-writes as a no-op.
+ */
+export function healStaleWorktreeSettings(
+  pm: PermissionsManager,
+  worktreePaths: Iterable<string>
+): void {
+  const seen = new Set<string>()
+  for (const wt of worktreePaths) {
+    if (!wt || seen.has(wt)) continue
+    seen.add(wt)
+    try {
+      pm.writeSettings(wt)
+    } catch (err) {
+      console.warn('[permissions] startup sweep: writeSettings failed for', wt, err)
+    }
   }
 }

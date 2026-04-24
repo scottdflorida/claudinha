@@ -42,7 +42,7 @@ vi.mock('../src/main/permissions-store', async () => {
 })
 
 import fs from 'fs'
-import { PermissionsManager } from '../src/main/permissions-manager'
+import { PermissionsManager, healStaleWorktreeSettings } from '../src/main/permissions-manager'
 
 const mockMkdirSync = vi.mocked(fs.mkdirSync)
 const mockReadFileSync = vi.mocked(fs.readFileSync)
@@ -377,6 +377,196 @@ describe('PermissionsManager.writeSettings', () => {
       expect(sl.command).toContain('claudinha-statusline.sh')
       expect((sl.command as string).startsWith('node ')).toBe(false)
     })
+  })
+
+  // -------------------------------------------------------------------------
+  // Stale hook-relay cleanup
+  //
+  // Regression: worktrees written by an earlier install (when the app lived at
+  // a different directory, e.g. orchard/) had absolute claudinha-hook-relay.sh
+  // paths pointing at a now-deleted location. On the next pane spawn, the old
+  // code appended the current path alongside the stale one, so every hook
+  // event fired twice — once successfully, once with "No such file or
+  // directory", flooding Claude Code with hook error toasts.
+  // -------------------------------------------------------------------------
+
+  describe('stale Claudinha hook-relay entries (cross-install rename)', () => {
+    function staleHookEntry(event: string): { matcher: string; hooks: Array<{ type: string; command: string; timeout?: number }> } {
+      return {
+        matcher: '*',
+        hooks: [
+          {
+            type: 'command',
+            command: `"/Users/scottflorida/Documents/orchard/scripts/claudinha-hook-relay.sh" ${event}`,
+            timeout: 5
+          }
+        ]
+      }
+    }
+
+    it('replaces stale orchard relay hooks with the current path on every event', () => {
+      const existing = {
+        hooks: {
+          SessionStart: [staleHookEntry('SessionStart')],
+          UserPromptSubmit: [staleHookEntry('UserPromptSubmit')],
+          PreToolUse: [staleHookEntry('PreToolUse')],
+          PostToolUse: [staleHookEntry('PostToolUse')],
+          Notification: [staleHookEntry('Notification')],
+          Stop: [staleHookEntry('Stop')],
+          StopFailure: [staleHookEntry('StopFailure')],
+          PostCompact: [staleHookEntry('PostCompact')]
+        }
+      }
+      mockReadFileSync.mockReturnValue(JSON.stringify(existing) as unknown as Buffer)
+
+      pm.writeSettings('/tmp/worktree')
+
+      const config = getWrittenConfig()
+      const hooks = config.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>
+      for (const event of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'StopFailure', 'PostCompact']) {
+        expect(hooks[event]).toHaveLength(1)
+        expect(hooks[event][0].hooks).toHaveLength(1)
+        const cmd = hooks[event][0].hooks[0].command
+        expect(cmd).toContain('/app/scripts/claudinha-hook-relay.sh')
+        expect(cmd).not.toContain('orchard')
+      }
+    })
+
+    it('preserves user-authored hooks alongside the stale-entry sweep', () => {
+      const existing = {
+        hooks: {
+          PostToolUse: [
+            { matcher: '*', hooks: [{ type: 'command', command: 'echo hi' }] },
+            staleHookEntry('PostToolUse')
+          ]
+        }
+      }
+      mockReadFileSync.mockReturnValue(JSON.stringify(existing) as unknown as Buffer)
+
+      pm.writeSettings('/tmp/worktree')
+
+      const config = getWrittenConfig()
+      const matchers = (config.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>)['PostToolUse']
+      const commands = matchers.flatMap((m) => m.hooks.map((h) => h.command))
+      expect(commands.some((c) => c === 'echo hi')).toBe(true)
+      expect(commands.some((c) => c.includes('/app/scripts/claudinha-hook-relay.sh'))).toBe(true)
+      expect(commands.some((c) => c.includes('orchard'))).toBe(false)
+    })
+
+    it('removes a stale relay hook that shares a matcher with a user hook without dropping the user hook', () => {
+      const existing = {
+        hooks: {
+          PostToolUse: [
+            {
+              matcher: '*',
+              hooks: [
+                { type: 'command', command: 'echo hi' },
+                { type: 'command', command: '"/Users/scottflorida/Documents/orchard/scripts/claudinha-hook-relay.sh" PostToolUse', timeout: 5 }
+              ]
+            }
+          ]
+        }
+      }
+      mockReadFileSync.mockReturnValue(JSON.stringify(existing) as unknown as Buffer)
+
+      pm.writeSettings('/tmp/worktree')
+
+      const config = getWrittenConfig()
+      const matchers = (config.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>)['PostToolUse']
+      const commands = matchers.flatMap((m) => m.hooks.map((h) => h.command))
+      expect(commands.some((c) => c === 'echo hi')).toBe(true)
+      expect(commands.some((c) => c.includes('/app/scripts/claudinha-hook-relay.sh'))).toBe(true)
+      expect(commands.some((c) => c.includes('orchard'))).toBe(false)
+    })
+  })
+
+  describe('stale Claudinha statusLine (cross-install rename)', () => {
+    it('replaces a stale orchard statusline with the current path', () => {
+      const existing = {
+        statusLine: {
+          type: 'command',
+          command: '/Users/scottflorida/Documents/orchard/scripts/claudinha-statusline.sh',
+          padding: 0
+        }
+      }
+      mockReadFileSync.mockReturnValue(JSON.stringify(existing) as unknown as Buffer)
+
+      pm.writeSettings('/tmp/worktree')
+
+      const config = getWrittenConfig()
+      const sl = config.statusLine as Record<string, unknown>
+      expect(sl.command).toBe('/app/scripts/claudinha-statusline.sh')
+    })
+
+    it('leaves a user-authored non-Claudinha statusLine untouched', () => {
+      const existing = {
+        statusLine: {
+          type: 'command',
+          command: '/usr/local/bin/my-prompt',
+          padding: 1
+        }
+      }
+      mockReadFileSync.mockReturnValue(JSON.stringify(existing) as unknown as Buffer)
+
+      pm.writeSettings('/tmp/worktree')
+
+      const config = getWrittenConfig()
+      const sl = config.statusLine as Record<string, unknown>
+      expect(sl.command).toBe('/usr/local/bin/my-prompt')
+      expect(sl.padding).toBe(1)
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// healStaleWorktreeSettings — one-shot startup sweep across known worktrees
+// ---------------------------------------------------------------------------
+
+describe('healStaleWorktreeSettings', () => {
+  let pm: PermissionsManager
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockMkdirSync.mockReturnValue(undefined as unknown as string)
+    mockReadFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+    })
+    pm = new PermissionsManager()
+  })
+
+  it('calls writeSettings once per unique worktree, deduping repeats', () => {
+    const spy = vi.spyOn(pm, 'writeSettings')
+    healStaleWorktreeSettings(pm, ['/a', '/b', '/a', '/c', '/b'])
+    expect(spy).toHaveBeenCalledTimes(3)
+    expect(spy).toHaveBeenCalledWith('/a')
+    expect(spy).toHaveBeenCalledWith('/b')
+    expect(spy).toHaveBeenCalledWith('/c')
+  })
+
+  it('skips empty-string worktree paths without throwing', () => {
+    const spy = vi.spyOn(pm, 'writeSettings')
+    healStaleWorktreeSettings(pm, ['', '/only-real'])
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy).toHaveBeenCalledWith('/only-real')
+  })
+
+  it('swallows writeSettings errors so one bad worktree does not abort the sweep', () => {
+    const spy = vi.spyOn(pm, 'writeSettings').mockImplementation((wt: string) => {
+      if (wt === '/bad') throw new Error('boom')
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(() =>
+      healStaleWorktreeSettings(pm, ['/good-1', '/bad', '/good-2'])
+    ).not.toThrow()
+
+    expect(spy).toHaveBeenCalledTimes(3)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('[permissions] startup sweep'),
+      '/bad',
+      expect.any(Error)
+    )
+    warn.mockRestore()
   })
 })
 
