@@ -73,6 +73,16 @@
   --pane-border-width:            1.5px;
   --pane-narrow-breakpoint:       320px;
   --pane-vertical-compact-height: 240px;
+
+  /* Row-state tints for lists that sit on top of bg-overlay (the top of
+     the surface scale), e.g. the Kanban repo-rail agent rows — there is
+     no higher surface tier to hover/select into, so we tint over the
+     background with fg-primary so the wash inverts correctly per theme.
+     color-mix() is resolved per-theme since --color-fg-primary is
+     redefined in each theme block. */
+  --color-row-hover:         color-mix(in srgb, var(--color-fg-primary) 8%, transparent);
+  --color-row-active:        color-mix(in srgb, var(--color-fg-primary) 14%, transparent);
+  --color-row-active-hover:  color-mix(in srgb, var(--color-fg-primary) 20%, transparent);
 }
 
 /* -------------------------------------------------------------------------

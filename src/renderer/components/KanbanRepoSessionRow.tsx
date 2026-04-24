@@ -65,8 +65,8 @@ export function KanbanRepoSessionRow({
         transition-colors duration-[80ms]
         focus:outline-none focus-visible:ring-1 focus-visible:ring-accent
         ${isActive
-          ? 'bg-fg-primary/15 hover:bg-fg-primary/20'
-          : 'hover:bg-fg-primary/10'}
+          ? 'bg-[var(--color-row-active)] hover:bg-[var(--color-row-active-hover)]'
+          : 'hover:bg-[var(--color-row-hover)]'}
       `}
     >
       <span

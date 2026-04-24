@@ -858,6 +858,23 @@ Related: L-032 (repo rail's +A/−B chip unified its diff source with the per-pa
 
 ---
 
+## L-043: Tailwind 3's `/opacity` shorthand silently no-ops on CSS-var color tokens — verify the wash actually lands
+
+**Date:** 2026-04-24
+**Source:** feedback — agent rows in the Kanban repo card had `hover:bg-fg-primary/10` and `bg-fg-primary/15` for hover + active, but the user reported zero visible difference on either state (two rounds of fixes before realizing the utility itself was the no-op)
+**Category:** styling
+
+**What happened:**
+The KanbanRepoSessionRow button had hover + active washes expressed as `hover:bg-fg-primary/10` / `bg-fg-primary/15` — standard-looking Tailwind. Both utilities compiled, the DOM received the classes, and tests passed. But nothing rendered. The `/N` opacity modifier only works in Tailwind 3 when the color token is configured as a function returning `rgb(var(--...) / ${opacityValue})` (or equivalently, when the CSS variable holds a space-separated RGB triple, not a hex literal). Our config has `'fg-primary': 'var(--color-fg-primary)'` where `--color-fg-primary: #F0EBE0` — a raw hex wrapped in `var()`. Tailwind can't derive an `rgb(... / alpha)` form from that and silently emits a rule without the alpha. The hover/active styling was entirely invisible. The fix was to introduce explicit CSS variables built with `color-mix()` (`--color-row-hover`, etc.) and reference them as Tailwind arbitrary values (`hover:bg-[var(--color-row-hover)]`), bypassing the opacity-shorthand machinery.
+
+**Why the agent got it wrong:**
+`bg-warning-fg/10` appears elsewhere in the codebase and the agent assumed it worked. It compiles without error, the class name lands on the element, and there is no runtime warning — so the feedback loop that would normally catch a broken utility (console errors, type errors, test failures) is silent. This is the same family as L-026 (tokens without utilities) but with a twist: here the utility is *generated*, it just doesn't produce a visually distinct result. The agent also skipped visual verification both rounds, trusting "the class is applied" as equivalent to "the effect is visible" — a direct violation of the "You Are My Eyes" contract. Compounding: when the first round looked dead, the agent's next move was to stack a second broken layer (active state with the same `/N` idiom) and report back — which doubled the invisible-no-op surface area.
+
+**How to avoid this in the future:**
+When writing a Tailwind opacity-shorthand class (`bg-X/N`, `text-X/N`, `border-X/N`) against a color token sourced from CSS vars, verify the token is either (a) configured as a function that splices `opacityValue` into an `rgb(... / ${alpha})` form, or (b) stored as a space-separated triple (`"240 235 224"` not `"#F0EBE0"`). If neither, the modifier is a no-op — use an explicit `color-mix()` wash via a CSS variable and reference it as an arbitrary value (`bg-[var(--color-X-wash)]`) instead. And at the "You Are My Eyes" layer: any change whose entire job is to put pixels on a screen (hover state, focus ring, selection highlight, shadow, tint) is not verified until the pixels have been seen. A passing test, a correct-looking classname, and a clean compile do not substitute for visual confirmation — mark those tasks "not verified" in the report rather than claiming "high confidence" on faith.
+
+---
+
 ## L-042: When an on-disk layout invariant changes, every derive-from-path helper inherits the old assumption silently
 
 **Date:** 2026-04-24
