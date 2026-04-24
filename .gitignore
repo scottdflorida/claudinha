@@ -11,6 +11,9 @@ CLAUDE.md
 # electron-builder output
 release/
 
+# npm pack output (regenerated on demand; npm publish doesn't need it checked in)
+*.tgz
+
 # TypeScript build info
 *.tsbuildinfo
 
