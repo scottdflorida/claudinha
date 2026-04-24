@@ -178,7 +178,7 @@ export function ConfigurationView(): React.JSX.Element {
               { value: 'wall', label: t.configuration.viewModeWall },
               { value: 'kanban', label: t.configuration.viewModeKanban }
             ]}
-            value={config.defaultViewMode ?? 'wall'}
+            value={config.defaultViewMode ?? 'kanban'}
             onChange={(v) => void setConfig({ defaultViewMode: v })}
           />
         </Row>

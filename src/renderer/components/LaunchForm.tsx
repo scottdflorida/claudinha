@@ -124,8 +124,11 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
   useEffect(() => {
     if (!appConfigLoaded) return
     if (userTouchedModel.current) return
-    if (cachedLaunchState.model) return // cache takes precedence over appConfig
-    if (appConfig.defaultModel) setModelRaw(appConfig.defaultModel)
+    if (!appConfig.defaultModel) return
+    setModelRaw(appConfig.defaultModel)
+    if (appConfig.defaultModel !== 'opus') {
+      setEffort((cur) => (cur === 'max' || cur === 'xhigh') ? 'high' : cur)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appConfigLoaded])
 

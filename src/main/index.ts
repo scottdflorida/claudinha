@@ -217,7 +217,7 @@ function buildReloadInitPayload(windowId: string): WindowInitPayload | null {
     workspaceConstraint: workspace.constraint,
     globalCompletionPolicy: getGlobalCompletionPolicy(),
     workspaceCompletionPolicy: workspace.completionPolicy ?? null,
-    workspaceViewMode: workspace.viewMode ?? 'wall',
+    workspaceViewMode: workspace.viewMode ?? 'kanban',
     workspaceActivePaneId: workspace.activePaneId ?? null
   }
 }

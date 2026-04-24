@@ -87,7 +87,7 @@ function App(): React.JSX.Element {
           workspaceType={windowInit.workspaceType}
           workspaceConstraint={windowInit.workspaceConstraint}
           terminalsToResume={windowInit.terminalsToResume}
-          initialViewMode={windowInit.workspaceViewMode ?? 'wall'}
+          initialViewMode={windowInit.workspaceViewMode ?? 'kanban'}
           initialActivePaneId={windowInit.workspaceActivePaneId ?? null}
         />
       </PaneStateProvider>
