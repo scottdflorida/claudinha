@@ -39,8 +39,8 @@ const store = new Store<WorkspaceStoreSchema>({
 export function migrateLegacyKeys(): void {
   const existing = store.get('workspaces.all', [] as Workspace[])
   if (existing.length === 0) {
-    const legacy = store.get('hives.all', undefined as Workspace[] | undefined)
-    if (legacy && legacy.length > 0) {
+    const legacy = store.get('hives.all', [] as Workspace[])
+    if (legacy.length > 0) {
       store.set('workspaces.all', legacy)
     }
   }

@@ -102,8 +102,8 @@ export function getAllKnownRules(): string[] {
  */
 export function resolveEffectivePermissions(worktreePath: string): { allow: string[]; deny: string[] } {
   // Start with defaults
-  let allow = [...DEFAULT_PERMISSIONS.allow]
-  let deny = [...DEFAULT_PERMISSIONS.deny]
+  let allow: string[] = [...DEFAULT_PERMISSIONS.allow]
+  let deny: string[] = [...DEFAULT_PERMISSIONS.deny]
 
   // Apply global overrides
   const global = getGlobalOverrides()
