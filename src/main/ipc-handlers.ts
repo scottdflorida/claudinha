@@ -985,16 +985,8 @@ export function registerIpcHandlers(
     // Data also continues flowing to the source window during this brief window.
     transitionBuffer.startBuffering(paneId)
 
-    // Move the terminal between workspace records so the manager's active-pane counts
-    // stay accurate after transplant.
-    const sourceHiveId = pane.workspaceId
-    const targetHiveId = workspaceManager.getWorkspaceIdForWindow(targetWindowId)
-
-    // Move pane in SessionRegistry — updates windowId and workspaceId
-    sessionRegistry.movePane(paneId, targetWindowId, targetHiveId ?? undefined)
-    if (targetHiveId) {
-      workspaceManager.movePaneBetweenWorkspaces(paneId, sourceHiveId, targetHiveId)
-    }
+    // Move pane in SessionRegistry — updates windowId on the PaneState.
+    sessionRegistry.movePane(paneId, targetWindowId)
     trackPaneMoved(
       sessionRegistry.getPanesForWindow(sourceWindowId).length,
       sessionRegistry.getPanesForWindow(targetWindowId).length
@@ -1095,12 +1087,8 @@ export function registerIpcHandlers(
       const bufferedData = transitionBuffer.flush(paneId)
       const combinedBuffer = (serializedBuffer || '') + bufferedData
 
-      // NOW move the pane — PTY data starts routing to the new window. Also
-      // transfer the terminal between workspace records so the manager's active-pane
-      // counts stay accurate after the tear-off.
-      const sourceHiveId = pane.workspaceId
-      sessionRegistry.movePane(paneId, targetWindowId, newHive.id)
-      workspaceManager.movePaneBetweenWorkspaces(paneId, sourceHiveId, newHive.id)
+      // NOW move the pane — PTY data starts routing to the new window.
+      sessionRegistry.movePane(paneId, targetWindowId)
       trackPaneMoved(
         sessionRegistry.getPanesForWindow(sourceWindowId).length,
         sessionRegistry.getPanesForWindow(targetWindowId).length

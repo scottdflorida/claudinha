@@ -34,6 +34,9 @@ Fired when a pane is explicitly closed by the user.
 | Field | Type | Values |
 |---|---|---|
 | `close_trigger` | string | `"manual"` \| `"menu"` \| `"keyboard"` |
+| `duration_bucket` | string | `"<1m"` \| `"1-5m"` \| `"5-30m"` \| `"30m-2h"` \| `">2h"` |
+| `final_status` | string | Terminal status at close, e.g. `"idle"` \| `"working"` \| `"done"` \| `"failed"` |
+| `pane_count` | number | Total panes remaining in the window after close |
 
 **When:** On `pane:close` IPC.
 
@@ -42,7 +45,10 @@ Fired when a pane is explicitly closed by the user.
 ### `pane_moved`
 Fired when a pane is moved between windows.
 
-*(No extra fields — only common fields.)*
+| Field | Type | Values |
+|---|---|---|
+| `source_pane_count` | number | Panes remaining in the source window after the move |
+| `target_pane_count` | number | Panes in the target window after the move |
 
 **When:** On `pane:move` IPC after successful move.
 
@@ -65,6 +71,7 @@ Fired when a new browser window is opened.
 | Field | Type | Values |
 |---|---|---|
 | `window_count` | number | Total windows open after creation |
+| `trigger` | string | `"startup"` \| `"menu"` \| `"activate"` \| `"resume-last"` \| `"batch-spawn"` |
 
 **When:** On `window:new` IPC or app startup.
 
@@ -76,6 +83,8 @@ Fired when a window is closed.
 | Field | Type | Values |
 |---|---|---|
 | `active_pane_count` | number | Number of active (non-done) panes at close time |
+| `had_active_sessions` | boolean | Whether the window had any active sessions at close time |
+| `window_count` | number | Total windows open after this one closed |
 
 **When:** `windowManager.onWindowClose()` callback.
 
@@ -98,6 +107,7 @@ Fired when the user submits feedback via the FeedbackModal.
 | Field | Type | Values |
 |---|---|---|
 | `length_bucket` | string | `"0-50"` \| `"51-200"` \| `"201-500"` \| `"500+"` |
+| `feedback_type` | string | Symbolic category, e.g. `"bug"` \| `"idea"` \| `"other"` — no free text |
 
 **When:** `feedback:send` IPC handler.
 
@@ -126,9 +136,16 @@ Fired on pane close with aggregate session metrics. All values are bucketed or r
 |---|---|---|
 | `duration_seconds_rounded` | number | Duration in seconds, rounded to nearest 10 |
 | `token_bucket` | string | `"0-1k"` \| `"1k-10k"` \| `"10k-50k"` \| `"50k-100k"` \| `"100k+"` |
-| `cost_bucket` | string | `"<0.01"` \| `"0.01-0.10"` \| `"0.10-1.00"` \| `"1.00-5.00"` \| `"5.00+"` |
+| `cost_bucket` | string | `"<0.01"` \| `"0.01-0.10"` \| `"0.10-1.00"` \| `"1.00-5.00"` \| `"5.00+"` \| `"n/a"` |
 | `tool_count` | number | Number of distinct tools used |
 | `exit_reason` | string | `"done"` \| `"terminated"` \| `"crashed"` \| `"unknown"` |
+| `duration_bucket` | string | `"<1m"` \| `"1-5m"` \| `"5-30m"` \| `"30m-2h"` \| `">2h"` |
+| `final_status` | string | Terminal status at close, e.g. `"done"` \| `"failed"` \| `"idle"` |
+| `spawn_mode` | string | `"claude"` \| `"custom"` \| `"unknown"` |
+| `tool_invocations` | number | Total tool invocations (sum, not distinct count) |
+| `status_source` | string | `"hook"` \| `"pty-fallback"` |
+| `is_api_billing` | boolean | Whether the session was on API billing vs subscription |
+| `context_percent` | number \| null | Rounded context-window fill % at close, or null if unknown |
 
 **When:** After pane close, before deregistration.
 

@@ -43,11 +43,21 @@ export interface PaneClosedEvent extends AnalyticsEventBase {
   event_name: 'pane_closed'
   /** How the pane was closed: "manual" | "menu" | "keyboard" */
   close_trigger: string
+  /** Bucketed session duration, e.g. "<1m" | "1-5m" | "5-30m" | "30m-2h" | ">2h" */
+  duration_bucket: string
+  /** Terminal status at the moment of close, e.g. "idle" | "working" | "done" | "failed" */
+  final_status: string
+  /** Total panes remaining in the window after close */
+  pane_count: number
 }
 
 /** A pane was moved between windows */
 export interface PaneMovedEvent extends AnalyticsEventBase {
   event_name: 'pane_moved'
+  /** Pane count in the source window after the move */
+  source_pane_count: number
+  /** Pane count in the target window after the move */
+  target_pane_count: number
 }
 
 /** User selected a spawn mode from the picker */
@@ -62,6 +72,8 @@ export interface WindowCreatedEvent extends AnalyticsEventBase {
   event_name: 'window_created'
   /** Total number of windows open after creation */
   window_count: number
+  /** How the window was created: "startup" | "menu" | "activate" | "resume-last" | "batch-spawn" */
+  trigger: string
 }
 
 /** A window was closed */
@@ -69,6 +81,10 @@ export interface WindowClosedEvent extends AnalyticsEventBase {
   event_name: 'window_closed'
   /** Number of panes that were active at close time */
   active_pane_count: number
+  /** Whether the window had any active sessions at close time */
+  had_active_sessions: boolean
+  /** Total number of windows open after this one closed */
+  window_count: number
 }
 
 /** User triggered a keyboard shortcut */
@@ -83,6 +99,8 @@ export interface FeedbackSubmittedEvent extends AnalyticsEventBase {
   event_name: 'feedback_submitted'
   /** Bucketed character count: "0-50" | "51-200" | "201-500" | "500+" */
   length_bucket: string
+  /** Symbolic feedback category, e.g. "bug" | "idea" | "other" — no free text */
+  feedback_type: string
 }
 
 /** A pane was collapsed */
@@ -112,6 +130,20 @@ export interface SessionCompletedEvent extends AnalyticsEventBase {
   tool_count: number
   /** Exit reason: "done" | "terminated" | "crashed" | "unknown" */
   exit_reason: string
+  /** Bucketed duration: "<1m" | "1-5m" | "5-30m" | "30m-2h" | ">2h" */
+  duration_bucket: string
+  /** Terminal status at session close, e.g. "done" | "failed" | "idle" */
+  final_status: string
+  /** Spawn mode recorded at spawn: "claude" | "custom" | "unknown" */
+  spawn_mode: string
+  /** Total tool invocations across all tools (sum, not distinct count) */
+  tool_invocations: number
+  /** Source of status inference: "hook" | "pty-fallback" */
+  status_source: string
+  /** Whether the session used API billing (vs subscription) */
+  is_api_billing: boolean
+  /** Rounded context-window fill percentage at close, or null if unknown */
+  context_percent: number | null
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +193,8 @@ export interface PtyCrashedEvent extends AnalyticsEventBase {
   event_name: 'pty_crashed'
   /** Exit code, if available */
   exit_code: number | null
+  /** Bucketed pane age at crash: "<1m" | "1-10m" | "10m+" */
+  pane_age_bucket: string
 }
 
 /** Claude Code hook event processing failure */
@@ -233,17 +267,27 @@ export interface EventContext {
   platform: string
 }
 
-export function makeEvent<T extends AnalyticsEvent>(
+// Narrowing helper: picks the single AnalyticsEvent member whose event_name
+// matches N. Lets makeEvent's `fields` parameter reflect the specific payload
+// for the event being created instead of the intersection of all events.
+type AnalyticsEventByName<N extends AnalyticsEvent['event_name']> = Extract<
+  AnalyticsEvent,
+  { event_name: N }
+>
+
+export function makeEvent<N extends AnalyticsEvent['event_name']>(
   ctx: EventContext,
-  fields: Omit<T, keyof AnalyticsEventBase> & { event_name: T['event_name'] }
-): T {
+  fields: Omit<AnalyticsEventByName<N>, keyof AnalyticsEventBase | 'event_name'> & {
+    event_name: N
+  }
+): AnalyticsEventByName<N> {
   return {
     timestamp: new Date().toISOString(),
     installation_id: ctx.installation_id,
     app_version: ctx.app_version,
     platform: ctx.platform,
     ...fields
-  } as T
+  } as AnalyticsEventByName<N>
 }
 
 // ---------------------------------------------------------------------------

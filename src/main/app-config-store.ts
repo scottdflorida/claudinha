@@ -55,7 +55,11 @@ export function getAppConfig(): AppConfig {
     store.set('app.config', seeded)
     return seeded
   }
-  const stored = store.get('app.config', {} as Partial<AppConfig>)
+  // Spread DEFAULT_APP_CONFIG on top of the stored value so that fields added
+  // in future versions get a default without needing a migration. Passing
+  // DEFAULT_APP_CONFIG as the fallback keeps electron-store's types happy even
+  // though the `store.has` check above means we never actually hit it here.
+  const stored = store.get('app.config', DEFAULT_APP_CONFIG)
   return { ...DEFAULT_APP_CONFIG, ...stored }
 }
 

@@ -100,7 +100,7 @@ export function trackPtyCrashed(exitCode: number | null, paneCreatedAt: number):
   trackEvent(makeEvent(ctx(), {
     event_name: 'pty_crashed',
     exit_code: exitCode,
-    pane_age_bucket: paneAgeBucket(paneCreatedAt) as any
+    pane_age_bucket: paneAgeBucket(paneCreatedAt)
   }))
 }
 

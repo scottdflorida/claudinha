@@ -42,20 +42,17 @@ export function trackPaneClosed(createdAt: number, finalStatus: string, paneCoun
   trackEvent(makeEvent(ctx(), {
     event_name: 'pane_closed',
     close_trigger: 'manual',
-    // We add duration/status as extra fields — they fit the no-PII rule
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    duration_bucket: durationBucket(durationMs) as any,
-    final_status: finalStatus as any,
-    pane_count: paneCount as any
+    duration_bucket: durationBucket(durationMs),
+    final_status: finalStatus,
+    pane_count: paneCount
   }))
 }
 
 export function trackPaneMoved(sourcePaneCount: number, targetPaneCount: number): void {
   trackEvent(makeEvent(ctx(), {
     event_name: 'pane_moved',
-    // Extra anonymous counts — no IDs
-    source_pane_count: sourcePaneCount as any,
-    target_pane_count: targetPaneCount as any
+    source_pane_count: sourcePaneCount,
+    target_pane_count: targetPaneCount
   }))
 }
 
@@ -63,16 +60,16 @@ export function trackWindowCreated(trigger: string, windowCount: number): void {
   trackEvent(makeEvent(ctx(), {
     event_name: 'window_created',
     window_count: windowCount,
-    trigger: trigger as any
+    trigger
   }))
 }
 
 export function trackWindowClosed(hadActiveSessions: boolean, windowCount: number): void {
   trackEvent(makeEvent(ctx(), {
     event_name: 'window_closed',
-    active_pane_count: 0, // satisfies the interface; specific count not always known at close
-    had_active_sessions: hadActiveSessions as any,
-    window_count: windowCount as any
+    active_pane_count: 0, // specific count not always known at close time
+    had_active_sessions: hadActiveSessions,
+    window_count: windowCount
   }))
 }
 
@@ -100,6 +97,6 @@ export function trackFeedbackSubmitted(feedbackType: string, messageLength: numb
   trackEvent(makeEvent(ctx(), {
     event_name: 'feedback_submitted',
     length_bucket: lengthBucket,
-    feedback_type: feedbackType as any
+    feedback_type: feedbackType
   }))
 }

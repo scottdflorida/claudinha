@@ -96,16 +96,14 @@ export function trackSessionCompleted(pane: PaneState): void {
       cost_bucket: pane.isApiBilling ? bucketCost(metrics.totalCostUsd) : 'n/a',
       tool_count: countTools(metrics.toolsUsed),
       exit_reason: pane.status === 'done' ? 'done' : 'terminated',
-      // Extended fields (no PII)
-      duration_bucket: bucketDuration(durationMs) as any,
-      final_status: pane.status as any,
-      spawn_mode: spawnMode as any,
-      tool_invocations: sumToolInvocations(metrics.toolsUsed) as any,
-      status_source: pane.statusSource as any,
-      is_api_billing: pane.isApiBilling as any,
-      context_percent: metrics.contextPercent !== null
-        ? Math.round(metrics.contextPercent)
-        : null as any
+      duration_bucket: bucketDuration(durationMs),
+      final_status: pane.status,
+      spawn_mode: spawnMode,
+      tool_invocations: sumToolInvocations(metrics.toolsUsed),
+      status_source: pane.statusSource,
+      is_api_billing: pane.isApiBilling,
+      context_percent:
+        metrics.contextPercent !== null ? Math.round(metrics.contextPercent) : null
     }))
   } catch {
     // Never throw from instrumentation
