@@ -63,7 +63,7 @@ export function KanbanRepoSessionRow({
       className={`
         w-full text-left flex items-center gap-2 px-2 py-1 rounded-sm
         transition-colors duration-[80ms]
-        hover:bg-overlay focus:outline-none focus-visible:ring-1 focus-visible:ring-accent
+        hover:bg-fg-primary/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent
         ${isActive ? 'bg-overlay' : ''}
       `}
     >
