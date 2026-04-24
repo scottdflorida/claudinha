@@ -47,10 +47,6 @@ export const en = {
     moveFocus: 'Move Focus',
     cycleEffort: 'Cycle Global Effort'
   },
-  windowPicker: {
-    title: 'Move terminal',
-    newGrove: 'New workspace'
-  },
   spawn: {
     title: 'New terminal',
     submit: 'Open',
@@ -115,12 +111,6 @@ export const en = {
     // switch they will land in, not the one they're currently using.
     switchToPortuguese: 'Switch to Português',
     switchToEnglish: 'Mudar para English'
-  },
-  completionBar: {
-    mergeAllGrove: 'Merge all (this workspace) · rebase-ff',
-    noGroveContext: 'No workspace context for this terminal.',
-    createPrsGrove: 'Create PRs for all (this workspace)',
-    createDraftPrsGrove: 'Create draft PRs for all (this workspace)'
   },
   status: {
     awaiting: 'Awaiting input',

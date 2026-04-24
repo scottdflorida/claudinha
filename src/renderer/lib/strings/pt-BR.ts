@@ -55,10 +55,6 @@ export const ptBR: Strings = {
     moveFocus: 'Mover Foco',
     cycleEffort: 'Alternar Esforço Global'
   },
-  windowPicker: {
-    title: 'Mover terminal',
-    newGrove: 'Novo espaço de trabalho'
-  },
   spawn: {
     title: 'Novo terminal',
     submit: 'Abrir',
@@ -127,12 +123,6 @@ export const ptBR: Strings = {
   languageToggle: {
     switchToPortuguese: 'Switch to Português',
     switchToEnglish: 'Mudar para English'
-  },
-  completionBar: {
-    mergeAllGrove: 'Mesclar todos (este espaço de trabalho) · rebase-ff',
-    noGroveContext: 'Sem contexto de espaço de trabalho para este terminal.',
-    createPrsGrove: 'Criar PRs para todos (este espaço de trabalho)',
-    createDraftPrsGrove: 'Criar PRs em rascunho para todos (este espaço de trabalho)'
   },
   status: {
     awaiting: 'Aguardando entrada',

@@ -5,7 +5,11 @@ import { AlertCircle, X } from 'lucide-react'
 // TextInput
 // ---------------------------------------------------------------------------
 
-interface TextInputProps {
+// Accept every standard input attribute (spellCheck, autoCorrect,
+// autoCapitalize, maxLength, etc.) so callers don't need the component to list
+// them one by one. We omit `size` because TextInput repurposes that name for
+// its visual size prop ('sm' | 'md' | 'lg').
+interface TextInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
   label?: string
   helperText?: string
   error?: string
@@ -17,17 +21,6 @@ interface TextInputProps {
   leading?: React.ReactNode
   /** Trailing element */
   trailing?: React.ReactNode
-  id?: string
-  value?: string
-  onChange?: React.ChangeEventHandler<HTMLInputElement>
-  placeholder?: string
-  disabled?: boolean
-  readOnly?: boolean
-  type?: React.HTMLInputTypeAttribute
-  autoFocus?: boolean
-  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>
-  onBlur?: React.FocusEventHandler<HTMLInputElement>
-  className?: string
   inputRef?: React.Ref<HTMLInputElement>
 }
 

@@ -439,7 +439,7 @@ export function PermissionsManagerView({ onClose: _onClose }: PermissionsManager
               {addError && (
                 <p className="text-xs text-danger-fg mt-1">{addError}</p>
               )}
-              {!addError && livePreview?.valid && livePreview.autoFixed && (
+              {!addError && livePreview?.valid && livePreview.autoFixed && livePreview.normalized && (
                 <p className="text-xs text-fg-subtle mt-1 italic">{t.permissionsManager.autoFixHint(livePreview.normalized)}</p>
               )}
               {!addError && livePreview && !livePreview.valid && (

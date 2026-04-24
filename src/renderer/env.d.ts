@@ -2,17 +2,14 @@
  * Global type augmentations for the renderer process.
  *
  * Declares `window.api` so renderer TypeScript code has full type safety
- * when calling the preload API exposed via contextBridge (B-007).
+ * when calling the preload API exposed via contextBridge (B-007), and pulls
+ * in Vite's client types for `?url`, `?raw`, and other asset queries.
  */
+
+/// <reference types="vite/client" />
 
 // The `export {}` makes this a module so `declare global` is a true augmentation
 export {}
-
-// Vite asset imports — allows `import url from '*.mp3?url'`
-declare module '*.mp3?url' {
-  const src: string
-  export default src
-}
 
 declare global {
   interface Window {

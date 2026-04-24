@@ -2,12 +2,17 @@ import { ipcMain } from 'electron'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
 import { IPC } from '../../shared/ipc-channels'
+import type { ConsentState } from '../../shared/types'
 
 // ---------------------------------------------------------------------------
 // Analytics consent and configuration (B-076)
+//
+// ConsentState lives in shared/types.ts so the renderer's consent dialog can
+// import it without pulling in Electron main-process code. Re-exported here
+// for backward compat with existing main-process imports.
 // ---------------------------------------------------------------------------
 
-export type ConsentState = 'granted' | 'denied' | 'pending'
+export type { ConsentState }
 
 interface AnalyticsStore {
   'analytics.consent': ConsentState

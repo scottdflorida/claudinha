@@ -9,7 +9,7 @@
 export function validateWorkspacePayload(
   workspaceType: string,
   repoPath: string,
-  selectedWorktree: { path: string; branch?: string } | null
+  selectedWorktree: { path: string; branch?: string | null } | null
 ): string | null {
   if (workspaceType === 'repo') {
     if (!repoPath.trim()) return 'Repository path is required.'

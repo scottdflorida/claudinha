@@ -688,3 +688,14 @@ export interface InspectorReport {
   markdown: string
   error?: string
 }
+
+// ---------------------------------------------------------------------------
+// Analytics consent — shared between main (persistence) and renderer (UI)
+// ---------------------------------------------------------------------------
+
+/**
+ * User's analytics opt-in state. `"pending"` means no choice has been made
+ * yet (first-launch default); instrumentation only fires when this is
+ * `"granted"`.
+ */
+export type ConsentState = 'granted' | 'denied' | 'pending'

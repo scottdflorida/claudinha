@@ -33,7 +33,10 @@ function IconBtn({
   danger = false,
   className = ''
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>
+  // React.ElementType accepts any renderable component, including
+  // lucide-react's ForwardRefExoticComponent icons (whose props are wider than
+  // our inline { size, className } spec).
+  icon: React.ElementType
   label: string
   title?: string
   onClick?: (e: React.MouseEvent) => void

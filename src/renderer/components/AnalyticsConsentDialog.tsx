@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { IPC } from '../../shared/ipc-channels'
 import { ipcInvoke } from '../hooks/useIpc'
-import type { ConsentState } from '../../main/analytics/analytics-config'
+import type { ConsentState } from '../../shared/types'
 import { Dialog, DialogActions } from './ui/Dialog'
 import { Button } from './ui/Button'
 import { RadioGroup } from './ui/RadioGroup'
