@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Pencil } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText } from 'lucide-react'
 import type { PaneStatus, ReadyPaneEntry, RepoRollup } from '../../shared/types'
 import { STATUS_COLORS } from '../lib/constants'
 import { KanbanRepoSessionRow } from './KanbanRepoSessionRow'
@@ -149,7 +149,7 @@ export function KanbanRepoCard({
           title={editDisabled ? t.kanban.editClaudeMdDisabled : t.kanban.editClaudeMdEnabled}
           className="shrink-0 text-fg-muted hover:text-fg-primary disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <Pencil size={12} />
+          <FileText size={12} />
         </button>
       </header>
 
