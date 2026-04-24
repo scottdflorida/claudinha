@@ -121,3 +121,46 @@ describe('PaneHeader — chromeMode="wall" (default) is unchanged', () => {
     expect(getByLabelText('Close terminal')).toBeTruthy()
   })
 })
+
+describe('PaneHeader — pane label', () => {
+  it('shows the worktree id when no session title or user rename is set', () => {
+    const { getByText } = render(<PaneHeader {...baseProps()} />)
+    expect(getByText('demo · wt-1')).toBeTruthy()
+  })
+
+  it('shows the session title when Claude has produced one', () => {
+    const { getByText } = render(
+      <PaneHeader {...baseProps()} sessionTitle="Auto Title" />
+    )
+    expect(getByText('demo · Auto Title')).toBeTruthy()
+  })
+
+  it('prefers a user-set rename over both session title and worktree id', () => {
+    const { getByText } = render(
+      <PaneHeader
+        {...baseProps()}
+        sessionTitle="Auto Title"
+        userName="Planner"
+      />
+    )
+    expect(getByText('demo · Planner')).toBeTruthy()
+  })
+
+  it('falls through whitespace-only user names to the next fallback', () => {
+    const { getByText } = render(
+      <PaneHeader
+        {...baseProps()}
+        sessionTitle="Auto Title"
+        userName="   "
+      />
+    )
+    expect(getByText('demo · Auto Title')).toBeTruthy()
+  })
+
+  it('uses the user rename in narrow mode too', () => {
+    const { getByText } = render(
+      <PaneHeader {...baseProps()} isNarrow userName="Planner" />
+    )
+    expect(getByText('Planner')).toBeTruthy()
+  })
+})

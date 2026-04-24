@@ -77,6 +77,7 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall' }: PaneProps)
   const hasUnseenStatusChange = pane?.hasUnseenStatusChange ?? false
   const repoName = pane?.repoName ?? ''
   const worktreeName = pane?.worktreeName ?? ''
+  const userName = pane?.userName ?? null
   const activeToolName = pane?.activeToolName ?? null
   const metrics = pane?.metrics ?? {
     totalTokens: null, contextPercent: null, toolsUsed: null,
@@ -235,6 +236,7 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall' }: PaneProps)
               repoName={repoName}
               worktreeName={worktreeName}
               sessionTitle={metrics.sessionTitle}
+              userName={userName}
               onMoveClick={() => setIsWindowPickerOpen(true)}
               isNarrow={isNarrow}
               positionNumber={positionNumber}

@@ -69,6 +69,8 @@ interface PaneHeaderProps {
   repoName: string
   worktreeName: string
   sessionTitle?: string | null
+  /** User-set label from the inline rename affordance. Highest-priority in the display-name fallback chain. */
+  userName?: string | null
   onMoveClick?: () => void
   isNarrow?: boolean
   positionNumber?: number
@@ -104,6 +106,7 @@ export function PaneHeader({
   repoName,
   worktreeName,
   sessionTitle,
+  userName,
   onMoveClick,
   isNarrow = false,
   positionNumber,
@@ -168,12 +171,23 @@ export function PaneHeader({
           </span>
         )}
 
-        {/* Repo / worktree label */}
-        <span className="truncate text-sm font-[500] min-w-0">
-          {isNarrow
-            ? (sessionTitle ?? repoName)
-            : `${repoName} · ${sessionTitle ?? worktreeName}`}
-        </span>
+        {/* Repo / worktree label — user-set rename wins, then Claude's
+            session title, then the raw worktree id. Mirrors the Kanban card
+            and rail row (resolvePaneDisplayName) so a rename propagates to
+            every surface that displays the pane's name. Narrow mode
+            preserves its existing repoName fallback since the column is too
+            cramped for the worktree id. */}
+        {(() => {
+          const trimmedUser = userName?.trim() || null
+          const trimmedTitle = sessionTitle?.trim() || null
+          const wideLabel = trimmedUser ?? trimmedTitle ?? worktreeName
+          const narrowLabel = trimmedUser ?? trimmedTitle ?? repoName
+          return (
+            <span className="truncate text-sm font-[500] min-w-0">
+              {isNarrow ? narrowLabel : `${repoName} · ${wideLabel}`}
+            </span>
+          )
+        })()}
 
         {/* Dirty indicator */}
         {isDirty && (
