@@ -203,6 +203,18 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       .catch((err) => console.warn('[WindowShell] set active pane failed', err))
   }, [activePaneId, workspaceId, setFocusedPane])
 
+  // Bring a newly-spawned terminal into focus in both view modes. The reducer
+  // already flips focusedPaneId to the new pane (L-001), but Kanban's
+  // activePaneId is separate state — without this, Kanban adds the pane to
+  // the rail but keeps the bottom region on the previously-active terminal.
+  // selectActivePane early-returns when paneId already matches activePaneId,
+  // so this is a no-op when spawning the first pane (the auto-select effect
+  // has already set activePaneId to it).
+  useIpcListener(IPC.PANE_SPAWNED, (payload) => {
+    const { paneId } = payload as { paneId: string }
+    selectActivePane(paneId)
+  })
+
   useEffect(() => {
     if (workspaceName !== undefined) setDisplayName(workspaceName)
   }, [workspaceName])
