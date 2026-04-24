@@ -74,6 +74,7 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, 
   const showDiffChip = linesAdded > 0 || linesRemoved > 0
   const hasUncommitted = pane.gitStatus?.hasUncommittedChanges === true
   const showPlanBadge = pane.permissionMode === 'plan'
+  const isAwaitingPlanApproval = pane.activeToolName === 'ExitPlanMode'
   const { setUserName } = usePaneState()
 
   // Inline rename — double-click name OR click pencil → edit. Enter saves,
@@ -211,9 +212,9 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, 
           <span
             className="shrink-0 text-[9px] font-[600] uppercase tracking-wider px-1 py-0 rounded-sm border"
             style={{ color: '#47978c', borderColor: '#47978c' }}
-            title={t.kanban.planMode}
+            title={isAwaitingPlanApproval ? t.kanban.planReady : t.kanban.planMode}
           >
-            PLANNING
+            {isAwaitingPlanApproval ? 'PLAN READY' : 'PLANNING'}
           </span>
         )}
         {sync && (

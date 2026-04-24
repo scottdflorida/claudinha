@@ -698,6 +698,7 @@ export const ptBR: Strings = {
     agentNameAria: 'Nome do agente',
     renameAgent: 'Renomear agente',
     planMode: 'Modo plano — o Claude vai propor um plano antes de agir',
+    planReady: 'Plano pronto — aguardando sua aprovação',
     viewDiff: 'Ver diff',
     viewDiffVsBase: 'Ver diff vs branch base',
     uncommittedTooltip: 'Alterações não confirmadas — a Claudinha vai confirmá-las automaticamente antes do merge.',

@@ -274,16 +274,30 @@ describe('KanbanCard — activity row (only when working)', () => {
 })
 
 describe('KanbanCard — plan mode badge', () => {
-  it('renders a PLANNING badge when permissionMode is "plan"', () => {
-    const { getByText } = render(
+  it('renders a PLANNING badge when permissionMode is "plan" and the agent is still drafting', () => {
+    const { getByText, queryByText } = render(
       <KanbanCard
-        pane={makePane({ permissionMode: 'plan' })}
+        pane={makePane({ permissionMode: 'plan', activeToolName: null })}
         statusColor="#fff"
         isActive={false}
         onClick={() => {}}
       />
     )
     expect(getByText('PLANNING')).toBeTruthy()
+    expect(queryByText('PLAN READY')).toBeNull()
+  })
+
+  it('flips to PLAN READY when the agent is parked on ExitPlanMode', () => {
+    const { getByText, queryByText } = render(
+      <KanbanCard
+        pane={makePane({ permissionMode: 'plan', activeToolName: 'ExitPlanMode' })}
+        statusColor="#fff"
+        isActive={false}
+        onClick={() => {}}
+      />
+    )
+    expect(getByText('PLAN READY')).toBeTruthy()
+    expect(queryByText('PLANNING')).toBeNull()
   })
 
   it('omits the badge when permissionMode is "normal"', () => {
@@ -296,6 +310,20 @@ describe('KanbanCard — plan mode badge', () => {
       />
     )
     expect(queryByText('PLANNING')).toBeNull()
+    expect(queryByText('PLAN READY')).toBeNull()
+  })
+
+  it('omits the badge when permissionMode is "normal" even if activeToolName is ExitPlanMode', () => {
+    const { queryByText } = render(
+      <KanbanCard
+        pane={makePane({ permissionMode: 'normal', activeToolName: 'ExitPlanMode' })}
+        statusColor="#fff"
+        isActive={false}
+        onClick={() => {}}
+      />
+    )
+    expect(queryByText('PLANNING')).toBeNull()
+    expect(queryByText('PLAN READY')).toBeNull()
   })
 })
 

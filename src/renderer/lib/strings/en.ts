@@ -683,6 +683,7 @@ export const en = {
     agentNameAria: 'Agent name',
     renameAgent: 'Rename agent',
     planMode: 'Plan mode — Claude will propose a plan before acting',
+    planReady: 'Plan ready — waiting for your approval',
     viewDiff: 'View diff',
     viewDiffVsBase: 'View diff vs base branch',
     uncommittedTooltip: 'Uncommitted changes — Claudinha will auto-commit them before merging.',
