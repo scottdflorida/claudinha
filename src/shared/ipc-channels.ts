@@ -1,0 +1,1319 @@
+/**
+ * IPC channel name constants and typed payload definitions.
+ *
+ * All communication between main and renderer processes uses these channels.
+ * Main process is the source of truth for PTY state, session state, and status.
+ * Renderer process owns visual layout, focus state, and UI interactions.
+ *
+ * NOTE: IPC payloads must be JSON-serializable (no Map, no Set, no undefined —
+ * use null instead). PaneMetrics.toolsUsed is represented as Record<string,number>
+ * in IPC payloads (ToolUsageSummaryRecord), even though in-memory it is a Map.
+ */
+
+import type { PaneStatus, PaneMetrics, EffortLevel, Model, PermissionOverrides, WorkspaceType, WorkspaceConstraint, TerminalSnapshot, RendererWorkspace, GitStatus, PaneCloseAction, MergeStrategy, CompletionActionStatus, CompletionPolicy, AppConfig, WorkspaceSummary, InspectorReport } from './types'
+
+// ---------------------------------------------------------------------------
+// Channel name constants
+// ---------------------------------------------------------------------------
+
+export const IPC = {
+  // renderer → main (fire-and-forget)
+  PANE_CLOSE: 'pane:close',
+  PANE_INPUT: 'pane:input',
+  PANE_RESIZE: 'pane:resize',
+  PANE_MOVE: 'pane:move',
+  PANE_RESPAWN: 'pane:respawn',
+  PANE_EFFORT: 'pane:effort',
+  PANE_MODEL: 'pane:model',
+  GLOBAL_EFFORT: 'global:effort',
+  WINDOW_NEW: 'window:new',
+  FEEDBACK_SEND: 'feedback:send',
+
+  // renderer → main (invoke/reply)
+  PANE_SPAWN: 'pane:spawn',
+  GLOBAL_EFFORT_GET: 'global:effort:get',
+  WORKTREE_LIST: 'worktree:list',
+  PATH_VALIDATE: 'path:validate',
+  PATH_GIT_INIT: 'path:git-init',
+  FOLDER_BROWSE: 'folder:browse',
+  WINDOW_LIST: 'window:list',
+  ANALYTICS_GET_CONSENT: 'analytics:get-consent',
+  ANALYTICS_SET_CONSENT: 'analytics:set-consent',
+  SESSION_HISTORY_LIST: 'session-history:list',
+
+  // renderer → main (invoke/reply) — worktree close with git operations
+  PANE_CLOSE_WORKTREE: 'pane:close-worktree',
+
+  // renderer → main (invoke/reply) — merge a done+unmerged pane and close it.
+  // Routes through completionExecutor.executeMerge; on conflict / dirty-main
+  // the pane stays open and the error state comes back to the caller.
+  PANE_MERGE_AND_CLOSE: 'pane:merge-and-close',
+
+  // main → renderer
+  PANE_SPAWNED: 'pane:spawned',
+  PANE_CLOSED: 'pane:closed',
+  PANE_DATA: 'pane:data',
+  PANE_STATUS: 'pane:status',
+  PANE_METRICS: 'pane:metrics',
+  PANE_MOVED_IN: 'pane:moved-in',
+  PANE_TERMINATED: 'pane:terminated',
+  PANE_RESPAWNED: 'pane:respawned',
+
+  // main → renderer — git status update for a pane
+  PANE_GIT_STATUS: 'pane:git-status',
+
+  // main → renderer — permission-mode change (normal | plan), derived from PTY output
+  PANE_PERMISSION_MODE: 'pane:permission-mode',
+
+  // main → renderer (account-level rate limit data, PE-01)
+  RATE_LIMITS_UPDATE: 'rate-limits:update',
+
+  // renderer → main (invoke/reply) — fetch last known rate limits (PE-01)
+  RATE_LIMITS_GET: 'rate-limits:get',
+
+  // menu → renderer (triggered by application menu items, B-066)
+  MENU_NEW_PANE: 'menu:new-pane',
+  MENU_CLOSE_PANE: 'menu:close-pane',
+  MENU_ANALYTICS: 'menu:analytics',
+  MENU_FEEDBACK: 'menu:feedback',
+
+  // renderer → main (invoke/reply) — permissions management
+  PERMISSIONS_GET_DEFAULTS: 'permissions:get-defaults',
+  PERMISSIONS_GET_EFFECTIVE: 'permissions:get-effective',
+  PERMISSIONS_SET_SCOPE: 'permissions:set-scope',
+  PERMISSIONS_RESET_SCOPE: 'permissions:reset-scope',
+  PERMISSIONS_GET_PROJECT_PATHS: 'permissions:get-project-paths',
+  PERMISSIONS_GET_KNOWN_RULES: 'permissions:get-known-rules',
+
+  // renderer → main (invoke/reply) — check if claude CLI is available
+  CLAUDE_CHECK: 'claude:check',
+
+  // renderer → main (invoke/reply) — create workspace + batch spawn terminals in one step
+  WORKSPACE_CREATE_WITH_TERMINALS: 'workspace:create-with-terminals',
+
+  // renderer → main (invoke/reply) — resume the most recently closed workspace
+  WORKSPACE_RESUME_LAST: 'workspace:resume-last',
+
+  // renderer → main (invoke/reply) — open external URL in system browser
+  OPEN_EXTERNAL: 'open:external',
+
+  // renderer → main (invoke/reply) — reveal a filesystem path in the OS file manager
+  WORKSPACE_REVEAL_PATH: 'workspace:reveal-path',
+
+  // renderer → main: signals that IPC listeners are registered and ready
+  RENDERER_READY: 'renderer:ready',
+
+  // renderer → main (invoke/reply) — mount-time seed for the pane list.
+  // Mirrors the useManagerState WORKSPACE_LIST seed (L-014): the
+  // PANE_SPAWNED broadcasts that preceded the provider's mount are gone
+  // forever, so the provider pulls its own state. Also recovers from a
+  // full renderer reload (Cmd+R, crash+recover) without making the
+  // user lose sight of their live panes.
+  PANE_LIST_GET: 'pane:list-get',
+
+  // renderer → main: per-pane XTermView has mounted and its pane:data listener
+  // is live. Main flushes any PTY output that arrived before this signal and
+  // then streams live. Prevents the "first pane shows partial startup output"
+  // race where early PTY bytes outrun the React mount of the listener.
+  PANE_READY: 'pane:ready',
+
+  // Workspace / management close sequence. Replaces the B-051 family
+  // (CONFIRM_CLOSE_SESSIONS*) with a per-pane confirmation flow.
+  //
+  // Main → renderer: begin a sequence for this workspace. The renderer mounts
+  // the WorkspaceCloseOverlay and walks the user through one PaneCloseConfirmModal
+  // per pane. Management-initiated closes set `isManagerInitiated` so the overlay
+  // can show a "workspace i of n" breadcrumb.
+  CLOSE_WORKSPACE_SEQUENCE_START: 'window:close-workspace-sequence-start',
+  // Renderer → main: the overlay has rendered. Cancels the native-dialog
+  // fallback timer, same semantics as the old CONFIRM_CLOSE_SESSIONS_ACK.
+  CLOSE_WORKSPACE_SEQUENCE_ACK: 'window:close-workspace-sequence-ack',
+  // Renderer → main: final response after the user has walked the sequence.
+  // `cancel` leaves everything intact; `complete` means each pane was already
+  // closed via its individual IPC and the window can be destroyed; `override-all`
+  // means the user hit the "close all remaining" escape hatch and main should
+  // force-close the remaining panes (keep-worktree semantics).
+  CLOSE_WORKSPACE_SEQUENCE_RESPONSE: 'window:close-workspace-sequence-response',
+
+  // --- Workspace management ---
+
+  // renderer → main (invoke/reply) — workspace CRUD
+  WORKSPACE_CREATE: 'workspace:create',
+  WORKSPACE_LIST: 'workspace:list',
+  WORKSPACE_GET: 'workspace:get',
+  WORKSPACE_ACTIVATE: 'workspace:activate',
+  WORKSPACE_DEACTIVATE: 'workspace:deactivate',
+  WORKSPACE_DELETE: 'workspace:delete',
+  WORKSPACE_RENAME: 'workspace:rename',
+  WORKSPACE_ARCHIVE: 'workspace:archive',
+  WORKSPACE_UNARCHIVE: 'workspace:unarchive',
+  WORKSPACE_DELETE_ARCHIVED: 'workspace:delete-archived',
+
+  // renderer → main (invoke/reply) — workspace terminal operations
+  WORKSPACE_PAUSED_TERMINALS: 'workspace:paused-terminals',
+  WORKSPACE_RESUME_TERMINAL: 'workspace:resume-terminal',
+
+  // renderer → main (invoke/reply) — view mode + active pane (Kanban view)
+  WORKSPACE_SET_VIEW_MODE: 'workspace:set-view-mode',
+  WORKSPACE_SET_ACTIVE_PANE: 'workspace:set-active-pane',
+
+  // renderer → main (fire-and-forget) — manager navigation
+  MANAGER_FOCUS_WORKSPACE: 'manager:focus-workspace',
+  MANAGER_FOCUS_TERMINAL: 'manager:focus-terminal',
+  MANAGER_SHOW: 'manager:show',
+
+  // main → renderer — window initialization (sent after RENDERER_READY)
+  WINDOW_INIT: 'window:init',
+
+  // main → renderer — manager window state updates
+  MANAGER_STATE_UPDATE: 'manager:state-update',
+
+  // main → renderer — workspace window dormant terminal updates
+  WORKSPACE_PAUSED_UPDATE: 'workspace:paused-update',
+
+  // --- Completion actions (merge/PR flow) ---
+
+  // renderer → main (invoke/reply)
+  COMPLETION_MERGE: 'completion:merge',
+  COMPLETION_PR: 'completion:pr',
+  COMPLETION_ABORT: 'completion:abort',
+  COMPLETION_CANCEL_QUEUE: 'completion:cancel-queue',
+  COMPLETION_RESOLVE: 'completion:resolve',
+
+  // renderer → main (fire-and-forget)
+  COMPLETION_DISMISS: 'completion:dismiss',
+  // renderer → main (fire-and-forget) — clear a failure state back to 'ready'
+  // while keeping the bar visible so the user can retry or pick a different
+  // strategy without losing the Merge/PR dropdowns.
+  COMPLETION_CLEAR_STATE: 'completion:clear-state',
+
+  // renderer → main (invoke/reply) — gh CLI availability check
+  GH_CLI_CHECK: 'gh:cli-check',
+
+  // main → renderer — completion status update for a pane
+  COMPLETION_STATUS: 'completion:status',
+
+  // main → renderer — pane is (or is not) resolving a merge conflict via Claude
+  PANE_RESOLVING_CONFLICT: 'pane:resolving-conflict',
+
+  // --- Completion policies (Phase 3) ---
+
+  // renderer → main (invoke/reply)
+  COMPLETION_POLICY_GET_GLOBAL: 'completion-policy:get-global',
+  COMPLETION_POLICY_SET_GLOBAL: 'completion-policy:set-global',
+  COMPLETION_POLICY_SET_WORKSPACE: 'completion-policy:set-workspace',
+  COMPLETION_POLICY_GET_WORKSPACE: 'completion-policy:get-workspace',
+
+  // renderer → main (invoke/reply) — bulk merge/PR all eligible panes
+  COMPLETION_MERGE_ALL: 'completion:merge-all',
+  COMPLETION_PR_ALL: 'completion:pr-all',
+
+  // renderer → main (invoke/reply) — Kanban repo-level Push and composite Merge+Push
+  REPO_PUSH_BASE_BRANCH: 'repo:push-base-branch',
+  REPO_MERGE_AND_PUSH: 'repo:merge-and-push',
+
+  // renderer → main (invoke/reply) — Kanban repo-card "Approve plans in sequence"
+  //   - APPROVE starts the PlanApprovalSequencer for a repo
+  //   - STOP clears pending queue without interrupting any in-flight pane
+  REPO_APPROVE_PLANS_IN_SEQUENCE: 'repo:approve-plans-in-sequence',
+  REPO_STOP_PLAN_SEQUENCE: 'repo:stop-plan-sequence',
+
+  // renderer → main (invoke/reply) — Kanban repo-card "Retry failed merges"
+  // Clears error state and re-runs merge for every tree in this repo whose
+  // last merge landed in `completionActionStatus.state === 'error'`.
+  REPO_RETRY_FAILED_MERGES: 'repo:retry-failed-merges',
+
+  // renderer → main (invoke/reply) — Kanban CLAUDE.md editor (read + save)
+  REPO_CLAUDE_MD_READ: 'repo:claude-md-read',
+  REPO_CLAUDE_MD_SAVE: 'repo:claude-md-save',
+
+  // renderer → main (invoke/reply) — Kanban diff viewer modal
+  REPO_DIFF_GET: 'repo:diff-get',
+
+  // renderer → main (fire-and-forget) — set per-pane user name override (Kanban inline rename)
+  PANE_SET_USER_NAME: 'pane:set-user-name',
+
+  // main → renderer — global policy changed (broadcast to all windows)
+  COMPLETION_POLICY_GLOBAL_CHANGED: 'completion-policy:global-changed',
+  // main → renderer — workspace policy changed (broadcast to that workspace's window)
+  COMPLETION_POLICY_WORKSPACE_CHANGED: 'completion-policy:workspace-changed',
+
+  // --- App config (Configuration view) ---
+
+  // renderer → main (invoke/reply)
+  APP_CONFIG_GET: 'app-config:get',
+  APP_CONFIG_SET: 'app-config:set',
+  APP_CONFIG_RESET: 'app-config:reset',
+
+  // main → renderer — broadcast on every mutate so all windows stay in sync
+  APP_CONFIG_CHANGED: 'app-config:changed',
+
+  // --- Inspector (cross-pane summary drawer) ---
+
+  // renderer → main (invoke/reply) — pull current summary for a workspace on demand
+  INSPECTOR_GET_SUMMARY: 'inspector:get-summary',
+  // renderer → main (invoke/reply) — one-shot claude -p for natural-language report
+  INSPECTOR_ASK_LLM: 'inspector:ask-llm',
+  // main → renderer — broadcast workspace summary to the workspace's window (sent only
+  // when at least one input to the summary has changed vs the prior broadcast)
+  INSPECTOR_SUMMARY: 'inspector:summary'
+} as const
+
+export type IpcChannel = (typeof IPC)[keyof typeof IPC]
+
+// ---------------------------------------------------------------------------
+// Serializable tool usage summary (Record instead of Map, for IPC transport)
+// ---------------------------------------------------------------------------
+
+/** JSON-serializable form of ToolUsageSummary (Map<string,number>) */
+export type ToolUsageSummaryRecord = Record<string, number>
+
+// ---------------------------------------------------------------------------
+// Serializable PaneMetrics for IPC transport
+// ---------------------------------------------------------------------------
+
+export interface PaneMetricsIpc {
+  totalTokens: number | null
+  contextPercent: number | null
+  toolsUsed: ToolUsageSummaryRecord | null
+  totalCostUsd: number | null
+  durationMs: number | null
+  modelDisplayName: string | null
+  linesAdded: number | null
+  linesRemoved: number | null
+  sessionTitle: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Serialization helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert an in-memory PaneMetrics object to the JSON-serializable IPC form.
+ * Converts toolsUsed Map → Record and preserves all nullable fields.
+ */
+export function metricsToIpc(metrics: PaneMetrics): PaneMetricsIpc {
+  return {
+    totalTokens: metrics.totalTokens,
+    contextPercent: metrics.contextPercent,
+    toolsUsed: metrics.toolsUsed ? Object.fromEntries(metrics.toolsUsed) : null,
+    totalCostUsd: metrics.totalCostUsd,
+    durationMs: metrics.durationMs,
+    modelDisplayName: metrics.modelDisplayName,
+    linesAdded: metrics.linesAdded,
+    linesRemoved: metrics.linesRemoved,
+    sessionTitle: metrics.sessionTitle
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — renderer → main
+// ---------------------------------------------------------------------------
+
+/** pane:spawn — request a new Claude Code terminal pane */
+export interface PaneSpawnPayload {
+  mode: 'new-worktree' | 'existing-worktree' | 'manual-path' | 'resume-session'
+  /** Required for new-worktree and existing-worktree modes */
+  repoPath?: string
+  /** Required for existing-worktree and manual-path modes */
+  worktreePath?: string
+  /** Optional user-specified worktree name for new-worktree mode; auto-generated if omitted */
+  worktreeName?: string
+  /** Session ID for resume-session mode (PE-06) */
+  sessionId?: string
+  /** Effort level for the new pane (PE-03) */
+  effort?: EffortLevel
+  /** Claude model for the new pane (passed via --model on spawn) */
+  model?: Model
+  /** Workspace this terminal belongs to (required when workspace system is active) */
+  workspaceId?: string
+}
+
+/** pane:close — request PTY kill and pane cleanup */
+export interface PaneClosePayload {
+  paneId: string
+}
+
+/** pane:input — user keyboard input forwarded to PTY */
+export interface PaneInputPayload {
+  paneId: string
+  data: string
+}
+
+/** pane:resize — terminal resize event */
+export interface PaneResizePayload {
+  paneId: string
+  cols: number
+  rows: number
+}
+
+/** pane:ready — XTermView has mounted and is listening for pane:data */
+export interface PaneReadyPayload {
+  paneId: string
+}
+
+/** pane:move — move pane to a different window */
+export interface PaneMovePayload {
+  paneId: string
+  targetWindowId: string
+  /** xterm.js serialized buffer state for restoring terminal content in target window */
+  serializedBuffer?: string
+}
+
+/** window:new — create a new window, optionally tearing a pane into it */
+export interface WindowNewPayload {
+  /** If provided, move this pane into the new window after it loads */
+  paneId?: string
+  /** Serialized xterm buffer for the torn-off pane (B-049) */
+  serializedBuffer?: string
+}
+
+/** An open window entry returned by window:list */
+export interface WindowEntry {
+  id: string
+  /** Human-readable label, e.g. "Window 1" */
+  label: string
+}
+
+/** worktree:list — request list of git worktrees for a repo */
+export interface WorktreeListPayload {
+  repoPath: string
+}
+
+/** path:validate — check that a path exists and is a directory */
+export interface PathValidatePayload {
+  path: string
+}
+
+/** path:validate response */
+export interface PathValidateResult {
+  valid: boolean
+  error?: string
+  /** Whether the path is inside a git repository */
+  isGitRepo?: boolean
+}
+
+/** pane:spawn response — null error means success */
+export interface PaneSpawnResult {
+  error: string | null
+}
+
+/** A single git worktree entry */
+export interface WorktreeEntry {
+  path: string
+  branch: string | null
+  isMain: boolean
+}
+
+/** worktree:list response */
+export interface WorktreeListResult {
+  entries: WorktreeEntry[]
+  error?: string
+}
+
+/** feedback:send — send a bug report or feature request */
+export interface FeedbackSendPayload {
+  type: 'bug' | 'feature'
+  message: string
+  email?: string
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — main → renderer
+// ---------------------------------------------------------------------------
+
+/** pane:spawned — confirms pane was created, provides initial metadata */
+export interface PaneSpawnedPayload {
+  paneId: string
+  repoName: string
+  worktreeName: string
+  worktreePath: string
+  isApiBilling: boolean
+  effort: EffortLevel
+  model: Model
+  isWorktree: boolean
+  /** Optional user-supplied display name (Kanban). Always null at spawn. */
+  userName?: string | null
+}
+
+/** pane:closed — confirms pane PTY was destroyed */
+export interface PaneClosedPayload {
+  paneId: string
+}
+
+/** pane:data — PTY output stream chunk */
+export interface PaneDataPayload {
+  paneId: string
+  data: string
+}
+
+/** pane:status — status change detected (emitted only on actual changes) */
+export interface PaneStatusPayload {
+  paneId: string
+  status: PaneStatus
+  activeToolName: string | null
+  source: 'hook' | 'pty-fallback'
+}
+
+/** pane:metrics — metrics update from MetricsCollector */
+export interface PaneMetricsPayload {
+  paneId: string
+  metrics: PaneMetricsIpc
+}
+
+/** pane:respawn — request to restart PTY for a terminated pane (B-052) */
+export interface PaneRespawnPayload {
+  paneId: string
+}
+
+/**
+ * pane:list-get response — full snapshot of every live pane in the caller's
+ * BrowserWindow, assembled from the main-process SessionRegistry. Used as the
+ * renderer's mount-time seed so a reloaded window recovers its pane list
+ * without relying on replayed PANE_SPAWNED broadcasts.
+ */
+export interface PaneRehydrateEntry {
+  paneId: string
+  repoName: string
+  worktreeName: string
+  worktreePath: string
+  isApiBilling: boolean
+  effort: EffortLevel
+  model: Model
+  isWorktree: boolean
+  status: PaneStatus
+  activeToolName: string | null
+  statusSource: 'hook' | 'pty-fallback'
+  metrics: PaneMetricsIpc
+  terminated: boolean
+  gitStatus: GitStatus | null
+  completionStatus: CompletionActionStatus | null
+  isResolvingConflict: boolean
+  /** Optional user-supplied name override (Kanban). Null = no override. */
+  userName?: string | null
+  /** Current Claude Code permission mode (detected from PTY output). */
+  permissionMode?: 'normal' | 'plan'
+}
+
+export interface PaneListResult {
+  panes: PaneRehydrateEntry[]
+}
+
+/** pane:terminated — PTY exited unexpectedly; pane stays visible for respawn (B-052) */
+export interface PaneTerminatedPayload {
+  paneId: string
+  exitCode: number
+}
+
+/** pane:respawned — PTY was successfully restarted (B-052) */
+export interface PaneRespawnedPayload {
+  paneId: string
+}
+
+/** pane:moved-in — signals the target window to adopt the pane (B-048) */
+export interface PaneMovedInPayload {
+  paneId: string
+  repoName: string
+  worktreeName: string
+  worktreePath: string
+  isApiBilling: boolean
+  effort: EffortLevel
+  model: Model
+  status: import('./types').PaneStatus
+  activeToolName: string | null
+  metrics: PaneMetricsIpc
+  /** Serialized xterm.js buffer from source window for content restoration */
+  serializedBuffer?: string
+}
+
+/** pane:effort — update effort level for a pane (PE-03) */
+export interface PaneEffortPayload {
+  paneId: string
+  effort: EffortLevel
+}
+
+/**
+ * pane:set-user-name — fire-and-forget. Pass `userName: null` to clear the
+ * override. Renderer keeps optimistic local state; main mirrors into the
+ * SessionRegistry so PANE_LIST_GET responses pick up the new value.
+ */
+export interface PaneSetUserNamePayload {
+  paneId: string
+  userName: string | null
+}
+
+/** pane:model — update Claude model for a pane (live via /model slash command) */
+export interface PaneModelPayload {
+  paneId: string
+  model: Model
+}
+
+/** global:effort — write effort level to ~/.claude/settings.json */
+export interface GlobalEffortPayload {
+  effort: EffortLevel
+}
+
+/** A single rate-limit window (5-hour or 7-day) */
+export interface RateLimitWindow {
+  usedPercentage: number
+  /** ISO 8601 timestamp when this window resets */
+  resetsAt: string
+}
+
+/** rate-limits:update — account-level rate limit data broadcast to all windows (PE-01) */
+export interface RateLimitsPayload {
+  fiveHour: RateLimitWindow | null
+  sevenDay: RateLimitWindow | null
+}
+
+/** window:confirm-close-sessions — main asks renderer to show close confirmation (B-051) */
+export interface ConfirmCloseSessionsPayload {
+  activeSessionCount: number
+  /** Number of worktree panes with uncommitted git changes */
+  worktreeUncommittedCount?: number
+  /** Summary of worktrees with uncommitted changes for display */
+  uncommittedWorktrees?: Array<{ worktreeName: string; changedFileCount: number }>
+}
+
+/** window:confirm-close-sessions-response — renderer replies with user's choice (B-051) */
+export interface ConfirmCloseSessionsResponsePayload {
+  confirmed: boolean
+  /** If true, commit all uncommitted worktree changes before closing */
+  commitAll?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — permissions management
+// ---------------------------------------------------------------------------
+
+export interface PermissionsGetEffectivePayload {
+  scope: 'global' | 'project'
+  projectPath?: string
+}
+
+export interface PermissionsGetEffectiveResult {
+  allow: string[]
+  deny: string[]
+  overrides: PermissionOverrides
+}
+
+export interface PermissionsSetScopePayload {
+  scope: 'global' | 'project'
+  projectPath?: string
+  overrides: PermissionOverrides
+}
+
+export interface PermissionsResetScopePayload {
+  scope: 'global' | 'project'
+  projectPath?: string
+}
+
+export interface PermissionsDefaultsResult {
+  allow: readonly string[]
+  deny: readonly string[]
+}
+
+/** permissions:get-known-rules — union of defaults + every user-added entry across all scopes */
+export interface PermissionsKnownRulesResult {
+  rules: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — workspace management
+// ---------------------------------------------------------------------------
+
+/** workspace:create — request to create a new workspace */
+export interface WorkspaceCreatePayload {
+  type: WorkspaceType
+  /** Optional custom name; auto-generated from type/constraint if omitted */
+  name?: string
+  constraint: WorkspaceConstraint
+}
+
+/** workspace:create response */
+export interface WorkspaceCreateResult {
+  error: string | null
+  workspaceId?: string
+}
+
+/** workspace:activate — request to activate a dormant workspace */
+export interface WorkspaceActivatePayload {
+  workspaceId: string
+  /** Optional: only restore these specific terminals (by original paneId from TerminalSnapshot) */
+  terminalIds?: string[]
+}
+
+/** workspace:activate response */
+export interface WorkspaceActivateResult {
+  error: string | null
+}
+
+/** workspace:deactivate — request to deactivate an active workspace */
+export interface WorkspaceDeactivatePayload {
+  workspaceId: string
+}
+
+/** workspace:delete — permanently remove a dormant workspace */
+export interface WorkspaceDeletePayload {
+  workspaceId: string
+}
+
+/** workspace:archive — move a dormant workspace into the archived state */
+export interface WorkspaceArchivePayload {
+  workspaceId: string
+}
+
+/** workspace:archive response */
+export interface WorkspaceArchiveResult {
+  error: string | null
+}
+
+/** workspace:unarchive — restore an archived workspace back to dormant */
+export interface WorkspaceUnarchivePayload {
+  workspaceId: string
+}
+
+/** workspace:unarchive response */
+export interface WorkspaceUnarchiveResult {
+  error: string | null
+}
+
+/** workspace:delete-archived — permanently remove an archived workspace */
+export interface WorkspaceDeleteArchivedPayload {
+  workspaceId: string
+}
+
+/** workspace:delete-archived response */
+export interface WorkspaceDeleteArchivedResult {
+  error: string | null
+}
+
+/** workspace:rename — rename a workspace */
+export interface WorkspaceRenamePayload {
+  workspaceId: string
+  name: string
+}
+
+/** workspace:dormant-terminals — get dormant terminals for a workspace */
+export interface WorkspacePausedTerminalsPayload {
+  workspaceId: string
+}
+
+/** workspace:resume-terminal — resume a specific dormant terminal in its workspace */
+export interface WorkspaceResumeTerminalPayload {
+  workspaceId: string
+  /** Original paneId from TerminalSnapshot */
+  terminalSnapshotPaneId: string
+}
+
+/** workspace:resume-terminal response */
+export interface WorkspaceResumeTerminalResult {
+  error: string | null
+}
+
+/** manager:focus-workspace — focus a workspace's window */
+export interface ManagerFocusWorkspacePayload {
+  workspaceId: string
+}
+
+/** manager:focus-terminal — focus a specific terminal in its workspace window */
+export interface ManagerFocusTerminalPayload {
+  workspaceId: string
+  paneId: string
+}
+
+/** window:init — sent from main to renderer after RENDERER_READY to identify window type */
+export interface WindowInitPayload {
+  windowType: 'manager' | 'workspace'
+  workspaceId?: string
+  workspaceName?: string
+  workspaceType?: WorkspaceType
+  workspaceConstraint?: WorkspaceConstraint
+  /** Drones to auto-resume when this workspace window opens (from workspace reactivation) */
+  terminalsToResume?: TerminalSnapshot[]
+  /** Whether the claude CLI was found at app launch (manager window only) */
+  claudeFound?: boolean
+  /** Global completion policy at the time the window was opened */
+  globalCompletionPolicy?: CompletionPolicy
+  /** Workspace-scoped completion policy (null = inherit global). Only set for workspace windows. */
+  workspaceCompletionPolicy?: CompletionPolicy | null
+  /** Persisted top-level view mode for this workspace. Defaults to 'wall' when absent. */
+  workspaceViewMode?: 'wall' | 'kanban'
+  /** Persisted active pane in Kanban view (null when no selection yet). */
+  workspaceActivePaneId?: string | null
+}
+
+/** manager:state-update — full manager state pushed to the manager window */
+export interface ManagerStatePayload {
+  activeWorkspaces: RendererWorkspace[]
+  dormantWorkspaces: RendererWorkspace[]
+  archivedWorkspaces: RendererWorkspace[]
+  /** The next workspace ordinal that would be assigned to a new workspace.
+   *  Used by LaunchForm to prefill the Workspace Name field. */
+  nextWorkspaceNumber: number
+}
+
+/** workspace:dormant-update — dormant terminals list update for a workspace window */
+export interface WorkspacePausedUpdatePayload {
+  workspaceId: string
+  pausedTerminals: TerminalSnapshot[]
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — git status and worktree close
+// ---------------------------------------------------------------------------
+
+/** pane:git-status — git status update for a pane (main → renderer) */
+export interface PaneGitStatusPayload {
+  paneId: string
+  gitStatus: GitStatus
+}
+
+/**
+ * pane:permission-mode — Claude Code permission mode derived from PTY output.
+ * Broadcast only on transitions (main's StatusDetector gates this). Drives the
+ * Kanban mode badge and the Stop-hook plan-mode override.
+ */
+export interface PanePermissionModePayload {
+  paneId: string
+  permissionMode: 'normal' | 'plan'
+}
+
+/** pane:close-worktree — close a pane with git/worktree operations (renderer → main invoke/reply).
+ *  Only keep-worktree and prune-worktree variants are supported; the merge-close
+ *  action flows through IPC.PANE_MERGE_AND_CLOSE instead. */
+export interface PaneCloseWorktreePayload {
+  paneId: string
+  action: 'keep-close' | 'prune-close'
+}
+
+/** pane:close-worktree response */
+export interface PaneCloseWorktreeResult {
+  error: string | null
+}
+
+/** pane:merge-and-close — merge the pane's worktree into its base branch and,
+ *  on success, close the pane. Used by the "Merge & close" action in the
+ *  PaneCloseConfirmModal. Conflict / dirty-main states leave the pane open
+ *  and return the state so the modal can surface the error. */
+export interface PaneMergeAndClosePayload {
+  paneId: string
+  strategy: MergeStrategy
+}
+
+export interface PaneMergeAndCloseResult {
+  error: string | null
+  /** When set, the merge did not complete and the pane is still open. */
+  state?: 'conflict' | 'dirty-main' | 'blocked'
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — workspace/management close sequence
+// ---------------------------------------------------------------------------
+
+/** Per-pane descriptor included in CLOSE_WORKSPACE_SEQUENCE_START. Contains
+ *  exactly what the PaneCloseConfirmModal needs to render — nothing else —
+ *  so the renderer doesn't have to cross-reference session state during the
+ *  sequence. */
+export interface CloseSequencePaneDescriptor {
+  paneId: string
+  status: PaneStatus
+  isWorktree: boolean
+  /** Human-readable repo display name */
+  repoName: string
+  /** Preferred display name — sessionTitle first, falls back to worktreeName. */
+  agentName: string
+  worktreeName: string
+  /** Git snapshot at the moment the sequence started — avoids jitter if a
+   *  late poll update lands mid-confirmation. */
+  branchName: string | null
+  hasUncommittedChanges: boolean
+  changedFileCount: number
+  commitsAhead: number
+  /** When true the pane has never consumed tokens — the renderer still
+   *  filters these to bypass the modal, but main sends them anyway so the
+   *  override path can include them. */
+  isUntouched: boolean
+}
+
+/** window:close-workspace-sequence-start — main → renderer */
+export interface CloseWorkspaceSequenceStartPayload {
+  workspaceId: string
+  workspaceName: string
+  panes: CloseSequencePaneDescriptor[]
+  /** True when this sequence is being driven by a management-window close. */
+  isManagerInitiated: boolean
+  /** Populated only when isManagerInitiated is true. */
+  managerProgress: { current: number; total: number } | null
+}
+
+/** window:close-workspace-sequence-response — renderer → main */
+export interface CloseWorkspaceSequenceResponsePayload {
+  workspaceId: string
+  action: 'cancel' | 'complete' | 'override-all'
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — completion actions (merge/PR flow)
+// ---------------------------------------------------------------------------
+
+/** completion:merge — request merge for a pane (renderer → main invoke/reply) */
+export interface CompletionMergePayload {
+  paneId: string
+  strategy: MergeStrategy
+}
+
+/** completion:merge response */
+export interface CompletionMergeResult {
+  error: string | null
+}
+
+/** completion:pr — request PR creation for a pane (renderer → main invoke/reply) */
+export interface CompletionPrPayload {
+  paneId: string
+  draft: boolean
+}
+
+/** completion:pr response */
+export interface CompletionPrResult {
+  error: string | null
+  prUrl?: string
+}
+
+/** completion:abort — abort in-progress merge/rebase (renderer → main invoke/reply) */
+export interface CompletionAbortPayload {
+  paneId: string
+}
+
+/** completion:abort response */
+export interface CompletionAbortResult {
+  error: string | null
+}
+
+/** completion:dismiss — dismiss the action bar (renderer → main fire-and-forget) */
+export interface CompletionDismissPayload {
+  paneId: string
+}
+
+/** completion:clear-state — reset a failed action back to 'ready' without hiding the bar */
+export interface CompletionClearStatePayload {
+  paneId: string
+}
+
+/** completion:cancel-queue — cancel a queued merge (renderer → main invoke/reply) */
+export interface CompletionCancelQueuePayload {
+  paneId: string
+}
+
+/** completion:cancel-queue response */
+export interface CompletionCancelQueueResult {
+  error: string | null
+}
+
+/** completion:resolve — request Claude-assisted conflict resolution (renderer → main invoke/reply) */
+export interface CompletionResolvePayload {
+  paneId: string
+}
+
+/** completion:resolve response */
+export interface CompletionResolveResult {
+  error: string | null
+}
+
+/**
+ * completion:status — completion status update (main → renderer).
+ * `status` may be null to signal that the action bar should be dismissed
+ * (e.g. when a pane transitions out of 'done' or the user dismisses the bar).
+ */
+export interface CompletionStatusPayload {
+  paneId: string
+  status: CompletionActionStatus | null
+}
+
+/** pane:resolving-conflict — pane resolving-conflict flag update (main → renderer) */
+export interface PaneResolvingConflictPayload {
+  paneId: string
+  isResolvingConflict: boolean
+}
+
+/** gh:cli-check response */
+export interface GhCliCheckResult {
+  available: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — completion policies (Phase 3)
+// ---------------------------------------------------------------------------
+
+/** completion-policy:set-global — update the app-wide default policy */
+export interface CompletionPolicySetGlobalPayload {
+  policy: CompletionPolicy
+}
+
+/** completion-policy:set-workspace — update a workspace's policy override (null clears) */
+export interface CompletionPolicySetWorkspacePayload {
+  workspaceId: string
+  policy: CompletionPolicy | null
+}
+
+/** completion-policy:get-workspace — fetch a workspace's policy override */
+export interface CompletionPolicyGetWorkspacePayload {
+  workspaceId: string
+}
+
+/** completion-policy:global-changed — broadcast when the global policy is updated */
+export interface CompletionPolicyGlobalChangedPayload {
+  policy: CompletionPolicy
+}
+
+/** completion-policy:workspace-changed — broadcast when a workspace's policy is updated */
+export interface CompletionPolicyWorkspaceChangedPayload {
+  workspaceId: string
+  policy: CompletionPolicy | null
+}
+
+/** completion:merge-all — enqueue merges for every eligible pane in a scope */
+export interface CompletionMergeAllPayload {
+  scope: 'workspace' | 'global'
+  /** Required when scope === 'workspace' */
+  workspaceId?: string
+  strategy: MergeStrategy
+  /** When true, also persist the scope's policy to `auto-merge` with this strategy */
+  alsoSetPolicy?: boolean
+  /**
+   * Optional per-repo scope. When set with scope='workspace', only panes whose
+   * inspector groupKey (parent dir) matches `repoPath` are eligible. Used by
+   * the Kanban repo rail's per-repo Merge button. Ignored when omitted.
+   */
+  repoPath?: string
+}
+
+export interface CompletionMergeAllResult {
+  error: string | null
+  /** How many panes were enqueued (or started) */
+  enqueued: number
+}
+
+/**
+ * repo:diff-get — read the unified diff of a worktree vs its base branch.
+ * Used by the Kanban diff viewer modal. Truncated server-side to keep IPC
+ * payloads bounded; the result indicates when truncation happened.
+ */
+export interface RepoDiffGetPayload {
+  paneId: string
+}
+
+export interface RepoDiffGetResult {
+  /** Full diff text (already truncated when `truncated` is true). */
+  diff: string
+  /** True when the diff exceeded the byte limit and was cut. */
+  truncated: boolean
+  /** Branch the diff was computed against, when known. */
+  baseBranch: string | null
+  /** Set on any failure (no worktree, no base branch, git error). */
+  error?: string
+}
+
+/**
+ * repo:claude-md-read — read the per-repo CLAUDE.md content + mtime.
+ *
+ * `repoPath` is the inspector groupKey (rollup repoPath); main resolves the
+ * actual repo root via the inspector cache before reading.
+ */
+export interface RepoClaudeMdReadPayload {
+  workspaceId: string
+  repoPath: string
+}
+
+export interface RepoClaudeMdReadResult {
+  /** File contents; empty string when the file doesn't exist yet. */
+  content: string
+  /** mtime captured at read; 0 when the file did not exist. Pass back on save. */
+  mtimeMs: number
+  /** Set when the read failed (repo unknown, FS error, etc.). */
+  error?: string
+}
+
+/**
+ * repo:claude-md-save — write CLAUDE.md, commit on the base branch, and
+ * optionally push. Per Interpretation A in the concept doc.
+ */
+export interface RepoClaudeMdSavePayload {
+  workspaceId: string
+  repoPath: string
+  content: string
+  /** mtime returned by the prior read — used for the external-modification guard. */
+  expectedMtimeMs: number
+  /** When true, run `git push origin <base>` after the commit. */
+  push: boolean
+}
+
+export interface RepoClaudeMdSaveResult {
+  /**
+   * Null on success.
+   * 'modified-externally' when the file was changed outside the editor — the
+   * renderer shows a banner and offers reload.
+   * Other strings are surfaced verbatim.
+   */
+  error: string | null
+  /** Set when error === 'modified-externally': the new on-disk content + mtime. */
+  freshContent?: string
+  freshMtimeMs?: number
+  /** Push leg failed but the commit succeeded. UI shows this inline. */
+  pushError?: string
+}
+
+/**
+ * repo:push-base-branch — push a single repo's base branch to origin.
+ *
+ * `repoPath` is the inspector groupKey (the rollup's repoPath); main resolves
+ * the actual main repo working tree via the inspector's per-group cache.
+ */
+export interface RepoPushBaseBranchPayload {
+  workspaceId: string
+  repoPath: string
+}
+
+export interface RepoPushBaseBranchResult {
+  error: string | null
+  /** Convenience for renderer optimism: the count after a successful push (always 0). */
+  baseAheadOfOrigin?: number | null
+}
+
+/**
+ * repo:merge-and-push — composite Kanban action: merge every eligible pane in
+ * the given repo, then run a single push of the resulting base-branch commits.
+ *
+ * On any merge failure (conflict / dirty-main / error) the push is skipped.
+ * The result reports per-pane completions and whether the push fired.
+ */
+export interface RepoMergeAndPushPayload {
+  workspaceId: string
+  repoPath: string
+  strategy: MergeStrategy
+}
+
+export interface RepoMergeAndPushResult {
+  error: string | null
+  /** How many panes were enqueued for merge. */
+  enqueued: number
+  /** How many merges completed successfully. */
+  mergedCount: number
+  /** Whether `git push` was actually attempted (i.e., all merges succeeded). */
+  pushAttempted: boolean
+  /** Push error message if push was attempted but failed. */
+  pushError?: string
+}
+
+/**
+ * repo:approve-plans-in-sequence — kick off the PlanApprovalSequencer for a
+ * repo. Every pane currently sitting on Claude Code's plan-approval picker is
+ * approved one-by-one with auto-accept-edits; after each pane's run ends, the
+ * next is approved. Panes that newly enter the picker during the sequence are
+ * appended to the queue.
+ */
+export interface RepoApprovePlansInSequencePayload {
+  workspaceId: string
+  repoPath: string
+}
+
+export interface RepoApprovePlansInSequenceResult {
+  error: string | null
+  /** How many panes were seeded into the queue at start. */
+  queuedCount: number
+}
+
+/**
+ * repo:stop-plan-sequence — cancel any pending approvals on the given repo.
+ * The currently in-flight pane is left alone; its run continues in auto-accept
+ * mode until it finishes or pauses naturally.
+ */
+export interface RepoStopPlanSequencePayload {
+  workspaceId: string
+  repoPath: string
+}
+
+export interface RepoStopPlanSequenceResult {
+  error: string | null
+}
+
+/**
+ * repo:retry-failed-merges — re-run the merge for every tree in a repo
+ * whose last attempt left `completionActionStatus.state === 'error'`.
+ *
+ * Intentionally does NOT cover `'conflict'` or `'dirty-main'`: those states
+ * require user interaction (Resolve-with-Claude, or cleaning up main) and
+ * have their own per-pane affordances on the `CompletionActionBar`.
+ */
+export interface RepoRetryFailedMergesPayload {
+  workspaceId: string
+  repoPath: string
+  strategy: MergeStrategy
+}
+
+export interface RepoRetryFailedMergesResult {
+  error: string | null
+  /** How many panes were kicked off for retry. */
+  retriedCount: number
+}
+
+/** completion:pr-all — push & create PRs for every eligible pane in a scope */
+export interface CompletionPrAllPayload {
+  scope: 'workspace' | 'global'
+  /** Required when scope === 'workspace' */
+  workspaceId?: string
+  draft: boolean
+  /** When true, also persist the scope's policy to `auto-pr` / `auto-draft-pr` */
+  alsoSetPolicy?: boolean
+  /**
+   * Optional per-repo scope. When set, only panes whose inspector groupKey
+   * (parent dir of worktreePath) matches `repoPath` are eligible. Used by
+   * the Kanban repo-card "Create PR" button so it only opens PRs for that
+   * repo's ready trees. Mirrors CompletionMergeAllPayload.repoPath.
+   */
+  repoPath?: string
+}
+
+export interface CompletionPrAllResult {
+  error: string | null
+  /** How many panes had PRs initiated */
+  enqueued: number
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — onboarding flow
+// ---------------------------------------------------------------------------
+
+/** claude:check response */
+export interface ClaudeCheckResult {
+  found: boolean
+  version?: string
+}
+
+/** path:validate enhanced response (isGitRepo added for onboarding) */
+export interface PathValidateEnhancedResult {
+  valid: boolean
+  isGitRepo: boolean
+  error?: string
+}
+
+/** path:git-init — run `git init` in a directory */
+export interface GitInitPayload {
+  path: string
+}
+export interface GitInitResult {
+  ok: boolean
+  error?: string
+}
+
+/** workspace:create-with-terminals — create a workspace and batch-spawn terminals */
+export interface WorkspaceCreateWithTerminalsPayload {
+  /** Single repo for all panes. Ignored (and may be '') when `repoPaths` is supplied. */
+  repoPath: string
+  /** Per-pane repo paths. When present, length must equal `terminalCount` and takes precedence over `repoPath`. */
+  repoPaths?: string[]
+  terminalCount: number
+  worktreeMode: 'each-own' | 'shared'
+  namingMode: 'auto' | 'manual'
+  manualNames?: string[]
+  effort?: EffortLevel
+  /** Claude model for all spawned terminals (passed via --model on spawn) */
+  model?: Model
+  /** Initial top-level view mode for the new workspace (Kanban v1). Defaults to 'wall' when omitted. */
+  viewMode?: 'wall' | 'kanban'
+  /** User-provided workspace name. Omit / empty to auto-generate "Workspace N". */
+  name?: string
+}
+
+/** workspace:create-with-terminals response */
+export interface WorkspaceCreateWithTerminalsResult {
+  error: string | null
+  workspaceId?: string
+  /** Per-terminal spawn errors (non-fatal; some terminals may have succeeded) */
+  terminalErrors?: string[]
+}
+
+/** workspace:resume-last response */
+export interface WorkspaceResumeLastResult {
+  error: string | null
+  workspaceId?: string
+}
+
+/** open:external payload */
+export interface OpenExternalPayload {
+  url: string
+}
+
+/** workspace:reveal-path payload — show a path in the OS file manager */
+export interface WorkspaceRevealPathPayload {
+  path: string
+}
+
+/** workspace:reveal-path response */
+export interface WorkspaceRevealPathResult {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * workspace:set-view-mode — flip a workspace between Wall and Kanban.
+ * Persisted on the Workspace; survives close/reopen.
+ */
+export interface WorkspaceSetViewModePayload {
+  workspaceId: string
+  viewMode: 'wall' | 'kanban'
+}
+
+export interface WorkspaceSetViewModeResult {
+  error: string | null
+}
+
+/**
+ * workspace:set-active-pane — mark which pane is currently focused in Kanban
+ * mode. `paneId: null` clears the selection.
+ */
+export interface WorkspaceSetActivePanePayload {
+  workspaceId: string
+  paneId: string | null
+}
+
+export interface WorkspaceSetActivePaneResult {
+  error: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — app config
+// ---------------------------------------------------------------------------
+
+/** app-config:set — partial patch merged on top of current config */
+export type AppConfigSetPayload = Partial<AppConfig>
+
+/** app-config:changed — broadcast to all windows whenever the config changes */
+export interface AppConfigChangedPayload {
+  config: AppConfig
+}
+
+// ---------------------------------------------------------------------------
+// Payload type definitions — workspace keeper
+// ---------------------------------------------------------------------------
+
+/** workspace-keeper:get-summary — fetch current summary for a workspace on drawer open */
+export interface InspectorGetSummaryPayload {
+  workspaceId: string
+}
+
+export interface InspectorGetSummaryResult {
+  summary: WorkspaceSummary | null
+}
+
+/** workspace-keeper:ask-llm — one-shot natural-language report request */
+export interface InspectorAskLlmPayload {
+  workspaceId: string
+}
+
+export interface InspectorAskLlmResult {
+  report: InspectorReport
+}
+
+/** workspace-keeper:summary — main → renderer broadcast of fresh summary */
+export type InspectorSummaryPayload = WorkspaceSummary

@@ -1,0 +1,25 @@
+node_modules/
+out/
+dist/
+.DS_Store
+**/.DS_Store
+.claude/
+
+# Agent-only operating manual; not shipped in OSS
+CLAUDE.md
+
+# electron-builder output
+release/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Temp files used by the app at runtime
+/tmp/claudio-hooks-*.sock
+/tmp/claudio-statusline-*.json
+
+# Git worktrees created by the app
+.worktrees/
+
+# Local release watcher runtime state (logs, state.json)
+scripts/release-watcher/

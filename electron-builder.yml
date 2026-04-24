@@ -1,0 +1,53 @@
+appId: com.claudinha.app
+productName: Claudinha
+copyright: Copyright © 2026 Claudinha
+
+directories:
+  output: dist
+
+files:
+  - out/**/*
+  - assets/**/*
+  - scripts/**/*
+
+extraResources:
+  - from: assets
+    to: assets
+
+mac:
+  icon: assets/icons/icon.png
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  # Code signing: set CSC_LINK and CSC_KEY_PASSWORD env vars for production builds
+  # identity: null  # uncomment to build unsigned locally
+
+win:
+  icon: assets/icons/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+  # Code signing: set WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD env vars for production builds
+
+linux:
+  icon: assets/icons/icon.png
+  category: Development
+  target:
+    - target: AppImage
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+dmg:
+  writeUpdateInfo: false
+
+publish:
+  provider: github
+  releaseType: release

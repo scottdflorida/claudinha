@@ -1,0 +1,529 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -------------------------------------------------------------------------
+   Root tokens — green-tinted neutrals, OKLCH-derived
+   Phase I: additive — no old rules removed yet; components still read old
+   Tailwind classes. These properties become live when Phase II+ swaps them in.
+   ------------------------------------------------------------------------- */
+
+:root {
+  /* Typography */
+  --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-display: "Fraunces Variable", Fraunces, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-mono: Menlo, Monaco, "Cascadia Mono", "Courier New", monospace;
+
+  --text-micro: 11px;
+  --text-xs:    12px;
+  --text-sm:    13px;
+  --text-md:    15px;
+  --text-lg:    18px;
+  --text-2xl:   28px;
+
+  --text-display-sm: 32px;
+  --text-display-md: 44px;
+  --text-display-lg: 56px;
+
+  /* Spacing */
+  --space-px: 1px;
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-7:  48px;
+  --space-8:  64px;
+  --space-9:  96px;
+
+  /* Radii */
+  --radius-none: 0;
+  --radius-sm:   4px;
+  --radius-md:   6px;
+  --radius-lg:   10px;
+  --radius-xl:   14px;
+  --radius-2xl:  16px;
+  --radius-full: 9999px;
+
+  /* Motion */
+  --motion-instant: 80ms;
+  --motion-fast:    120ms;
+  --motion-base:    180ms;
+  --motion-medium:  260ms;
+  --motion-slow:    400ms;
+  --ease-linear:    linear;
+  --ease-out:       cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in:        cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out:    cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-index */
+  --z-base:    0;
+  --z-raised:  10;
+  --z-overlay: 20;
+  --z-popover: 30;
+  --z-modal:   40;
+  --z-toast:   50;
+
+  /* Pane-specific */
+  --pane-header-height:           32px;
+  --pane-tool-row-height:         24px;
+  --pane-separator-height:        1px;
+  --pane-border-width:            1.5px;
+  --pane-narrow-breakpoint:       320px;
+  --pane-vertical-compact-height: 240px;
+}
+
+/* -------------------------------------------------------------------------
+   Dark theme
+   ------------------------------------------------------------------------- */
+
+[data-theme="dark"] {
+  --color-bg-canvas:    #1E1C18;
+  --color-bg-surface:   #26231F;
+  --color-bg-raised:    #302C27;
+  --color-bg-overlay:   #3B3730;
+  --color-bg-sunken:    #141210;
+
+  --color-fg-primary:   #F0EBE0;
+  --color-fg-secondary: #C3BDB0;
+  --color-fg-muted:     #9A938A;
+  --color-fg-subtle:    #6A645B;
+  --color-fg-on-accent: #18150F;
+
+  --color-border-subtle: #35302A;
+  --color-border-strong: #4D473F;
+
+  --color-accent:        #E8B84B;
+  --color-accent-hover:  #F0C661;
+  --color-accent-active: #D0A138;
+  --color-accent-subtle: #3A231E;
+  --color-focus-ring:    color-mix(in oklch, var(--color-accent) 55%, transparent);
+
+  --color-brand:         #E8B84B;
+  --color-brand-hover:   #F0C661;
+  --color-brand-active:  #D0A138;
+  --color-brand-soft:    #E6D7B8;
+  --color-brand-soft-fg: #18150F;
+
+  --color-status-awaiting:    #9A938A;
+  --color-status-working:     #EDE8DC;
+  --color-status-needs-input: #6FA8FF;
+  --color-status-done:        #D6A240;
+  --color-status-lost:        #D95E47;
+
+  --color-info-subtle-bg:    #1F2C4A;
+  --color-info-fg:           #9FBCF0;
+  --color-success-subtle-bg: #1E2F22;
+  --color-success-fg:        #7FC7A5;
+  --color-warning-subtle-bg: #332A1D;
+  --color-warning-fg:        #D9B37A;
+  --color-danger-subtle-bg:  #3A231E;
+  --color-danger-fg:         #D9816E;
+
+  /* Rate-limit gauge — theme-aware so the same component reads correctly
+     on a dark canvas (light text on dark fill) AND a light canvas
+     (dark text on vivid fill). See RateLimitBar.tsx. */
+  --rate-limit-fill:         #2D4D81;
+  --rate-limit-fill-warning: #7A2E2E;
+  --rate-limit-text:         #E9EDE6;
+
+  /* Border for small floating-overlay pills (e.g. MetricsOverlay). Needs to
+     POP against the dark overlay bg, so it picks the warm-light gray family
+     instead of the dark warm-brown that powers normal subtle dividers. */
+  --color-overlay-border:    #9A938A;
+
+  --color-selection-bg: color-mix(in oklch, var(--color-accent) 55%, transparent);
+  --color-selection-fg: var(--color-fg-primary);
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.22);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.32), 0 1px 2px rgb(0 0 0 / 0.18);
+  --shadow-lg: 0 16px 32px rgb(0 0 0 / 0.40), 0 4px 8px rgb(0 0 0 / 0.24);
+
+  --font-weight-body:      450;
+  --font-weight-body-emph: 500;
+  --font-weight-label:     500;
+  --font-weight-title:     600;
+  --font-weight-hero:      650;
+  --font-weight-display:   520;
+}
+
+/* -------------------------------------------------------------------------
+   Light theme
+   ------------------------------------------------------------------------- */
+
+[data-theme="light"] {
+  --color-bg-canvas:    #F6F1E7;
+  --color-bg-surface:   #ECE5D6;
+  --color-bg-raised:    #E0D8C4;
+  --color-bg-overlay:   #D0C7B0;
+  --color-bg-sunken:    #FBF7EE;
+
+  --color-fg-primary:   #221E16;
+  --color-fg-secondary: #5A5143;
+  --color-fg-muted:     #857B68;
+  --color-fg-subtle:    #A69C86;
+  --color-fg-on-accent: #FBF7EE;
+
+  --color-border-subtle: #CDC3AC;
+  --color-border-strong: #A89E86;
+
+  --color-accent:        #B8872E;
+  --color-accent-hover:  #CA9A3C;
+  --color-accent-active: #9F7223;
+  --color-accent-subtle: #F3EAD4;
+  --color-focus-ring:    color-mix(in oklch, var(--color-accent) 55%, transparent);
+
+  --color-brand:         #B8872E;
+  --color-brand-hover:   #CA9A3C;
+  --color-brand-active:  #9F7223;
+  --color-brand-soft:    #2A2418;
+  --color-brand-soft-fg: #FBF7EE;
+
+  --color-status-awaiting:    #857B68;
+  --color-status-working:     #2A2418;
+  --color-status-needs-input: #2568E0;
+  --color-status-done:        #D6A240;
+  --color-status-lost:        #B4432F;
+
+  --color-info-subtle-bg:    #E4ECFB;
+  --color-info-fg:           #1E55BD;
+  --color-success-subtle-bg: #E8F1E8;
+  --color-success-fg:        #376B4D;
+  --color-warning-subtle-bg: #F3EAD4;
+  --color-warning-fg:        #7E5C1E;
+  --color-danger-subtle-bg:  #F3E1D8;
+  --color-danger-fg:         #A33428;
+
+  /* Rate-limit gauge — light theme uses a vivid blue fill with dark text so
+     the label stays legible across both the filled and the empty halves of
+     the bar. The warning fill keeps the warm-red signal of dark mode. */
+  --rate-limit-fill:         #4E85DF;
+  --rate-limit-fill-warning: #DB4D3F;
+  --rate-limit-text:         #18150F;
+
+  /* Border for small floating-overlay pills (e.g. MetricsOverlay). Light
+     theme keeps the warm beige that already reads correctly against the
+     light overlay bg. */
+  --color-overlay-border:    #CDC3AC;
+
+  --color-selection-bg: color-mix(in oklch, var(--color-accent) 35%, transparent);
+  --color-selection-fg: var(--color-fg-primary);
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 16px 32px rgb(0 0 0 / 0.12), 0 4px 8px rgb(0 0 0 / 0.06);
+
+  --font-weight-body:      500;
+  --font-weight-body-emph: 550;
+  --font-weight-label:     550;
+  --font-weight-title:     650;
+  --font-weight-hero:      700;
+  --font-weight-display:   560;
+}
+
+/* -------------------------------------------------------------------------
+   System-preference fallback (before JS sets data-theme)
+   ------------------------------------------------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg-canvas:    #1E1C18;
+    --color-bg-surface:   #26231F;
+    --color-bg-raised:    #302C27;
+    --color-bg-overlay:   #3B3730;
+    --color-bg-sunken:    #141210;
+    --color-fg-primary:   #F0EBE0;
+    --color-fg-secondary: #C3BDB0;
+    --color-fg-muted:     #9A938A;
+    --color-fg-subtle:    #6A645B;
+    --color-fg-on-accent: #18150F;
+    --color-border-subtle: #35302A;
+    --color-border-strong: #4D473F;
+    --color-accent:        #E8B84B;
+    --color-accent-hover:  #F0C661;
+    --color-accent-active: #D0A138;
+    --color-accent-subtle: #3A231E;
+    --color-focus-ring:    color-mix(in oklch, var(--color-accent) 55%, transparent);
+    --color-brand:         #E8B84B;
+    --color-brand-hover:   #F0C661;
+    --color-brand-active:  #D0A138;
+    --color-brand-soft:    #E6D7B8;
+    --color-brand-soft-fg: #18150F;
+    --color-status-awaiting:    #9A938A;
+    --color-status-working:     #EDE8DC;
+    --color-status-needs-input: #6FA8FF;
+    --color-status-done:        #D6A240;
+    --color-status-lost:        #D95E47;
+    --color-info-subtle-bg:    #1F2C4A;
+    --color-info-fg:           #9FBCF0;
+    --color-success-subtle-bg: #1E2F22;
+    --color-success-fg:        #7FC7A5;
+    --color-warning-subtle-bg: #332A1D;
+    --color-warning-fg:        #D9B37A;
+    --color-danger-subtle-bg:  #3A231E;
+    --color-danger-fg:         #D9816E;
+    --rate-limit-fill:         #2D4D81;
+    --rate-limit-fill-warning: #7A2E2E;
+    --rate-limit-text:         #E9EDE6;
+    --color-overlay-border:    #9A938A;
+    --color-selection-bg: color-mix(in oklch, var(--color-accent) 55%, transparent);
+    --color-selection-fg: var(--color-fg-primary);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.22);
+    --shadow-md: 0 4px 12px rgb(0 0 0 / 0.32), 0 1px 2px rgb(0 0 0 / 0.18);
+    --shadow-lg: 0 16px 32px rgb(0 0 0 / 0.40), 0 4px 8px rgb(0 0 0 / 0.24);
+    --font-weight-body:      450;
+    --font-weight-body-emph: 500;
+    --font-weight-label:     500;
+    --font-weight-title:     600;
+    --font-weight-hero:      650;
+    --font-weight-display:   520;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --color-bg-canvas:    #F6F1E7;
+    --color-bg-surface:   #ECE5D6;
+    --color-bg-raised:    #E0D8C4;
+    --color-bg-overlay:   #D0C7B0;
+    --color-bg-sunken:    #FBF7EE;
+    --color-fg-primary:   #221E16;
+    --color-fg-secondary: #5A5143;
+    --color-fg-muted:     #857B68;
+    --color-fg-subtle:    #A69C86;
+    --color-fg-on-accent: #FBF7EE;
+    --color-border-subtle: #CDC3AC;
+    --color-border-strong: #A89E86;
+    --color-accent:        #B8872E;
+    --color-accent-hover:  #CA9A3C;
+    --color-accent-active: #9F7223;
+    --color-accent-subtle: #F3EAD4;
+    --color-focus-ring:    color-mix(in oklch, var(--color-accent) 55%, transparent);
+    --color-brand:         #B8872E;
+    --color-brand-hover:   #CA9A3C;
+    --color-brand-active:  #9F7223;
+    --color-brand-soft:    #2A2418;
+    --color-brand-soft-fg: #FBF7EE;
+    --color-status-awaiting:    #857B68;
+    --color-status-working:     #2A2418;
+    --color-status-needs-input: #2568E0;
+    --color-status-done:        #D6A240;
+    --color-status-lost:        #B4432F;
+    --color-info-subtle-bg:    #E4ECFB;
+    --color-info-fg:           #1E55BD;
+    --color-success-subtle-bg: #E8F1E8;
+    --color-success-fg:        #376B4D;
+    --color-warning-subtle-bg: #F3EAD4;
+    --color-warning-fg:        #7E5C1E;
+    --color-danger-subtle-bg:  #F3E1D8;
+    --color-danger-fg:         #A33428;
+    --rate-limit-fill:         #4E85DF;
+    --rate-limit-fill-warning: #DB4D3F;
+    --rate-limit-text:         #18150F;
+    --color-overlay-border:    #CDC3AC;
+    --color-selection-bg: color-mix(in oklch, var(--color-accent) 35%, transparent);
+    --color-selection-fg: var(--color-fg-primary);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 12px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
+    --shadow-lg: 0 16px 32px rgb(0 0 0 / 0.12), 0 4px 8px rgb(0 0 0 / 0.06);
+    --font-weight-body:      500;
+    --font-weight-body-emph: 550;
+    --font-weight-label:     550;
+    --font-weight-title:     650;
+    --font-weight-hero:      700;
+    --font-weight-display:   560;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Base layer — existing rules preserved; new token-based versions alongside
+   ------------------------------------------------------------------------- */
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply w-full h-full m-0 p-0 overflow-hidden;
+    background-color: var(--color-bg-canvas);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Native dialog backdrop */
+  dialog::backdrop {
+    background: oklch(0.14 0.008 60 / 0.58);
+    animation: backdrop-fade-in 200ms linear forwards;
+  }
+  [data-theme="light"] dialog::backdrop {
+    background: oklch(0.22 0.012 60 / 0.32);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) dialog::backdrop {
+      background: oklch(0.22 0.012 60 / 0.32);
+    }
+  }
+  @keyframes backdrop-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes dialog-enter {
+    from { opacity: 0; transform: translateX(-50%) translateY(-50%) scale(0.98); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(-50%) scale(1); }
+  }
+}
+
+/*
+  Border pulse animation for unfocused panes with needs-input or done status.
+  Applied via the `animate-border-pulse` Tailwind utility.
+  Only the border pulses — status text overlay is excluded from this animation.
+*/
+
+button:focus {
+  outline: none;
+}
+
+/* Advanced Setup expand/collapse animation (LaunchForm). Uses the grid
+   1fr ↔ 0fr trick so we animate to the inner content's natural height
+   without measuring it in JS. overflow: hidden on the inner gives the
+   "waterfall" reveal — content uncovers top-down as the row grows.
+   visibility transitions on a delay so the collapsed section is removed
+   from the tab order (keyboard focus can't land in invisible inputs). */
+.advanced-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 0.5s ease-out, visibility 0s linear 0.5s;
+}
+.advanced-collapse.open {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows 0.5s ease-out, visibility 0s linear 0s;
+}
+.advanced-collapse > .advanced-collapse-inner {
+  overflow: hidden;
+}
+
+
+/* -------------------------------------------------------------------------
+   Status motion
+   ------------------------------------------------------------------------- */
+
+@keyframes border-pulse {
+  0%, 100% { box-shadow: var(--ring-idle); }
+  50%      { box-shadow: var(--ring-peak); }
+}
+
+@keyframes status-working-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.92; }
+}
+
+/* One-time lift entrance for error/lost pane transitions. */
+@keyframes error-lift {
+  0%   { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+  100% { transform: translateY(0);    box-shadow: none; }
+}
+.pane-border--error-lift {
+  animation: error-lift 200ms ease-out forwards;
+}
+
+/* -------------------------------------------------------------------------
+   Brand mark — gentle blink (landing hero only)
+   ------------------------------------------------------------------------- */
+
+@keyframes brand-mark-blink {
+  0%, 55%   { opacity: 1; }
+  65%, 75%  { opacity: 0.35; }
+  85%, 100% { opacity: 1; }
+}
+
+.brand-mark-blink {
+  animation: brand-mark-blink 2s ease-in-out infinite;
+}
+
+/* -------------------------------------------------------------------------
+   Reduced motion
+   ------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Preserve border signal when motion is suppressed (pulsing → static color) */
+  .pane-border--pulsing {
+    animation: none !important;
+    border-color: var(--flash-color) !important;
+  }
+}
+
+/*
+  xterm.js scrollbar — restore macOS-style overlay appearance.
+  The required xterm.css (L-012) sets overflow-y: scroll which forces a
+  permanent scrollbar with a visible white track. Override to a thin gray
+  thumb on a transparent track to match the native overlay look.
+*/
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/*
+  Kanban column overflow scrollbar — the whole point of letting the user
+  shrink the board is that hidden cards must be obvious, not silently clipped.
+  macOS's default "show scrollbars when scrolling" setting hides overlay
+  scrollbars at rest, so a column with off-screen cards gives zero visual
+  affordance. We reserve a stable gutter and render a non-overlay, always-
+  visible thumb so overflow reads instantly.
+
+  `scrollbar-gutter: stable` keeps the column's inner width constant whether
+  or not a scrollbar is currently rendered — columns don't jump when the user
+  drags the board taller/shorter and overflow toggles.
+*/
+.kanban-column-viewport {
+  scrollbar-gutter: stable;
+}
+.kanban-column-viewport::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+.kanban-column-viewport::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+}
+.kanban-column-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  min-height: 24px;
+}
+.kanban-column-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.45);
+}
+[data-theme="light"] .kanban-column-viewport::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .kanban-column-viewport::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.22);
+}
+[data-theme="light"] .kanban-column-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.38);
+}

@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+'use strict'
+
+// This bin script is for `claudinha` CLI invocation when installed via npm.
+// In development, use: npm run dev
+// In production, this would locate and launch the packaged Electron app.
+
+const path = require('path')
+const { execFileSync } = require('child_process')
+
+try {
+  const electronPath = require('electron')
+  const appPath = path.join(__dirname, '..')
+  execFileSync(electronPath, [appPath], { stdio: 'inherit' })
+} catch (err) {
+  console.error('Failed to launch Claudinha:', err.message)
+  process.exit(1)
+}
