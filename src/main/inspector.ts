@@ -296,7 +296,8 @@ export class InspectorService {
       paneStatus: pane.status,
       isReadyToMerge,
       completionState,
-      isAwaitingPlanApproval: isPaneAwaitingPlanApproval(pane)
+      isAwaitingPlanApproval: isPaneAwaitingPlanApproval(pane),
+      lastActivityAt: pane.statusChangedAt || pane.createdAt
     }
   }
 

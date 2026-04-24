@@ -603,6 +603,12 @@ export interface ReadyPaneEntry {
    * Drives the per-repo "Approve plans in sequence" button.
    */
   isAwaitingPlanApproval: boolean
+  /**
+   * Timestamp of the pane's most recent status change (falling back to its
+   * creation time before any transition has been observed). Drives the
+   * per-row "last activity" age display in the Kanban repo rail.
+   */
+  lastActivityAt: number
 }
 
 /**

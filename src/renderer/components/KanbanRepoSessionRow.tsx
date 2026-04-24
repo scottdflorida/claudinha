@@ -1,13 +1,12 @@
 import React from 'react'
 import type { CompletionActionState, PaneStatus } from '../../shared/types'
 import { STATUS_COLORS } from '../lib/constants'
+import { formatAge } from '../lib/format-age'
 
 interface KanbanRepoSessionRowProps {
   paneId: string
   /** Display name for the agent (sessionTitle | worktreeName | userName fallback chain). */
   name: string
-  /** Branch name if known — small dim suffix. */
-  branchName: string | null
   status: PaneStatus
   /**
    * Completion-flow state if the pane has been acted on (merge/PR).
@@ -19,6 +18,13 @@ interface KanbanRepoSessionRowProps {
   isActive: boolean
   linesAdded: number
   linesRemoved: number
+  /** Timestamp of the pane's most recent status transition. */
+  lastActivityAt: number
+  /**
+   * Shared "now" passed from the parent so every row in the rail ticks in
+   * lockstep and we don't spin a per-row interval. Millisecond epoch.
+   */
+  now: number
   onClick: () => void
 }
 
@@ -28,24 +34,27 @@ interface KanbanRepoSessionRowProps {
  * Click → set the workspace's active pane (same effect as clicking a card on
  * the top board). Active row gets a faint outline so the user knows where
  * they are in the rail.
+ *
+ * The right-hand slot shows the diff size (`+A −B`) when the pane has any
+ * changes vs base, and falls back to the time-since-last-activity otherwise.
+ * Branch name used to live here but was almost always identical to the
+ * worktree name shown on the left, so it's been removed.
  */
 export function KanbanRepoSessionRow({
   name,
-  branchName,
   status,
   completionState,
   isActive,
   linesAdded,
   linesRemoved,
+  lastActivityAt,
+  now,
   onClick
 }: KanbanRepoSessionRowProps): React.JSX.Element {
-  // Recolour the status dot red when the pane's last merge attempt failed
-  // with a generic error (as opposed to a conflict or dirty-main situation,
-  // both of which need manual recovery on the CompletionActionBar and stay
-  // on the regular done-dot so they don't look like "retry me").
   const dotColor =
     completionState === 'error' ? STATUS_COLORS.error : STATUS_COLORS[status]
   const showDiff = linesAdded > 0 || linesRemoved > 0
+  const ageLabel = formatAge(now - lastActivityAt)
   return (
     <button
       type="button"
@@ -66,16 +75,15 @@ export function KanbanRepoSessionRow({
       <span className="text-xs text-fg-primary truncate flex-1" title={name}>
         {name}
       </span>
-      {branchName && (
-        <span className="text-[11px] text-fg-muted truncate max-w-[35%]" title={branchName}>
-          {branchName}
-        </span>
-      )}
-      {showDiff && (
+      {showDiff ? (
         <span className="text-[11px] tabular-nums shrink-0">
           <span className="text-success-fg">+{linesAdded}</span>
           <span className="text-fg-muted"> </span>
           <span className="text-danger-fg">−{linesRemoved}</span>
+        </span>
+      ) : (
+        <span className="text-[11px] text-fg-muted tabular-nums shrink-0">
+          {ageLabel}
         </span>
       )}
     </button>

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight, Pencil } from 'lucide-react'
 import type { PaneStatus, ReadyPaneEntry, RepoRollup } from '../../shared/types'
 import { STATUS_COLORS } from '../lib/constants'
@@ -104,6 +104,16 @@ export function KanbanRepoCard({
   const showRetryFailedRow = rollup.erroredCount > 0
 
   const handleToggle = useCallback(() => setExpanded((v) => !v), [])
+
+  // Shared "now" that ticks every 30s so every row's last-activity label
+  // ages in lockstep without spawning a per-row interval. Summary broadcasts
+  // from the inspector already re-render on status transitions; this timer
+  // is just the steady-state fallback for panes that haven't transitioned.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
 
   return (
     <section
@@ -247,12 +257,13 @@ export function KanbanRepoCard({
                 <KanbanRepoSessionRow
                   paneId={p.paneId}
                   name={p.paneName}
-                  branchName={p.branchName}
                   status={p.paneStatus}
                   completionState={p.completionState}
                   isActive={activePaneId === p.paneId}
                   linesAdded={p.linesAdded}
                   linesRemoved={p.linesRemoved}
+                  lastActivityAt={p.lastActivityAt}
+                  now={now}
                   onClick={() => onSelectSession(p.paneId)}
                 />
               </li>

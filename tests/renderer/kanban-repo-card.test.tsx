@@ -35,6 +35,8 @@ function makePane(overrides: Partial<ReadyPaneEntry> = {}): ReadyPaneEntry {
     paneStatus: 'working',
     isReadyToMerge: false,
     completionState: null,
+    isAwaitingPlanApproval: false,
+    lastActivityAt: Date.now(),
     ...overrides
   }
 }
@@ -187,5 +189,43 @@ describe('KanbanRepoCard', () => {
     )
     expect(getByText('one').closest('button')!.getAttribute('aria-pressed')).toBe('false')
     expect(getByText('two').closest('button')!.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('shows diff counts on session rows when the pane has changes vs base', () => {
+    const { container } = render(
+      <KanbanRepoCard
+        rollup={makeRollup()}
+        panes={[
+          makePane({ paneId: 'a', paneName: 'agent-A', linesAdded: 12, linesRemoved: 3 })
+        ]}
+        activePaneId={null}
+        onSelectSession={() => {}}
+      />
+    )
+    // Diff wins over the age fallback on the right slot.
+    expect(within(container).getByText('+12')).toBeTruthy()
+    expect(within(container).getByText('−3')).toBeTruthy()
+  })
+
+  it('falls back to a last-activity age on session rows with no diff', () => {
+    const fiveMinAgo = Date.now() - 5 * 60_000
+    const { getByText, queryByText } = render(
+      <KanbanRepoCard
+        rollup={makeRollup()}
+        panes={[
+          makePane({
+            paneId: 'a',
+            paneName: 'agent-A',
+            linesAdded: 0,
+            linesRemoved: 0,
+            lastActivityAt: fiveMinAgo
+          })
+        ]}
+        activePaneId={null}
+        onSelectSession={() => {}}
+      />
+    )
+    expect(getByText('5m')).toBeTruthy()
+    expect(queryByText('+0')).toBeNull()
   })
 })
