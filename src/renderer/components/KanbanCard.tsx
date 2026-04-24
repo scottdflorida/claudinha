@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { FileDiff } from 'lucide-react'
+import { FileDiff, X } from 'lucide-react'
 import type { RendererPane } from '../hooks/usePaneState'
 import { usePaneState } from '../hooks/usePaneState'
 import { resolvePaneDisplayName } from '../../shared/pane-display'
@@ -16,6 +16,8 @@ interface KanbanCardProps {
   onClick: () => void
   /** Click on the diff chip — opens the diff viewer modal. */
   onDiffClick?: () => void
+  /** Click on the X — routes to the shared close-pane flow. */
+  onClose?: () => void
 }
 
 /**
@@ -62,7 +64,7 @@ const TONE_CLASSES: Record<'neutral' | 'good' | 'warn' | 'bad', string> = {
   bad: 'text-danger-fg'
 }
 
-export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick }: KanbanCardProps): React.JSX.Element {
+export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, onClose }: KanbanCardProps): React.JSX.Element {
   const t = useStrings()
   const agentName = resolvePaneDisplayName(pane)
   const activity = activityFor(pane, t)
@@ -112,6 +114,11 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick }
     e.stopPropagation()
     onDiffClick?.()
   }, [onDiffClick])
+
+  const handleCloseClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    onClose?.()
+  }, [onClose])
 
   // Focus indicator (feedback item 11):
   // - `bg-overlay` on focused to lift the background
@@ -216,6 +223,17 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick }
           >
             {sync.label}
           </span>
+        )}
+        {onClose && (
+          <button
+            type="button"
+            onClick={handleCloseClick}
+            aria-label={t.paneHeader.closePane}
+            title={t.paneHeader.clearPane}
+            className="shrink-0 text-fg-muted hover:text-danger-fg transition-colors duration-[80ms] -mr-1"
+          >
+            <X size={12} />
+          </button>
         )}
       </div>
 

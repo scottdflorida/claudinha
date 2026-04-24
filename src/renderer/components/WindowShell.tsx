@@ -799,6 +799,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
                     panes={panes}
                     activePaneId={activePaneId}
                     onCardClick={selectActivePane}
+                    onCloseCard={requestClosePane}
                   />
                 </div>
                 <KanbanResizeHandle

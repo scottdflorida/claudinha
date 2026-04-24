@@ -204,6 +204,7 @@ export function PaneHeader({
           isApiBilling={isApiBilling}
           model={model}
           onModelClick={handleModelClick}
+          onClose={handleClose}
         />
       ) : isNarrow ? (
         /* Narrow mode: single close + overflow kebab */
@@ -277,6 +278,7 @@ interface KanbanHeaderRightProps {
   isApiBilling: boolean
   model?: Model
   onModelClick?: (e: React.MouseEvent) => void
+  onClose?: (e: React.MouseEvent) => void
 }
 
 function KanbanHeaderRight({
@@ -287,7 +289,8 @@ function KanbanHeaderRight({
   metrics,
   isApiBilling,
   model,
-  onModelClick
+  onModelClick,
+  onClose
 }: KanbanHeaderRightProps): React.JSX.Element {
   const t = useStrings()
   const statusColor = terminated ? STATUS_TERMINATED_COLOR : STATUS_COLORS[paneStatus]
@@ -352,6 +355,18 @@ function KanbanHeaderRight({
           <span>{MODEL_NAMES[model]}</span>
           <ChevronDown size={10} className="opacity-60" aria-hidden />
         </button>
+      )}
+
+      {/* Close — mirrors the wall-view X so kanban users can close the active
+          terminal without first switching views. */}
+      {onClose && (
+        <IconBtn
+          icon={X}
+          label={t.paneHeader.closePane}
+          title={t.paneHeader.clearPane}
+          onClick={onClose}
+          danger
+        />
       )}
     </div>
   )

@@ -2,9 +2,10 @@
 //
 // PaneHeader — chromeMode='kanban' (Phase: Kanban polish, area F).
 //
-// Verifies: in Kanban mode the Move/Close icons are absent, replaced by an
-// inline status chip + compact metrics line. Wall mode is unchanged (the
-// Move/Close icons still render).
+// Verifies: in Kanban mode the Move icon is absent and the header renders an
+// inline status chip + compact metrics line. The Close icon is preserved so
+// users can close the active terminal without switching back to Wall view.
+// Wall mode is unchanged (the Move/Close icons still render).
 
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
@@ -33,15 +34,16 @@ describe('PaneHeader — chromeMode="kanban"', () => {
     expect(queryByLabelText('Move to window')).toBeNull()
   })
 
-  it('hides the Close-pane button', () => {
-    const { queryByLabelText } = render(
+  it('renders the Close-pane button so kanban users can close the active terminal', () => {
+    const { getByLabelText } = render(
       <PaneHeader
         {...baseProps()}
         chromeMode="kanban"
         paneStatus="done"
+        onClose={() => { /* no-op */ }}
       />
     )
-    expect(queryByLabelText('Close terminal')).toBeNull()
+    expect(getByLabelText('Close terminal')).toBeTruthy()
   })
 
   it('renders an inline status chip with the formatted activity phrase', () => {

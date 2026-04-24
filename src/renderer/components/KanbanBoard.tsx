@@ -9,6 +9,8 @@ interface KanbanBoardProps {
   panes: RendererPane[]
   activePaneId: string | null
   onCardClick: (paneId: string) => void
+  /** Routes the card-level X through the shared close-pane flow. */
+  onCloseCard?: (paneId: string) => void
 }
 
 /**
@@ -31,7 +33,7 @@ function bucketFor(pane: RendererPane): PaneStatus {
   return pane.status
 }
 
-export function KanbanBoard({ panes, activePaneId, onCardClick }: KanbanBoardProps): React.JSX.Element {
+export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: KanbanBoardProps): React.JSX.Element {
   const t = useStrings()
   const columnTitle: Record<PaneStatus, string> = {
     'awaiting-prompt': t.kanban.columnAwaitingPrompt,
@@ -77,6 +79,7 @@ export function KanbanBoard({ panes, activePaneId, onCardClick }: KanbanBoardPro
             activePaneId={activePaneId}
             onCardClick={onCardClick}
             onDiffClick={onDiffClick}
+            onCloseCard={onCloseCard}
           />
         ))}
       </div>
