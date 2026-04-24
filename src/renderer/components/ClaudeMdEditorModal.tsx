@@ -164,7 +164,7 @@ export function ClaudeMdEditorModal({
       aria-label={t.claudeMdEditor.ariaLabelFmt(repoLabel)}
     >
       <div
-        className="w-[720px] max-w-[92vw] max-h-[85vh] bg-surface border border-[var(--color-border-strong)] rounded-md shadow-xl flex flex-col"
+        className="w-[720px] max-w-[92vw] h-[85vh] bg-surface border border-[var(--color-border-strong)] rounded-md shadow-xl flex flex-col"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
         {/* Header */}
