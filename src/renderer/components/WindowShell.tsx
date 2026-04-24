@@ -261,6 +261,8 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   useEffect(() => {
     ipcInvoke(IPC.RATE_LIMITS_GET)
       .then((data) => {
+        // [rate-limits-debug] temporary — confirms initial seed result
+        console.log('[rate-limits] seed on mount:', data ? 'populated' : 'null')
         if (data) setRateLimits(data as RateLimitsPayload)
       })
       .catch(() => {/* non-fatal */})
@@ -292,6 +294,13 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
 
   // Main process → renderer: account-level rate limit update (PE-01)
   useIpcListener(IPC.RATE_LIMITS_UPDATE, (payload: unknown) => {
+    // [rate-limits-debug] temporary — confirms live IPC reception
+    const p = payload as RateLimitsPayload | null
+    console.log(
+      '[rate-limits] live update:',
+      'fiveHour=' + (p?.fiveHour ? p.fiveHour.usedPercentage + '%' : 'null'),
+      'sevenDay=' + (p?.sevenDay ? p.sevenDay.usedPercentage + '%' : 'null')
+    )
     setRateLimits(payload as RateLimitsPayload)
   })
 

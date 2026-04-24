@@ -165,6 +165,8 @@ export class MetricsCollector {
     })
 
     this.watchedFiles.set(paneId, filePath)
+    // [rate-limits-debug] temporary — confirms watcher is wired for this pane
+    console.log('[metrics-collector] watchPane', paneId, '->', filePath)
   }
 
   /**
@@ -216,6 +218,14 @@ export class MetricsCollector {
       console.warn('[metrics-collector] failed to parse statusline JSON for pane', paneId)
       return
     }
+
+    // [rate-limits-debug] temporary — confirms file write reached the watcher
+    console.log(
+      '[metrics-collector] onFileChange',
+      paneId,
+      'bytes=' + raw.length,
+      'hasRateLimits=' + (data.rate_limits ? 'yes' : 'no')
+    )
 
     this.applyStatuslineData(paneId, data)
   }
@@ -299,27 +309,51 @@ export class MetricsCollector {
    * to every window, not just the pane's window.
    */
   private broadcastRateLimitsIfChanged(data: StatuslineJson): void {
-    if (!data.rate_limits) return
+    if (!data.rate_limits) {
+      // [rate-limits-debug] temporary — Claude Code didn't include rate_limits
+      console.log('[metrics-collector] broadcast skipped: no rate_limits in payload')
+      return
+    }
 
     const fiveHour = this.extractRateLimitWindow(data.rate_limits['five_hour'])
     const sevenDay = this.extractRateLimitWindow(data.rate_limits['seven_day'])
 
     // Skip if both are null (no data)
-    if (!fiveHour && !sevenDay) return
+    if (!fiveHour && !sevenDay) {
+      // [rate-limits-debug] temporary — extractor returned null for both windows
+      console.log(
+        '[metrics-collector] broadcast skipped: both windows null',
+        'rawKeys=' + Object.keys(data.rate_limits).join(',')
+      )
+      return
+    }
 
     const rateLimitsPayload: RateLimitsPayload = { fiveHour, sevenDay }
     const json = JSON.stringify(rateLimitsPayload)
 
     // Deduplicate — only broadcast when values actually changed
-    if (json === this.lastRateLimitsJson) return
+    if (json === this.lastRateLimitsJson) {
+      // [rate-limits-debug] temporary — payload identical to last broadcast
+      console.log('[metrics-collector] broadcast skipped: unchanged')
+      return
+    }
     this.lastRateLimitsJson = json
 
     // Broadcast to all windows (rate limits are account-level, not per-pane)
+    let sentTo = 0
     for (const [, win] of this.windowManager.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send(IPC.RATE_LIMITS_UPDATE, rateLimitsPayload)
+        sentTo += 1
       }
     }
+    // [rate-limits-debug] temporary — confirms IPC send fan-out
+    console.log(
+      '[metrics-collector] broadcast sent',
+      'fiveHour=' + (fiveHour ? fiveHour.usedPercentage + '%' : 'null'),
+      'sevenDay=' + (sevenDay ? sevenDay.usedPercentage + '%' : 'null'),
+      'windows=' + sentTo
+    )
   }
 
   private extractRateLimitWindow(
