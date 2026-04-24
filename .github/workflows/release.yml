@@ -1,16 +1,17 @@
-name: Release
+name: Release (manual)
 
-# Builds unsigned Claudinha installers for macOS, Windows, and Linux
-# whenever a vX.Y.Z tag is pushed, and uploads them to the matching
-# GitHub Release via electron-builder's --publish=always flag.
+# Builds unsigned Claudinha installers for macOS, Windows, and Linux and
+# uploads them to a matching GitHub Release via electron-builder's
+# --publish=always flag.
 #
-# Builds are NOT code-signed or notarized. See README for the user-facing
-# consequences (Gatekeeper / SmartScreen warnings on first launch).
+# Currently DORMANT: Claudinha distributes via npm only, so this workflow
+# does not auto-fire on tag pushes. Trigger it manually from the Actions
+# tab if you ever want to ship prebuilt installers alongside an npm
+# release. Builds remain unsigned — see the project README for the
+# Gatekeeper / SmartScreen consequences if you re-enable this path.
 
 on:
-  push:
-    tags:
-      - 'v[0-9]*.[0-9]*.[0-9]*'
+  workflow_dispatch:
 
 jobs:
   release:
