@@ -20,6 +20,8 @@ interface KanbanCardProps {
   onClose?: () => void
   /** Click on the "Main dirty" chip — opens the resolution modal. */
   onResolveDirtyMain?: () => void
+  /** Click on the "Conflict" chip — opens the conflict resolution modal. */
+  onResolveConflict?: () => void
 }
 
 /**
@@ -66,7 +68,7 @@ const TONE_CLASSES: Record<'neutral' | 'good' | 'warn' | 'bad', string> = {
   bad: 'text-danger-fg'
 }
 
-export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, onClose, onResolveDirtyMain }: KanbanCardProps): React.JSX.Element {
+export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, onClose, onResolveDirtyMain, onResolveConflict }: KanbanCardProps): React.JSX.Element {
   const t = useStrings()
   const agentName = resolvePaneDisplayName(pane)
   const activity = activityFor(pane, t)
@@ -219,16 +221,27 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, 
             {isAwaitingPlanApproval ? 'PLAN READY' : 'PLANNING'}
           </span>
         )}
-        {sync && (
-          pane.completionStatus?.state === 'dirty-main' && onResolveDirtyMain ? (
+        {sync && (() => {
+          const state = pane.completionStatus?.state
+          const handler = state === 'dirty-main'
+            ? onResolveDirtyMain
+            : state === 'conflict'
+              ? onResolveConflict
+              : null
+          const tooltip = state === 'dirty-main'
+            ? t.kanban.actionMainDirtyResolve
+            : state === 'conflict'
+              ? t.kanban.actionConflictResolve
+              : sync.label
+          return handler ? (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
-                onResolveDirtyMain()
+                handler()
               }}
               className={`shrink-0 text-[11px] ${TONE_CLASSES[sync.tone]} underline-offset-2 hover:underline focus:outline-none focus-visible:underline`}
-              title={t.kanban.actionMainDirtyResolve}
+              title={tooltip}
             >
               {sync.label}
             </button>
@@ -240,7 +253,7 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, 
               {sync.label}
             </span>
           )
-        )}
+        })()}
         {onClose && (
           <button
             type="button"

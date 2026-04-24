@@ -681,6 +681,7 @@ export const ptBR: Strings = {
     actionConflict: 'Conflito',
     actionMainDirty: 'Main modificada',
     actionMainDirtyResolve: 'Main tem mudanças não commitadas — clique para resolver',
+    actionConflictResolve: 'Conflito de merge — clique para resolver ou abortar',
     actionFailed: 'Ação falhou',
     newTerminalAria: 'Novo terminal',
     collapseSessionList: 'Recolher lista de sessões',
@@ -785,6 +786,19 @@ export const ptBR: Strings = {
     close: 'Fechar',
     retry: 'Tentar novamente',
     bodyHeader: 'O Claude relatou o seguinte:'
+  },
+
+  conflictModal: {
+    title: 'Conflito de merge',
+    subtitleFmt: (repoLabel: string, treeLabel: string): string =>
+      `${repoLabel} · ${treeLabel} — o rebase pausou em um conflito.`,
+    body: 'Deixe o Claude reabrir esta árvore e tentar resolver o conflito, ou aborte e resolva você.',
+    resolveAction: 'Resolver com o Claude',
+    abortAction: 'Abortar',
+    abortConfirm: 'Abortar — tem certeza?',
+    abortConfirmHint: 'Clique de novo para abortar o rebase.',
+    closeAction: 'Fechar',
+    errorPrefix: 'Ação falhou:'
   },
 
   dirtyMainModal: {

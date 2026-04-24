@@ -666,6 +666,7 @@ export const en = {
     actionConflict: 'Conflict',
     actionMainDirty: 'Main dirty',
     actionMainDirtyResolve: 'Main has uncommitted changes — click to resolve',
+    actionConflictResolve: 'Merge conflict — click to resolve or abort',
     actionFailed: 'Action failed',
     newTerminalAria: 'New terminal',
     collapseSessionList: 'Collapse session list',
@@ -768,6 +769,19 @@ export const en = {
     close: 'Close',
     retry: 'Retry',
     bodyHeader: 'Claude reported the following:'
+  },
+
+  conflictModal: {
+    title: 'Merge conflict',
+    subtitleFmt: (repoLabel: string, treeLabel: string): string =>
+      `${repoLabel} · ${treeLabel} — the rebase paused on a conflict.`,
+    body: 'Let Claude reopen this tree and try to resolve the conflict, or abort and clean it up yourself.',
+    resolveAction: 'Resolve with Claude',
+    abortAction: 'Abort',
+    abortConfirm: 'Abort — are you sure?',
+    abortConfirmHint: 'Click again to abort the rebase.',
+    closeAction: 'Close',
+    errorPrefix: 'Action failed:'
   },
 
   dirtyMainModal: {

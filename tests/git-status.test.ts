@@ -147,6 +147,28 @@ describe('countUserChangedFiles', () => {
     ).toBe(1)
   })
 
+  it('filters nested .worktrees/ (stale Claudinha scaffolding under a subdirectory)', () => {
+    // Regression: when a prior Claudinha session left `Animals/.worktrees/wt-*`
+    // sitting inside a newer main repo's working tree, the root-anchored
+    // filter counted those as real uncommitted files and falsely reported
+    // "main dirty."
+    expect(
+      countUserChangedFiles('?? Animals/.worktrees/wt-3de7e2\n?? Animals/.worktrees/wt-f6f296\n')
+    ).toBe(0)
+  })
+
+  it('filters nested .claude/ paths at any depth', () => {
+    expect(
+      countUserChangedFiles(' M project/.claude/settings.json\n')
+    ).toBe(0)
+  })
+
+  it('counts a legitimate file that merely contains the word "worktrees" in its name', () => {
+    // Guard against over-matching: a path like `src/worktrees-helper.ts` is
+    // not a `.worktrees` directory and must still count as user work.
+    expect(countUserChangedFiles(' M src/worktrees-helper.ts\n')).toBe(1)
+  })
+
   it('counts mixed staged + worktree statuses correctly', () => {
     // 'MM' = staged-modified AND worktree-modified
     // ' M' = worktree-only modified

@@ -4,6 +4,7 @@ import type { RendererPane } from '../hooks/usePaneState'
 import { KanbanColumn } from './KanbanColumn'
 import { DiffViewerModal } from './DiffViewerModal'
 import { DirtyMainModal } from './DirtyMainModal'
+import { ConflictResolveModal } from './ConflictResolveModal'
 import { useStrings } from '../lib/strings'
 
 interface KanbanBoardProps {
@@ -108,6 +109,48 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
     ? panes.find((p) => p.id === dirtyMainPaneId) ?? null
     : null
 
+  // Same auto-open / click-to-reopen pattern for the conflict state. Distinct
+  // pane-tracking refs so transitions into dirty-main and conflict can each
+  // open their own modal without one suppressing the other. Only one modal
+  // renders at a time because the board checks dirtyMainPane first (exclusive
+  // in render order) — that matches the user's recovery flow: resolve main
+  // dirtiness, then retry, then handle conflict if one surfaces.
+  const [conflictPaneId, setConflictPaneId] = useState<string | null>(null)
+  const autoOpenedForConflict = useRef<Set<string>>(new Set())
+  const previousConflictPanes = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    const nowConflict = new Set<string>()
+    for (const pane of panes) {
+      if (pane.completionStatus?.state === 'conflict') {
+        nowConflict.add(pane.id)
+      }
+    }
+    let paneToAutoOpen: string | null = null
+    for (const paneId of nowConflict) {
+      if (!previousConflictPanes.current.has(paneId)) {
+        paneToAutoOpen = paneId
+        break
+      }
+    }
+    for (const paneId of autoOpenedForConflict.current) {
+      if (!nowConflict.has(paneId)) autoOpenedForConflict.current.delete(paneId)
+    }
+    if (paneToAutoOpen && !conflictPaneId && !dirtyMainPaneId && !autoOpenedForConflict.current.has(paneToAutoOpen)) {
+      autoOpenedForConflict.current.add(paneToAutoOpen)
+      setConflictPaneId(paneToAutoOpen)
+    }
+    previousConflictPanes.current = nowConflict
+  }, [panes, conflictPaneId, dirtyMainPaneId])
+
+  const onResolveConflict = useCallback((paneId: string) => {
+    setConflictPaneId(paneId)
+  }, [])
+
+  const conflictPane = conflictPaneId
+    ? panes.find((p) => p.id === conflictPaneId) ?? null
+    : null
+
   return (
     <>
       <div
@@ -129,6 +172,7 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
             onDiffClick={onDiffClick}
             onCloseCard={onCloseCard}
             onResolveDirtyMain={onResolveDirtyMain}
+            onResolveConflict={onResolveConflict}
           />
         ))}
       </div>
@@ -143,6 +187,12 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
         <DirtyMainModal
           pane={dirtyMainPane}
           onClose={() => setDirtyMainPaneId(null)}
+        />
+      )}
+      {!dirtyMainPane && conflictPane && (
+        <ConflictResolveModal
+          pane={conflictPane}
+          onClose={() => setConflictPaneId(null)}
         />
       )}
     </>

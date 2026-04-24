@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, fireEvent, act, cleanup } from '@testing-library/react'
 import { installMockApi, uninstallMockApi } from './helpers/mock-api'
 import { DirtyMainModal } from '../../src/renderer/components/DirtyMainModal'
+import { ConflictResolveModal } from '../../src/renderer/components/ConflictResolveModal'
 import { KanbanBoard } from '../../src/renderer/components/KanbanBoard'
 import { IPC } from '../../src/shared/ipc-channels'
 import type { RendererPane } from '../../src/renderer/hooks/usePaneState'
@@ -269,6 +270,77 @@ describe('DirtyMainModal', () => {
 })
 
 // ---------------------------------------------------------------------------
+// ConflictResolveModal — rendered in isolation
+// ---------------------------------------------------------------------------
+
+describe('ConflictResolveModal', () => {
+  beforeEach(() => {
+    const api = installMockApi()
+    api.invoke.mockImplementation(() => Promise.resolve({}))
+    mockPanes = []
+  })
+  afterEach(() => {
+    cleanup()
+    uninstallMockApi()
+    vi.clearAllMocks()
+  })
+
+  it('Resolve with Claude → dispatches COMPLETION_RESOLVE and closes', async () => {
+    const pane = makePane({
+      completionStatus: { state: 'conflict' } as CompletionActionStatus
+    })
+    mockPanes = [pane]
+    const invokeMock = (window as any).api.invoke as ReturnType<typeof vi.fn>
+    invokeMock.mockResolvedValue({ error: null })
+    const onClose = vi.fn()
+    const { getByText } = render(<ConflictResolveModal pane={pane} onClose={onClose} />)
+    await act(async () => {
+      fireEvent.click(getByText('Resolve with Claude'))
+    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      IPC.COMPLETION_RESOLVE,
+      expect.objectContaining({ paneId: pane.id })
+    )
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('Abort requires a second click before dispatching', async () => {
+    const pane = makePane({
+      completionStatus: { state: 'conflict' } as CompletionActionStatus
+    })
+    mockPanes = [pane]
+    const invokeMock = (window as any).api.invoke as ReturnType<typeof vi.fn>
+    invokeMock.mockResolvedValue({ error: null })
+    const onClose = vi.fn()
+    const { getByText } = render(<ConflictResolveModal pane={pane} onClose={onClose} />)
+
+    fireEvent.click(getByText('Abort'))
+    const abortCalls = () => invokeMock.mock.calls.filter(
+      (c) => c[0] === IPC.COMPLETION_ABORT
+    )
+    expect(abortCalls()).toHaveLength(0)
+    expect(getByText('Abort — are you sure?')).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(getByText('Abort — are you sure?'))
+    })
+    expect(abortCalls()).toHaveLength(1)
+  })
+
+  it('auto-closes when the pane leaves the conflict state', () => {
+    const pane = makePane({
+      completionStatus: { state: 'conflict' } as CompletionActionStatus
+    })
+    mockPanes = [pane]
+    const onClose = vi.fn()
+    const { rerender } = render(<ConflictResolveModal pane={pane} onClose={onClose} />)
+    const resolved = { ...pane, completionStatus: { state: 'merging' } as CompletionActionStatus }
+    rerender(<ConflictResolveModal pane={resolved} onClose={onClose} />)
+    expect(onClose).toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // KanbanBoard — auto-open + chip click wiring
 // ---------------------------------------------------------------------------
 
@@ -303,6 +375,20 @@ describe('KanbanBoard dirty-main integration', () => {
     mockPanes = [dirty]
     rerender(<KanbanBoard panes={[dirty]} activePaneId={null} onCardClick={() => {}} />)
     expect(queryByText('Uncommitted changes on main')).toBeTruthy()
+  })
+
+  it('auto-opens the ConflictResolveModal when a pane transitions into conflict', () => {
+    const pane = makePane({ completionStatus: null })
+    mockPanes = [pane]
+    const { rerender, queryByText } = render(
+      <KanbanBoard panes={[pane]} activePaneId={null} onCardClick={() => {}} />
+    )
+    expect(queryByText('Merge conflict')).toBeNull()
+
+    const conflicted = { ...pane, completionStatus: { state: 'conflict' } as CompletionActionStatus }
+    mockPanes = [conflicted]
+    rerender(<KanbanBoard panes={[conflicted]} activePaneId={null} onCardClick={() => {}} />)
+    expect(queryByText('Merge conflict')).toBeTruthy()
   })
 
   it('opens the modal when the "Main dirty" chip is clicked', () => {

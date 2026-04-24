@@ -35,12 +35,16 @@ export function countUserChangedFiles(porcelainOutput: string): number {
  * True when a path inside a main repo working pane is Claudinha's own
  * infrastructure rather than user work: `.claude/` (per-project settings we
  * write at spawn time) or `.worktrees/` (linked worktree roots we create).
- * Matches both the directory itself and any path below it.
+ *
+ * Checked segment-by-segment so we catch these directories *at any depth* —
+ * not just at the repo root. A previous Claudinha session (or a user who
+ * moved an old layout around) can leave `Animals/.worktrees/wt-XXX` sitting
+ * inside a newer main repo's working tree; the root-anchored check missed
+ * those and produced false "main has uncommitted changes" errors.
  */
 export function isClaudinhaInfrastructurePath(file: string): boolean {
-  if (file === '.claude' || file.startsWith('.claude/')) return true
-  if (file === '.worktrees' || file.startsWith('.worktrees/')) return true
-  return false
+  const segments = file.split('/')
+  return segments.includes('.claude') || segments.includes('.worktrees')
 }
 
 /**

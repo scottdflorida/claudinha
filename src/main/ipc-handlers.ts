@@ -2223,15 +2223,20 @@ export function registerIpcHandlers(
   // chip clears without waiting for the 30s tick.
   // -------------------------------------------------------------------------
 
-  function triggerGitStatusRefreshForRepo(repoPath: string): void {
-    // Repoll every pane whose worktree lives under this repo — the Kanban
-    // rail's chips read per-pane state, but the dirty-main flag is a repo
-    // property, so we refresh all of them. Cheap: 30s poll → ~instant.
+  function onDirtyMainResolved(repoPath: string): void {
+    // For every pane in this repo: (1) drop any sticky `dirty-main` completion
+    // state back to `ready` so the Kanban "Main dirty" chip disappears without
+    // waiting for the user to hit Retry, and (2) kick the git-status poller so
+    // the card's +N/-M and uncommitted-pill numbers refresh promptly. The
+    // completion-status broadcast is the load-bearing half here — the poller
+    // only reports working-tree state, not the dirty-main sticky flag.
     for (const pane of sessionRegistry.getAllPanes().values()) {
       const paneRepoRoot = worktreePathToRepoPath(pane.worktreePath)
-      if (paneRepoRoot === repoPath) {
-        gitStatusPoller.triggerCheck(pane.id)
+      if (paneRepoRoot !== repoPath) continue
+      if (pane.completionActionStatus?.state === 'dirty-main') {
+        completionExecutor.clearToReady(pane.id)
       }
+      gitStatusPoller.triggerCheck(pane.id)
     }
   }
 
@@ -2247,7 +2252,7 @@ export function registerIpcHandlers(
       }
       const err = await commitDirtyMain(repoPath, message, files ?? [])
       if (err) return { error: err }
-      triggerGitStatusRefreshForRepo(repoPath)
+      onDirtyMainResolved(repoPath)
       return { error: null }
     }
   )
@@ -2264,7 +2269,7 @@ export function registerIpcHandlers(
       }
       const err = await stashDirtyMain(repoPath, message, files ?? [])
       if (err) return { error: err }
-      triggerGitStatusRefreshForRepo(repoPath)
+      onDirtyMainResolved(repoPath)
       return { error: null }
     }
   )
@@ -2281,7 +2286,7 @@ export function registerIpcHandlers(
       }
       const err = await discardDirtyMain(repoPath, files ?? [])
       if (err) return { error: err }
-      triggerGitStatusRefreshForRepo(repoPath)
+      onDirtyMainResolved(repoPath)
       return { error: null }
     }
   )
