@@ -176,7 +176,7 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
         type="button"
         onClick={onSpawnClick}
         aria-label={t.kanban.newTerminalAria}
-        className="w-full flex items-center justify-center gap-1.5 text-xs font-[500] text-fg-primary bg-raised hover:bg-surface border border-[var(--color-border-subtle)] rounded px-3 py-2 transition-[color,background-color] duration-[80ms]"
+        className="w-full flex items-center justify-center gap-1.5 text-xs font-[500] text-fg-primary bg-overlay hover:bg-raised border border-[var(--color-border-subtle)] rounded px-3 py-2 transition-[color,background-color] duration-[80ms]"
       >
         {t.kanban.railNewTerminalButton}
       </button>

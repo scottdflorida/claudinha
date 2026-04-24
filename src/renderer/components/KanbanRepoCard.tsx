@@ -107,7 +107,7 @@ export function KanbanRepoCard({
 
   return (
     <section
-      className="rounded-md bg-raised border border-[var(--color-border-subtle)] overflow-hidden"
+      className="rounded-md bg-overlay border border-[var(--color-border-subtle)] overflow-hidden"
       aria-label={t.kanban.repoCardAriaFmt(rollup.repoLabel)}
     >
       <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[var(--color-border-subtle)]">
