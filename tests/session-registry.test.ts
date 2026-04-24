@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { SessionRegistry } from '../src/main/session-registry'
 import type { PaneState } from '../src/shared/types'
 
@@ -181,6 +181,103 @@ describe('SessionRegistry', () => {
 
     it('returns null for unknown pane', () => {
       expect(registry.updatePaneStatus('unknown', 'working', 'hook')).toBeNull()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Standing status-change listener (onAnyStatusChange)
+  // -------------------------------------------------------------------------
+
+  describe('onAnyStatusChange', () => {
+    it('fires when a pane status actually changes', () => {
+      const pane = makePaneState({ id: 'p1', status: 'awaiting-prompt' })
+      registry.registerPane(pane)
+      const calls: Array<[string, string, string]> = []
+      registry.onAnyStatusChange((id, next, prev) => {
+        calls.push([id, next, prev])
+      })
+
+      registry.updatePaneStatus('p1', 'working', 'hook')
+
+      expect(calls).toEqual([['p1', 'working', 'awaiting-prompt']])
+    })
+
+    it('does NOT fire when updatePaneStatus is called with the same status', () => {
+      const pane = makePaneState({ id: 'p1', status: 'working' })
+      registry.registerPane(pane)
+      const listener = vi.fn()
+      registry.onAnyStatusChange(listener)
+
+      registry.updatePaneStatus('p1', 'working', 'hook')
+
+      expect(listener).not.toHaveBeenCalled()
+    })
+
+    it('does NOT fire when only activeToolName changes (same status)', () => {
+      const pane = makePaneState({ id: 'p1', status: 'working', activeToolName: 'Read' })
+      registry.registerPane(pane)
+      const listener = vi.fn()
+      registry.onAnyStatusChange(listener)
+
+      registry.updatePaneStatus('p1', 'working', 'hook', 'Edit')
+
+      expect(listener).not.toHaveBeenCalled()
+      expect(registry.getPane('p1')?.activeToolName).toBe('Edit')
+    })
+
+    it('unsubscribe stops future fires', () => {
+      const pane = makePaneState({ id: 'p1', status: 'awaiting-prompt' })
+      registry.registerPane(pane)
+      const listener = vi.fn()
+      const unsubscribe = registry.onAnyStatusChange(listener)
+
+      registry.updatePaneStatus('p1', 'working', 'hook')
+      unsubscribe()
+      registry.updatePaneStatus('p1', 'done', 'hook')
+
+      expect(listener).toHaveBeenCalledTimes(1)
+    })
+
+    it('fires across multiple panes with one subscription', () => {
+      registry.registerPane(makePaneState({ id: 'p1', status: 'awaiting-prompt' }))
+      registry.registerPane(makePaneState({ id: 'p2', status: 'awaiting-prompt' }))
+      const seen: string[] = []
+      registry.onAnyStatusChange((id) => seen.push(id))
+
+      registry.updatePaneStatus('p1', 'working', 'hook')
+      registry.updatePaneStatus('p2', 'working', 'hook')
+
+      expect(seen).toEqual(['p1', 'p2'])
+    })
+
+    it('fires every subscriber when there are multiple', () => {
+      const pane = makePaneState({ id: 'p1', status: 'awaiting-prompt' })
+      registry.registerPane(pane)
+      const a = vi.fn()
+      const b = vi.fn()
+      registry.onAnyStatusChange(a)
+      registry.onAnyStatusChange(b)
+
+      registry.updatePaneStatus('p1', 'working', 'hook')
+
+      expect(a).toHaveBeenCalledTimes(1)
+      expect(b).toHaveBeenCalledTimes(1)
+    })
+
+    it('a throwing subscriber does not block others', () => {
+      const pane = makePaneState({ id: 'p1', status: 'awaiting-prompt' })
+      registry.registerPane(pane)
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const ok = vi.fn()
+      registry.onAnyStatusChange(() => {
+        throw new Error('boom')
+      })
+      registry.onAnyStatusChange(ok)
+
+      registry.updatePaneStatus('p1', 'working', 'hook')
+
+      expect(ok).toHaveBeenCalledTimes(1)
+      consoleError.mockRestore()
     })
   })
 

@@ -24,6 +24,7 @@ export function createMockRegistry(): {
     updatePanePermissionMode: vi.fn(() => false),
     setResolvingConflict: vi.fn(),
     onNextStatusChange: vi.fn(() => () => { /* noop unsubscribe */ }),
+    onAnyStatusChange: vi.fn(() => () => { /* noop unsubscribe */ }),
     getAllPanes: vi.fn(() => new Map()),
     // size and paneCount are getters — expose as plain values via writable props
     size: 0 as unknown as ReturnType<typeof vi.fn>,

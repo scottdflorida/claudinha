@@ -120,6 +120,16 @@ inspector.setPlanSequencerGetter((workspaceId, repoPath) =>
 )
 hookListener.setInspectorService(inspector)
 metricsCollector.setInspector(inspector)
+// Keep the repo-pane status dots in sync with pane transitions. Both the
+// hook path and the PTY fallback funnel through sessionRegistry.updatePaneStatus,
+// so one listener here catches every transition. The inspector's
+// summarySignature includes paneStatus per pane, so redundant rebroadcasts are
+// suppressed automatically.
+sessionRegistry.onAnyStatusChange((paneId) => {
+  const pane = sessionRegistry.getPane(paneId)
+  if (!pane) return
+  inspector.broadcastSummary(pane.workspaceId)
+})
 completionExecutor.setWorkspaceManager(workspaceManager)
 completionExecutor.setClosePaneHandler((paneId, extra) => {
   closePaneInternal(

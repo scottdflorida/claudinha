@@ -27,6 +27,14 @@ export class SessionRegistry {
    */
   private readonly statusChangeListeners = new Map<string, Set<StatusChangeListener>>()
 
+  /**
+   * Standing status-change subscribers that fire on every transition for any
+   * pane (not one-shot, not per-pane). Used by the repo-pane broadcast wiring
+   * so the workspace summary refreshes as soon as any pane's status flips,
+   * instead of waiting for the next 30s git poll.
+   */
+  private readonly anyStatusListeners = new Set<StatusChangeListener>()
+
   // ---------------------------------------------------------------------------
   // ID generation
   // ---------------------------------------------------------------------------
@@ -176,22 +184,50 @@ export class SessionRegistry {
     }
   }
 
+  /**
+   * Register a standing listener that fires on every pane status transition
+   * (any pane). Returns an unsubscribe fn. Fires ONLY when status actually
+   * changes — not when only activeToolName, statusSource, or any other field
+   * is updated. Sibling to `onNextStatusChange` (one-shot, per-pane); this
+   * one is many-shot, any-pane.
+   */
+  onAnyStatusChange(listener: StatusChangeListener): () => void {
+    this.anyStatusListeners.add(listener)
+    return () => {
+      this.anyStatusListeners.delete(listener)
+    }
+  }
+
   private fireStatusChangeListeners(
     paneId: string,
     newStatus: PaneStatus,
     previousStatus: PaneStatus
   ): void {
-    const set = this.statusChangeListeners.get(paneId)
-    if (!set || set.size === 0) return
-    // Snapshot + clear before firing so listeners registering new listeners
-    // from within a callback don't get caught in the same batch.
-    const listeners = [...set]
-    this.statusChangeListeners.delete(paneId)
-    for (const listener of listeners) {
-      try {
-        listener(paneId, newStatus, previousStatus)
-      } catch (err) {
-        console.error('[session-registry] onNextStatusChange listener threw:', err)
+    const perPane = this.statusChangeListeners.get(paneId)
+    if (perPane && perPane.size > 0) {
+      // Snapshot + clear before firing so listeners registering new listeners
+      // from within a callback don't get caught in the same batch.
+      const listeners = [...perPane]
+      this.statusChangeListeners.delete(paneId)
+      for (const listener of listeners) {
+        try {
+          listener(paneId, newStatus, previousStatus)
+        } catch (err) {
+          console.error('[session-registry] onNextStatusChange listener threw:', err)
+        }
+      }
+    }
+
+    if (this.anyStatusListeners.size > 0) {
+      // Snapshot before iterating so an unsubscribe during a callback only
+      // affects the next fire, not this one.
+      const standing = [...this.anyStatusListeners]
+      for (const listener of standing) {
+        try {
+          listener(paneId, newStatus, previousStatus)
+        } catch (err) {
+          console.error('[session-registry] onAnyStatusChange listener threw:', err)
+        }
       }
     }
   }

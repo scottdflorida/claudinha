@@ -52,6 +52,7 @@ import {
   findAdjacentTestFile,
   parseNumstat
 } from '../src/main/inspector'
+import { SessionRegistry } from '../src/main/session-registry'
 import type { PaneState, GitStatus, CompletionActionStatus } from '../src/shared/types'
 import { createMockRegistry } from './helpers/mock-registry'
 import { createMockWindowManager } from './helpers/mock-window-manager'
@@ -866,5 +867,38 @@ describe('InspectorService.onPanePolled — broadcast gating', () => {
     const sendSpy = (wm as unknown as { _sendSpy: ReturnType<typeof vi.fn> })._sendSpy
     await svc.onPanePolled('p1')
     expect(sendSpy).not.toHaveBeenCalled()
+  })
+
+  // Regression test for the repo-pane stale-dots bug: per-pane IPC.PANE_STATUS
+  // updates were reaching the renderer fine, but the repo-pane summary was
+  // only rebroadcast on the 30s git poll, so the dots could be minutes stale.
+  // Fix wires SessionRegistry.onAnyStatusChange to inspector.broadcastSummary
+  // in index.ts; this test mirrors that wiring with a real registry and
+  // confirms the summary goes out with the new paneStatus.
+  it('broadcasts INSPECTOR_SUMMARY with updated paneStatus when registry status flips', () => {
+    const registry = new SessionRegistry()
+    const wm = createMockWindowManager() as unknown as import('../src/main/window-manager').WindowManager
+    const hm = makeWorkspaceManager({ id: 'workspace-1', name: 'Workspace', windowId: 'win-1' })
+    const svc = new InspectorService(registry, hm, wm)
+    registry.registerPane(makePane({ id: 'p1', status: 'awaiting-prompt' }))
+
+    // Mirror index.ts wiring
+    registry.onAnyStatusChange((paneId) => {
+      const pane = registry.getPane(paneId)
+      if (!pane) return
+      svc.broadcastSummary(pane.workspaceId)
+    })
+
+    const sendSpy = (wm as unknown as { _sendSpy: ReturnType<typeof vi.fn> })._sendSpy
+    registry.updatePaneStatus('p1', 'working', 'hook')
+
+    const summaryCalls = sendSpy.mock.calls.filter((c) => c[0] === IPC.INSPECTOR_SUMMARY)
+    expect(summaryCalls).toHaveLength(1)
+    const payload = summaryCalls[0][1] as { panes: Array<{ paneId: string; paneStatus: string }> }
+    expect(payload.panes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ paneId: 'p1', paneStatus: 'working' })
+      ])
+    )
   })
 })
