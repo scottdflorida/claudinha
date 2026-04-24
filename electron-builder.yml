@@ -44,10 +44,3 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-
-dmg:
-  writeUpdateInfo: false
-
-publish:
-  provider: github
-  releaseType: release

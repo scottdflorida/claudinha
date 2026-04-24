@@ -34,7 +34,6 @@
     "@xterm/addon-serialize": "^0.13.0",
     "@xterm/xterm": "^5.5.0",
     "electron-store": "^8.2.0",
-    "electron-updater": "^6.3.9",
     "lucide-react": "^1.8.0",
     "node-pty": "^1.0.0",
     "posthog-node": "^4.2.0",
@@ -62,42 +61,5 @@
     "vite": "^5.4.11",
     "vitest": "^4.1.0"
   },
-  "license": "MIT",
-  "build": {
-    "appId": "com.claudinha.app",
-    "productName": "Claudinha",
-    "copyright": "Copyright © 2026 Claudinha",
-    "files": [
-      "out/**/*",
-      "assets/**/*",
-      "scripts/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "assets",
-        "to": "assets"
-      }
-    ],
-    "mac": {
-      "icon": "assets/icons/icon.png",
-      "category": "public.app-category.developer-tools",
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
-    "win": {
-      "icon": "assets/icons/icon.png",
-      "target": [
-        "nsis"
-      ]
-    },
-    "linux": {
-      "icon": "assets/icons/icon.png",
-      "category": "Development",
-      "target": [
-        "AppImage"
-      ]
-    }
-  }
+  "license": "MIT"
 }

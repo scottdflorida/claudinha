@@ -20,18 +20,6 @@ export interface MenuStrings {
   sendFeedback: string
   analytics: string
   aboutClaudinha: string
-  // Native dialog strings — auto-updater + close-confirmation fallbacks. Kept
-  // in this bundle so all main-process user-facing copy lives in one place.
-  updateAvailableTitle: string
-  updateAvailableMessage: (version: string) => string
-  updateAvailableDetail: string
-  updateAvailableButtonDownload: string
-  updateAvailableButtonLater: string
-  updateReadyTitle: string
-  updateReadyMessage: string
-  updateReadyDetail: string
-  updateReadyButtonRestart: string
-  updateReadyButtonLater: string
   notRespondingMessage: string
   notRespondingDetail: (count: number) => string
   cancelButton: string
@@ -53,16 +41,6 @@ const en: MenuStrings = {
   sendFeedback: 'Send Feedback…',
   analytics: 'Analytics…',
   aboutClaudinha: 'About Claudinha',
-  updateAvailableTitle: 'Update Available',
-  updateAvailableMessage: (version: string) => `Claudinha ${version} is available.`,
-  updateAvailableDetail: 'Would you like to download and install the update?',
-  updateAvailableButtonDownload: 'Download Update',
-  updateAvailableButtonLater: 'Later',
-  updateReadyTitle: 'Update Ready',
-  updateReadyMessage: 'Update downloaded.',
-  updateReadyDetail: 'The update will be installed when you quit the app.',
-  updateReadyButtonRestart: 'Restart Now',
-  updateReadyButtonLater: 'Later',
   notRespondingMessage: 'Claudinha is not responding.',
   notRespondingDetail: (count: number) =>
     `${count} active session(s) will be terminated.\n\nThe in-app confirmation couldn't be shown. You can cancel and try again, or force-close the window.`,
@@ -85,16 +63,6 @@ const ptBR: MenuStrings = {
   sendFeedback: 'Enviar Feedback…',
   analytics: 'Telemetria…',
   aboutClaudinha: 'Sobre a Claudinha',
-  updateAvailableTitle: 'Atualização Disponível',
-  updateAvailableMessage: (version: string) => `A Claudinha ${version} está disponível.`,
-  updateAvailableDetail: 'Deseja baixar e instalar a atualização?',
-  updateAvailableButtonDownload: 'Baixar Atualização',
-  updateAvailableButtonLater: 'Depois',
-  updateReadyTitle: 'Atualização Pronta',
-  updateReadyMessage: 'Atualização baixada.',
-  updateReadyDetail: 'A atualização será instalada ao sair do app.',
-  updateReadyButtonRestart: 'Reiniciar Agora',
-  updateReadyButtonLater: 'Depois',
   notRespondingMessage: 'A Claudinha não está respondendo.',
   notRespondingDetail: (count: number) =>
     `${count} sessão(ões) ativa(s) serão encerradas.\n\nA confirmação no app não pôde ser exibida. Você pode cancelar e tentar novamente, ou forçar o fechamento da janela.`,

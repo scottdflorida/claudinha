@@ -8,7 +8,6 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron'
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc-channels'
 import type { WindowInitPayload } from '../shared/ipc-channels'
-import { initAutoUpdater } from './auto-updater'
 import { registerAnalyticsIpc, getInstallationId } from './analytics/analytics-config'
 import { analyticsBus } from './analytics/analytics-bus'
 import { initAnalyticsService, shutdownAnalyticsService } from './analytics/analytics-service'
@@ -686,9 +685,6 @@ app.whenReady().then(() => {
       workspaceManager.setManagerWindowId('')
     }
   })
-
-  // Check for updates after window is shown (B-073)
-  initAutoUpdater()
 
   // macOS: recreate the Manager window when the dock icon is clicked and no windows exist
   app.on('activate', () => {
