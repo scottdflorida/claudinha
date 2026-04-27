@@ -960,3 +960,21 @@ The original heuristic was written for the most legible mental model — "if the
 
 **How to avoid this in the future:**
 When classifying a multi-line agent buffer for a signal, ask: *"Could this signal be followed by metadata, a footer, a prompt prefix, a clarifying sentence, or commentary?"* If the answer is "yes" or "I don't know," scan a tail *window* (last N chars or last paragraph after blank lines), not the literal last line. Bound the scan with a regex that won't false-match earlier code blocks (e.g. `\?[^?]{0,200}$/s` — a `?` followed by ≤200 non-`?` chars to end). Concretely: prefer `region matches a question pattern` over `last line ends with the signal character`. Same rule applies to inverted detection (Done vs Needs Input) — the "completion" signal can be buried before clarifying notes, so completion patterns also need region-scoped matching, not boundary matching.
+
+---
+
+## L-047: A `useEffect` that captures a ref via closure must depend on the gate that controls whether the ref's element is rendered
+
+**Date:** 2026-04-27
+**Source:** feedback — kanban resize handle froze after one shrink and stayed frozen across app relaunches; root cause was a ResizeObserver effect that ran once with a null ref and never re-ran.
+**Category:** implementation pattern
+
+**What happened:**
+WindowShell measures the kanban-column height via a `useEffect` that reads `kanbanColumnRef.current`, attaches a ResizeObserver, and stores `el.clientHeight` so the resize handle can compute `kanbanMaxHeight = container - terminalReserve`. The effect's dep array was `[viewMode]`. But the `<div ref={kanbanColumnRef}>` is gated behind `panes.length > 0` — when a fresh workspace mounts with no panes, the ref div isn't in the DOM, the effect runs with `el === null` and returns early. When the user later spawns the first pane, the ref div mounts but the effect doesn't re-run (viewMode hasn't changed). `kanbanContainerHeight` stays at 0, so `kanbanMaxHeight` falls back to `persistedKanbanHeight` itself — zero headroom — and `KanbanResizeHandle.tsx`'s `clamp(startHeight + dy, MIN, max)` silently no-ops every drag-down. The user can only ever shrink. After the first shrink, the new persisted value becomes the new ceiling, so even subsequent drag-up attempts hit the floor too. Resize bar appears frozen, and persists frozen across launches because the bug repeats every time WindowShell mounts an empty workspace.
+
+**Why the agent got it wrong:**
+The agent thought of the dep array in terms of *"what value does the effect's body actually use"* — `viewMode` is the only branch the body cares about, so `[viewMode]` looked complete. The reasoning gap was treating the ref read inside the effect as if it were the same as a value capture: "the ref is current at the moment the effect runs, so the effect just needs to run when the dependency changes." But refs don't track in deps, and a conditional ref div is invisible to the deps system *unless you put the gating boolean there yourself*. The agent didn't picture the parent component's render output as a sequence of mount events that the effect needs to subscribe to — only the values it consumes.
+
+**How to avoid this in the future:**
+For any `useEffect` that reads a ref attached to a conditionally rendered element, ask: *"What boolean determines whether the ref's element is mounted? Is that boolean in my dep array?"* If not, add it (or a derived equivalent like `el !== null` captured into state). A concrete self-check at write time: trace the path from the ref declaration to the JSX where `ref={...}` is set; if there's any `&&`, ternary, or conditional return between them, the gating expression goes into the deps. Same applies to refs attached to elements inside maps that can become empty (`items.length > 0`) or to elements gated on async-loaded data (`data && <div ref={…} />`). Distinct from L-008 (which is about React reconciliation moving children between parents); this is about effects not re-attaching when the ref's host appears for the first time.
+
