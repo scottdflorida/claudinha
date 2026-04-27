@@ -78,6 +78,13 @@ describe('PtyPool', () => {
       expect((spawnOpts as any).env.CLAUDINHA_SOCKET_PATH).toBe('/tmp/sock')
     })
 
+    it('passes through cols/rows when supplied (deferred-spawn path)', () => {
+      pool.spawn(defaultSpawnOptions({ cols: 137, rows: 41 }) as any)
+      const [, , spawnOpts] = mockSpawn.mock.calls[0]
+      expect((spawnOpts as any).cols).toBe(137)
+      expect((spawnOpts as any).rows).toBe(41)
+    })
+
     it('returns { ptyId, isApiBilling } where ptyId equals the paneId', () => {
       const result = pool.spawn(defaultSpawnOptions() as any)
       expect(result.ptyId).toBe('pane-1')
@@ -121,6 +128,101 @@ describe('PtyPool', () => {
       latestMockPty._triggerExit(0)
 
       expect(onExit).toHaveBeenCalledWith(0, 0)
+    })
+  })
+
+  // =========================================================================
+  // prepareSpawn — deferred spawn path (B-XXX cursor-row-below-input fix)
+  // =========================================================================
+
+  describe('prepareSpawn', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('does not call pty.spawn synchronously', () => {
+      pool.prepareSpawn(defaultSpawnOptions() as any)
+      expect(mockSpawn).not.toHaveBeenCalled()
+    })
+
+    it('returns ptyId and isApiBilling synchronously, computed from env', () => {
+      const result = pool.prepareSpawn(
+        defaultSpawnOptions({
+          extraEnv: { ANTHROPIC_API_KEY: 'sk-ant-xxx' }
+        }) as any
+      )
+      expect(result.ptyId).toBe('pane-1')
+      expect(result.isApiBilling).toBe(true)
+    })
+
+    it('counts a pending spawn as alive', () => {
+      pool.prepareSpawn(defaultSpawnOptions() as any)
+      expect(pool.isAlive('pane-1')).toBe(true)
+    })
+
+    it('first resize() drains the pending entry and exec`s pty.spawn at the supplied cols/rows', () => {
+      pool.prepareSpawn(defaultSpawnOptions() as any)
+
+      pool.resize('pane-1', 137, 41)
+
+      expect(mockSpawn).toHaveBeenCalledOnce()
+      const [, , spawnOpts] = mockSpawn.mock.calls[0]
+      expect((spawnOpts as any).cols).toBe(137)
+      expect((spawnOpts as any).rows).toBe(41)
+    })
+
+    it('a second resize() after drain goes through pty.resize, not a re-spawn', () => {
+      pool.prepareSpawn(defaultSpawnOptions() as any)
+
+      pool.resize('pane-1', 100, 30)
+      const mockPty = latestMockPty
+      expect(mockSpawn).toHaveBeenCalledOnce()
+
+      pool.resize('pane-1', 120, 35)
+
+      expect(mockSpawn).toHaveBeenCalledOnce() // not called again
+      expect(mockPty.resize).toHaveBeenCalledWith(120, 35)
+    })
+
+    it('kill() before any resize drops the pending entry without spawning', () => {
+      pool.prepareSpawn(defaultSpawnOptions() as any)
+
+      pool.kill('pane-1')
+
+      // No spawn happened, and isAlive flips false
+      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(pool.isAlive('pane-1')).toBe(false)
+
+      // Advancing past the safety timer must NOT resurrect the spawn
+      vi.advanceTimersByTime(60_000)
+      expect(mockSpawn).not.toHaveBeenCalled()
+    })
+
+    it('safety timeout falls back to spawning at 80×24 if no resize ever arrives', () => {
+      pool.prepareSpawn(defaultSpawnOptions() as any)
+
+      vi.advanceTimersByTime(10_000)
+
+      expect(mockSpawn).toHaveBeenCalledOnce()
+      const [, , spawnOpts] = mockSpawn.mock.calls[0]
+      expect((spawnOpts as any).cols).toBe(80)
+      expect((spawnOpts as any).rows).toBe(24)
+    })
+
+    it('killAll() clears pending spawns', () => {
+      pool.prepareSpawn(defaultSpawnOptions({ paneId: 'pane-a' }) as any)
+      pool.prepareSpawn(defaultSpawnOptions({ paneId: 'pane-b' }) as any)
+
+      pool.killAll()
+
+      expect(pool.isAlive('pane-a')).toBe(false)
+      expect(pool.isAlive('pane-b')).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(mockSpawn).not.toHaveBeenCalled()
     })
   })
 

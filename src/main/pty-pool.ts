@@ -24,6 +24,14 @@ export interface SpawnOptions {
    * Omit to let Claude pick its own default.
    */
   model?: Model
+  /**
+   * Initial PTY dimensions. If omitted, default to 80×24 — but callers that
+   * spawn a Claude Code session should always pass the real cols/rows so the
+   * TUI doesn't paint at 24 rows and then have to redraw on the next
+   * SIGWINCH (which strands the cursor one row south of the input box).
+   */
+  cols?: number
+  rows?: number
   /** Called for each chunk of PTY output (must be low-latency, no buffering) */
   onData: (data: string) => void
   /** Called when the PTY process exits */
@@ -46,6 +54,19 @@ interface PtyEntry {
   killTimer?: ReturnType<typeof setTimeout>
 }
 
+interface PendingEntry {
+  options: SpawnOptions
+  /** Falls back to spawning at 80×24 if the renderer never sends a resize. */
+  safetyTimer: ReturnType<typeof setTimeout>
+}
+
+/**
+ * Safety net: if the renderer never reports a real cols/rows (broken xterm
+ * mount, 0-sized container, crashed renderer), spawn at the legacy 80×24
+ * default after this delay so the user isn't left with a never-started PTY.
+ */
+const PENDING_SPAWN_SAFETY_MS = 10_000
+
 // ---------------------------------------------------------------------------
 // PtyPool
 // ---------------------------------------------------------------------------
@@ -58,6 +79,7 @@ interface PtyEntry {
  */
 export class PtyPool {
   private readonly ptys = new Map<string, PtyEntry>()
+  private readonly pending = new Map<string, PendingEntry>()
 
   /**
    * Spawn a new PTY running the `claude` CLI in the given directory.
@@ -69,7 +91,11 @@ export class PtyPool {
    * Do not buffer or batch data before calling onData.
    */
   spawn(options: SpawnOptions): SpawnResult {
-    const { paneId, workingDirectory, extraEnv = {}, args = [], model, onData, onExit } = options
+    const { paneId, workingDirectory, extraEnv = {}, args = [], model, cols, rows, onData, onExit } = options
+
+    // If the caller previously deferred this paneId via prepareSpawn, drop
+    // that pending entry — this call is the actual spawn we were waiting for.
+    this.clearPending(paneId)
 
     // Merge: user shell env → extraEnv (extraEnv can override shell env)
     const mergedEnv: Record<string, string> = {}
@@ -88,8 +114,8 @@ export class PtyPool {
 
     const ptyProcess = pty.spawn('claude', finalArgs, {
       name: 'xterm-256color',
-      cols: 80,
-      rows: 24,
+      cols: cols ?? 80,
+      rows: rows ?? 24,
       cwd: workingDirectory,
       env: mergedEnv
     })
@@ -112,6 +138,59 @@ export class PtyPool {
     })
 
     return { ptyId: paneId, isApiBilling }
+  }
+
+  /**
+   * Reserve a paneId for a deferred spawn. The actual `pty.spawn()` call is
+   * delayed until the first `resize()` for this paneId — so Claude Code
+   * starts at the renderer's real cols/rows instead of the 80×24 default.
+   *
+   * Why: if the PTY exec's at 80×24, Claude Code (an ink TUI) paints its
+   * input box for that geometry. When the renderer's xterm subsequently
+   * fits and sends `PANE_RESIZE`, ink redraws — but its "leave cursor below
+   * the dynamic region" anchor is computed against the previous paint and
+   * lands one row south of the freshly-drawn input box. Deferring the exec
+   * until the real geometry is known eliminates the mid-startup SIGWINCH
+   * and the resulting cursor drift.
+   *
+   * Returns synchronously: `ptyId` and `isApiBilling` are knowable from the
+   * options alone (the API key check just inspects merged env), so the
+   * caller can populate PaneState immediately.
+   *
+   * Safety: if no resize arrives within PENDING_SPAWN_SAFETY_MS, the spawn
+   * runs at the legacy 80×24 default so a broken renderer can't strand us.
+   */
+  prepareSpawn(options: SpawnOptions): SpawnResult {
+    const { paneId, extraEnv = {} } = options
+
+    // isApiBilling is just an env-presence check; no need to wait for the
+    // PTY to exist before reporting it.
+    const apiKey = extraEnv['ANTHROPIC_API_KEY'] ?? process.env.ANTHROPIC_API_KEY
+    const isApiBilling = !!apiKey
+
+    // Drop any prior pending entry for this paneId before installing the
+    // new one (defensive — paneIds are unique per session, so this should
+    // never actually hit, but the dangling timer cost would be silent).
+    this.clearPending(paneId)
+
+    const safetyTimer = setTimeout(() => {
+      const entry = this.pending.get(paneId)
+      if (!entry) return
+      console.warn('[pty-pool] pending spawn safety timeout — falling back to 80×24', paneId)
+      // Don't call clearPending here; spawn() does that. Just kick spawn().
+      this.spawn(entry.options)
+    }, PENDING_SPAWN_SAFETY_MS)
+
+    this.pending.set(paneId, { options, safetyTimer })
+    return { ptyId: paneId, isApiBilling }
+  }
+
+  private clearPending(paneId: string): boolean {
+    const entry = this.pending.get(paneId)
+    if (!entry) return false
+    clearTimeout(entry.safetyTimer)
+    this.pending.delete(paneId)
+    return true
   }
 
   /**
@@ -139,8 +218,17 @@ export class PtyPool {
   /**
    * Resize the terminal dimensions. Must be called whenever the pane container
    * changes size so the running process sees the correct cols/rows.
+   *
+   * If this paneId has a pending (deferred) spawn from prepareSpawn(), that
+   * spawn is now executed at the supplied cols/rows — this is the moment
+   * Claude Code's PTY actually starts.
    */
   resize(ptyId: string, cols: number, rows: number): void {
+    const pending = this.pending.get(ptyId)
+    if (pending) {
+      this.spawn({ ...pending.options, cols, rows })
+      return
+    }
     const entry = this.ptys.get(ptyId)
     if (!entry || entry.hasExited) return
     try {
@@ -160,6 +248,10 @@ export class PtyPool {
    * Windows: node-pty does not support SIGHUP; falls back to unconditional kill.
    */
   kill(ptyId: string): void {
+    // A pending (deferred) spawn that gets killed before its first resize
+    // never started a real process — just drop the pending entry.
+    if (this.clearPending(ptyId)) return
+
     const entry = this.ptys.get(ptyId)
     if (!entry) return
 
@@ -197,19 +289,27 @@ export class PtyPool {
    * Kill all PTYs in the pool. Used during app shutdown to avoid orphan processes.
    */
   killAll(): void {
+    for (const ptyId of this.pending.keys()) {
+      this.clearPending(ptyId)
+    }
     for (const ptyId of this.ptys.keys()) {
       this.kill(ptyId)
     }
   }
 
-  /** Returns true if the given ptyId exists and has not yet exited */
+  /**
+   * Returns true if the given ptyId exists and has not yet exited.
+   * A pending (deferred) spawn counts as alive — the pane logically owns
+   * a PTY even if it hasn't exec'd yet.
+   */
   isAlive(ptyId: string): boolean {
+    if (this.pending.has(ptyId)) return true
     const entry = this.ptys.get(ptyId)
     return !!entry && !entry.hasExited
   }
 
   /** Number of PTY entries (includes entries pending force-kill) */
   get size(): number {
-    return this.ptys.size
+    return this.ptys.size + this.pending.size
   }
 }

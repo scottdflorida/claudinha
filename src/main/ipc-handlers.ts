@@ -495,7 +495,12 @@ export function registerIpcHandlers(
       win.webContents.send(IPC.PANE_DATA, { paneId, data: buffered } as PaneDataPayload)
     })
 
-    const { ptyId, isApiBilling } = ptyPool.spawn({
+    // Defer the actual `pty.spawn()` call until the renderer reports xterm's
+    // real cols/rows via the first PANE_RESIZE — see PtyPool.prepareSpawn for
+    // why (cursor would otherwise land one row below Claude Code's input
+    // box on first paint). prepareSpawn returns synchronously so PaneState
+    // can be populated immediately.
+    const { ptyId, isApiBilling } = ptyPool.prepareSpawn({
       paneId,
       workingDirectory: resolvedWorktreePath,
       args: spawnArgs,
@@ -2581,7 +2586,9 @@ export function registerIpcHandlers(
             win.webContents.send(IPC.PANE_DATA, { paneId, data: buffered } as PaneDataPayload)
           })
 
-          const { ptyId, isApiBilling } = ptyPool.spawn({
+          // Defer the actual `pty.spawn()` until the renderer reports
+          // xterm's real cols/rows (see PtyPool.prepareSpawn).
+          const { ptyId, isApiBilling } = ptyPool.prepareSpawn({
             paneId,
             workingDirectory: resolvedWorktreePath,
             args: [],
