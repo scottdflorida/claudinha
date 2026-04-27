@@ -36,7 +36,15 @@ Grab the latest installer from the [Releases page](https://github.com/scottdflor
 - **Windows:** `Claudinha-Setup-<version>.exe`
 - **Linux:** `Claudinha-<version>.AppImage` (`chmod +x` and double-click)
 
-> **First-launch warning:** Builds are not code-signed, so on first launch the OS will warn you. On macOS, right-click `Claudinha.app` in Finder → **Open** → **Open**. On Windows, click **More info → Run anyway** in the SmartScreen prompt. After that initial allow, double-click works normally.
+> **First-launch warning:** Builds are not code-signed, so on first launch the OS will warn you.
+>
+> **macOS:** if you double-click and see "Claudinha is damaged and can't be opened" or "Apple cannot check it for malicious software," that's macOS Gatekeeper rejecting the unsigned bundle. Strip the quarantine attribute once after dragging to `/Applications`:
+> ```bash
+> xattr -cr /Applications/Claudinha.app
+> ```
+> After that the app launches normally on every double-click. (`xattr -cr` clears extended attributes recursively — it's the standard fix for unsigned third-party apps.)
+>
+> **Windows:** click **More info → Run anyway** in the SmartScreen prompt. After that initial allow, double-click works normally.
 
 ### Via npm (terminal-launched)
 
