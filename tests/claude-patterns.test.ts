@@ -200,6 +200,24 @@ describe('classifyStopOutput', () => {
     expect(classifyStopOutput(noisyHead + tail)).toBe('needs-input')
   })
 
+  it('routes to needs-input through Claude Code ink TUI redraw padding', () => {
+    // Captured live from the Stop hook on a "Hi!" → "Hi! What can I help you
+    // with today?" exchange. The agent's question is on the same line as
+    // hundreds of chars of `\r`-driven spinner / footer / divider redraws.
+    // The classifier must see through that noise.
+    const buffer =
+      '\n\r\n\r✢(1s · ↓1 tokens)\r\r\n\r\n\r\n\r\n\r\n\r\n\r2\r\r\n' +
+      '\r\n\r\n\r\n\r\n\r\n' +
+      '\r⏺Hi! What can I helpyou with today?\r✢ Marinating… (1s · ↓ 2 tokens)' +
+      '                                                                       \r   \r❯                  \r\r\n' +
+      '─'.repeat(120) +
+      '\r\r\n●high·/effort\r\r\n\r3\r\r\n\r\n\r\n\r\n\r\n\r\n' +
+      '\rMarinating…4\r\r\n\r\n\r\n\r\n\r\n\r\n' +
+      '\rrunning sp hooks… 0/2 · 1s · ↓5 tokens)\r\r\n\r\n\r\n\r\n\r\n\r\n' +
+      '\r✳Marinating…\r\r\n\r\n\r\n\r\n\r\n\r\n\r16\r\r\n\r\n\r\n\r\n\r\n\r\n'
+    expect(classifyStopOutput(buffer)).toBe('needs-input')
+  })
+
   it('keeps defaultStatus as `done` (guards against accidental flip)', () => {
     expect(STOP_CLASSIFIER.defaultStatus).toBe('done')
   })
