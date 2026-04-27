@@ -247,25 +247,32 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   //   1. main has signalled COMPLETE,
   //   2. every PANE_SPAWNED has been reduced into local panes state,
   //   3. the inspector summary is non-null (the rail is no longer pending),
-  //   4. the active pane (the last-spawned terminal) has received its first
-  //      PANE_DATA chunk — so the user never sees an empty xterm with just
-  //      a blinking cursor while Claude Code is still booting.
-  // A 10s safety timeout dismisses anyway so a slow Claude Code startup
+  //   4. the active pane (the last-spawned terminal) has actually rendered
+  //      Claude Code's banner — detected by scanning accumulated PANE_DATA
+  //      for the "Claude Code" string. The first PANE_DATA chunk fires far
+  //      too early (shell init, ANSI cursor positioning); Claude Code itself
+  //      then clears the screen and draws its banner ~2–4s later, so we
+  //      have to wait for the banner text specifically.
+  // A 15s safety timeout dismisses anyway so a slow Claude Code startup
   // can't strand the user behind the overlay forever.
   const [initialSpawn, setInitialSpawn] = useState<{
     expectedCount: number
     completed: boolean
   } | null>(null)
-  // Pane id we're waiting for first PANE_DATA on. Held in a ref so the
-  // high-frequency PANE_DATA listener doesn't re-render WindowShell on
-  // every chunk — only the one-shot `setActivePaneDataReady(true)` does.
-  const awaitingActivePaneDataRef = useRef<string | null>(null)
-  const [activePaneDataReady, setActivePaneDataReady] = useState(false)
+  // Pane id we're waiting for the Claude Code banner on, plus a rolling
+  // accumulator of recent PTY data for substring detection. Both held in
+  // refs so the high-frequency PANE_DATA listener doesn't re-render
+  // WindowShell on every chunk — only the one-shot `setActivePaneReady(true)`
+  // does.
+  const awaitingActivePaneRef = useRef<string | null>(null)
+  const activePaneDataAccumRef = useRef<string>('')
+  const [activePaneReady, setActivePaneReady] = useState(false)
 
   useIpcListener(IPC.WORKSPACE_INITIAL_SPAWN_BEGIN, (payload) => {
     const { expectedCount } = payload as WorkspaceInitialSpawnBeginPayload
-    awaitingActivePaneDataRef.current = null
-    setActivePaneDataReady(false)
+    awaitingActivePaneRef.current = null
+    activePaneDataAccumRef.current = ''
+    setActivePaneReady(false)
     setInitialSpawn({ expectedCount, completed: false })
   })
 
@@ -278,46 +285,59 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
     // activePaneId pointed at an earlier pane.
     if (lastPaneId) {
       selectActivePane(lastPaneId)
-      awaitingActivePaneDataRef.current = lastPaneId
+      awaitingActivePaneRef.current = lastPaneId
+      activePaneDataAccumRef.current = ''
     } else {
       // Every spawn failed — nothing to wait for; let the dismissal effect
       // through.
-      setActivePaneDataReady(true)
+      setActivePaneReady(true)
     }
     setInitialSpawn((prev) => (prev ? { ...prev, completed: true } : prev))
   })
 
-  // Listen for PANE_DATA so we know when Claude Code has actually started
-  // emitting in the active terminal. The listener short-circuits cheaply
-  // when no spawn is in flight (`awaitingActivePaneDataRef.current` is
-  // null), so the overhead during normal operation is negligible.
+  // Listen for PANE_DATA so we know when Claude Code has actually rendered
+  // its banner in the active terminal. We can't trust the first chunk —
+  // shells emit cursor positioning / prompt bytes before Claude Code starts,
+  // and Claude Code then clears the screen before drawing its banner. So we
+  // accumulate (capped at 16 KB so the buffer can't grow unbounded) and
+  // scan for "Claude Code" text, which is the most reliable marker that
+  // the banner is on screen. The listener short-circuits cheaply when no
+  // spawn is in flight, so overhead during normal operation is negligible.
   useIpcListener(IPC.PANE_DATA, (payload) => {
-    const awaiting = awaitingActivePaneDataRef.current
+    const awaiting = awaitingActivePaneRef.current
     if (!awaiting) return
-    const { paneId } = payload as { paneId: string; data: string }
+    const { paneId, data } = payload as { paneId: string; data: string }
     if (paneId !== awaiting) return
-    awaitingActivePaneDataRef.current = null
-    setActivePaneDataReady(true)
+    activePaneDataAccumRef.current = (activePaneDataAccumRef.current + data).slice(-16384)
+    if (/Claude Code/i.test(activePaneDataAccumRef.current)) {
+      awaitingActivePaneRef.current = null
+      activePaneDataAccumRef.current = ''
+      setActivePaneReady(true)
+    }
   })
 
   // Overlay dismissal effect: clears initialSpawn once the loop is done AND
   // panes are reduced into state AND the inspector summary has populated AND
-  // the active pane has received its first PTY data.
+  // Claude Code's banner has rendered in the active pane.
   useEffect(() => {
     if (!initialSpawn || !initialSpawn.completed) return
     const ready =
       panes.length >= initialSpawn.expectedCount
       && inspectorSummary !== null
-      && activePaneDataReady
+      && activePaneReady
     if (ready) {
       setInitialSpawn(null)
       return
     }
     // Safety net so a slow Claude Code startup can't pin the user behind
     // the overlay forever.
-    const t = setTimeout(() => setInitialSpawn(null), 10000)
+    const t = setTimeout(() => {
+      awaitingActivePaneRef.current = null
+      activePaneDataAccumRef.current = ''
+      setInitialSpawn(null)
+    }, 15000)
     return () => clearTimeout(t)
-  }, [initialSpawn, panes.length, inspectorSummary, activePaneDataReady])
+  }, [initialSpawn, panes.length, inspectorSummary, activePaneReady])
 
   useEffect(() => {
     if (workspaceName !== undefined) setDisplayName(workspaceName)
