@@ -74,13 +74,7 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
-      # Skip on Windows: a handful of tests in tests/permissions-manager.test.ts
-      # and tests/metrics-collector.test.ts hardcode Unix path separators and
-      # .sh extensions in their expectations even though the source code is
-      # platform-aware. Tests still gate mac + Linux. TODO: make those tests
-      # cross-platform so we can re-enable here.
       - name: Run tests
-        if: matrix.platform != 'win'
         run: npm test
 
       - name: Build (macOS)

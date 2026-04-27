@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import path from 'node:path'
 import type { PaneState } from '../src/shared/types'
 import { IPC } from '../src/shared/ipc-channels'
 
@@ -152,7 +153,10 @@ describe('MetricsCollector', () => {
       collector.watchPane('pane-1')
 
       // The first argument to readFileSync should use the custom temp dir
-      expect(mockReadFileSync).toHaveBeenCalledWith('/custom/tmp/claudinha-statusline-pane-1.json', 'utf8')
+      expect(mockReadFileSync).toHaveBeenCalledWith(
+        path.join('/custom/tmp', 'claudinha-statusline-pane-1.json'),
+        'utf8'
+      )
       mockGetStatuslineTempDir.mockReturnValue('/tmp')
     })
 
@@ -496,7 +500,9 @@ describe('MetricsCollector', () => {
       collector.watchPane('pane-1')
       collector.unwatchPane('pane-1')
 
-      expect(mockUnwatchFile).toHaveBeenCalledWith('/tmp/claudinha-statusline-pane-1.json')
+      expect(mockUnwatchFile).toHaveBeenCalledWith(
+        path.join('/tmp', 'claudinha-statusline-pane-1.json')
+      )
     })
 
     it('no-ops when pane was never watched', () => {

@@ -5,6 +5,22 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import path from 'node:path'
+
+// Pin process.platform = 'linux' for the suite. The PermissionsManager source
+// branches on platform — selecting .sh vs .js relay scripts and bash-vs-node
+// statusline wrappers — and most tests below assert the Unix variant. The
+// dedicated "Windows path" / "win32" describes already override this with
+// their own try/finally setPlatform helpers, so this default is safe.
+const ORIGINAL_PLATFORM_DESCRIPTOR = Object.getOwnPropertyDescriptor(process, 'platform')
+function pinPlatformLinux() {
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+}
+function restorePlatform() {
+  if (ORIGINAL_PLATFORM_DESCRIPTOR) {
+    Object.defineProperty(process, 'platform', ORIGINAL_PLATFORM_DESCRIPTOR)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Mocks — hoisted before imports
@@ -104,7 +120,7 @@ describe('resolveScriptPath', () => {
     const p = resolveScriptPath('claudinha-hook-relay.sh')
 
     expect(p).toBe(
-      '/Applications/Claudinha.app/Contents/Resources/scripts/claudinha-hook-relay.sh'
+      path.join('/Applications/Claudinha.app/Contents/Resources', 'scripts', 'claudinha-hook-relay.sh')
     )
     // The bug we are pinning a regression for: in a packaged build, the
     // path must NEVER traverse through `app.asar` — that's a file, not a
@@ -118,7 +134,7 @@ describe('resolveScriptPath', () => {
 
     const p = resolveScriptPath('claudinha-hook-relay.sh')
 
-    expect(p).toBe('/app/scripts/claudinha-hook-relay.sh')
+    expect(p).toBe(path.join('/app', 'scripts', 'claudinha-hook-relay.sh'))
   })
 
   it('handles statusline script the same way (resourcesPath in packaged, getAppPath in dev)', () => {
@@ -129,12 +145,12 @@ describe('resolveScriptPath', () => {
       writable: true
     })
     expect(resolveScriptPath('claudinha-statusline.sh')).toBe(
-      '/packaged/Resources/scripts/claudinha-statusline.sh'
+      path.join('/packaged/Resources', 'scripts', 'claudinha-statusline.sh')
     )
 
     ;(electronApp as unknown as { isPackaged: boolean }).isPackaged = false
     expect(resolveScriptPath('claudinha-statusline.sh')).toBe(
-      '/app/scripts/claudinha-statusline.sh'
+      path.join('/app', 'scripts', 'claudinha-statusline.sh')
     )
   })
 })
@@ -145,7 +161,12 @@ describe('PermissionsManager.writeSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockMkdirSync.mockReturnValue(undefined as unknown as string)
+    pinPlatformLinux()
     pm = new PermissionsManager()
+  })
+
+  afterEach(() => {
+    restorePlatform()
   })
 
   // -------------------------------------------------------------------------
@@ -497,7 +518,7 @@ describe('PermissionsManager.writeSettings', () => {
         expect(hooks[event]).toHaveLength(1)
         expect(hooks[event][0].hooks).toHaveLength(1)
         const cmd = hooks[event][0].hooks[0].command
-        expect(cmd).toContain('/app/scripts/claudinha-hook-relay.sh')
+        expect(cmd).toContain(path.join('/app', 'scripts', 'claudinha-hook-relay.sh'))
         expect(cmd).not.toContain('orchard')
       }
     })
@@ -519,7 +540,7 @@ describe('PermissionsManager.writeSettings', () => {
       const matchers = (config.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>)['PostToolUse']
       const commands = matchers.flatMap((m) => m.hooks.map((h) => h.command))
       expect(commands.some((c) => c === 'echo hi')).toBe(true)
-      expect(commands.some((c) => c.includes('/app/scripts/claudinha-hook-relay.sh'))).toBe(true)
+      expect(commands.some((c) => c.includes(path.join('/app', 'scripts', 'claudinha-hook-relay.sh')))).toBe(true)
       expect(commands.some((c) => c.includes('orchard'))).toBe(false)
     })
 
@@ -545,7 +566,7 @@ describe('PermissionsManager.writeSettings', () => {
       const matchers = (config.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>)['PostToolUse']
       const commands = matchers.flatMap((m) => m.hooks.map((h) => h.command))
       expect(commands.some((c) => c === 'echo hi')).toBe(true)
-      expect(commands.some((c) => c.includes('/app/scripts/claudinha-hook-relay.sh'))).toBe(true)
+      expect(commands.some((c) => c.includes(path.join('/app', 'scripts', 'claudinha-hook-relay.sh')))).toBe(true)
       expect(commands.some((c) => c.includes('orchard'))).toBe(false)
     })
   })
@@ -565,7 +586,7 @@ describe('PermissionsManager.writeSettings', () => {
 
       const config = getWrittenConfig()
       const sl = config.statusLine as Record<string, unknown>
-      expect(sl.command).toBe('/app/scripts/claudinha-statusline.sh')
+      expect(sl.command).toBe(path.join('/app', 'scripts', 'claudinha-statusline.sh'))
     })
 
     it('leaves a user-authored non-Claudinha statusLine untouched', () => {
