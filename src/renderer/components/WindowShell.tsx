@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MessageSquareText, Moon, Sun } from 'lucide-react'
 import { IPC } from '../../shared/ipc-channels'
-import type { RateLimitsPayload, WorkspaceSetViewModePayload, WorkspaceSetActivePanePayload } from '../../shared/ipc-channels'
+import type {
+  RateLimitsPayload,
+  WorkspaceSetViewModePayload,
+  WorkspaceSetActivePanePayload,
+  WorkspaceInitialSpawnBeginPayload,
+  WorkspaceInitialSpawnCompletePayload
+} from '../../shared/ipc-channels'
 import { SegmentedControl } from './ui/SegmentedControl'
 import { ipcInvoke, ipcSend, useIpcListener } from '../hooks/useIpc'
 import { usePaneState } from '../hooks/usePaneState'
@@ -13,6 +19,7 @@ import { EmptyState } from './EmptyState'
 import { SpawnDialog } from './SpawnDialog'
 import { PaneCloseConfirmModal } from './PaneCloseConfirmModal'
 import { WorkspaceCloseOverlay } from './WorkspaceCloseOverlay'
+import { WorkspaceSpawnOverlay } from './WorkspaceSpawnOverlay'
 import { AnalyticsConsentDialog } from './AnalyticsConsentDialog'
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal'
 import { RateLimitBar } from './RateLimitBar'
@@ -131,6 +138,13 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   const [kanbanDragHeight, setKanbanDragHeight] = useState<number | null>(null)
   const kanbanColumnRef = useRef<HTMLDivElement | null>(null)
   const [kanbanContainerHeight, setKanbanContainerHeight] = useState<number>(0)
+  // The kanban-column ref div is gated behind `panes.length > 0`, so include
+  // its mount/unmount transition in the deps. Without this, the effect runs
+  // once with a null ref on first mount of an empty workspace, never reattaches
+  // when the first pane spawns, and kanbanContainerHeight stays at 0 — which
+  // collapses kanbanMaxHeight onto the persisted value and silently clamps the
+  // drag-down direction, freezing the resize handle.
+  const kanbanColumnMounted = panes.length > 0
   useEffect(() => {
     const el = kanbanColumnRef.current
     if (!el) return
@@ -140,7 +154,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [viewMode])
+  }, [viewMode, kanbanColumnMounted])
   const kanbanMaxHeight = Math.max(
     kanbanContainerHeight > 0 ? kanbanContainerHeight - TERMINAL_RESERVED_PX : persistedKanbanHeight,
     KANBAN_MIN_HEIGHT_PX
@@ -214,6 +228,55 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
     const { paneId } = payload as { paneId: string }
     selectActivePane(paneId)
   })
+
+  // ---------- Initial-spawn overlay (WORKSPACE_CREATE_WITH_TERMINALS) ----------
+  //
+  // Main brackets the batch-spawn loop with BEGIN/COMPLETE so the renderer
+  // can cover the workspace window with a calm "Claudinha is launching your
+  // agent team…" overlay instead of letting the user watch terminals trickle
+  // in over a half-built Kanban + a "Loading repo data…" rail.
+  //
+  // Dismissal is gated on three conditions so the overlay never lifts onto a
+  // still-half-built UI:
+  //   1. main has signalled COMPLETE,
+  //   2. every PANE_SPAWNED has been reduced into local panes state, and
+  //   3. the inspector summary is non-null (the rail is no longer pending).
+  // A 5s safety timeout dismisses anyway so a stuck inspector can't strand
+  // the user behind the overlay forever.
+  const [initialSpawn, setInitialSpawn] = useState<{
+    expectedCount: number
+    completed: boolean
+  } | null>(null)
+
+  useIpcListener(IPC.WORKSPACE_INITIAL_SPAWN_BEGIN, (payload) => {
+    const { expectedCount } = payload as WorkspaceInitialSpawnBeginPayload
+    setInitialSpawn({ expectedCount, completed: false })
+  })
+
+  useIpcListener(IPC.WORKSPACE_INITIAL_SPAWN_COMPLETE, (payload) => {
+    const { activePaneId: lastPaneId } = payload as WorkspaceInitialSpawnCompletePayload
+    // Belt-and-suspenders for the active-pane selection: assert the last
+    // spawned pane as active explicitly even though the per-PANE_SPAWNED
+    // listener above already calls selectActivePane on each event. This
+    // eliminates any ordering / stale-closure race that could leave
+    // activePaneId pointed at an earlier pane.
+    if (lastPaneId) selectActivePane(lastPaneId)
+    setInitialSpawn((prev) => (prev ? { ...prev, completed: true } : prev))
+  })
+
+  // Overlay dismissal effect: clears initialSpawn once the loop is done AND
+  // panes are reduced into state AND the inspector summary has populated.
+  useEffect(() => {
+    if (!initialSpawn || !initialSpawn.completed) return
+    const ready = panes.length >= initialSpawn.expectedCount && inspectorSummary !== null
+    if (ready) {
+      setInitialSpawn(null)
+      return
+    }
+    // Safety net so a slow inspector can't pin the user behind the overlay.
+    const t = setTimeout(() => setInitialSpawn(null), 5000)
+    return () => clearTimeout(t)
+  }, [initialSpawn, panes.length, inspectorSummary])
 
   useEffect(() => {
     if (workspaceName !== undefined) setDisplayName(workspaceName)
@@ -898,6 +961,8 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
           <LanguageFlagToggle />
         </div>
       )}
+
+      {initialSpawn !== null && <WorkspaceSpawnOverlay />}
 
       <SpawnDialog
         isOpen={isSpawnDialogOpen}

@@ -13,11 +13,15 @@ import { SCROLLBACK_LINES } from '../lib/constants'
 
 // Palettes retuned for Claudinha's warm neutrals. Terminal background sits on
 // --color-bg-canvas (dark) / --color-bg-sunken (light) so the terminal feels
-// flush with the rest of the chrome. Cursor uses the new accent blue.
+// flush with the rest of the chrome. Cursor uses Claudinha gold (mirrors
+// --color-brand per theme) so the input position reads as branded chrome
+// and doubles as a clear "type here" cue. xterm's theme is a static JS
+// object — these gold values must be retuned by hand if --color-brand is
+// retuned in globals.css.
 const DARK_XTERM_THEME = {
   background:          '#121212',
   foreground:          '#F0EBE0',
-  cursor:              '#3D7CFF',
+  cursor:              '#E8B84B',
   cursorAccent:        '#121212',
   selectionBackground: '#3D7CFF66',
   selectionForeground: undefined,
@@ -42,7 +46,7 @@ const DARK_XTERM_THEME = {
 const LIGHT_XTERM_THEME = {
   background:          '#FBF7EE',
   foreground:          '#221E16',
-  cursor:              '#2568E0',
+  cursor:              '#B8872E',
   cursorAccent:        '#FBF7EE',
   selectionBackground: '#2568E055',
   selectionForeground: undefined,

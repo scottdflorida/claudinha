@@ -363,6 +363,11 @@ export const en = {
     cancelKeepOpen: 'Cancel (keep workspace open)'
   },
 
+  workspaceSpawnOverlay: {
+    title: 'Claudinha is launching your agent team',
+    body: 'Please give her a few seconds.'
+  },
+
   paneHeader: {
     rename: 'Rename terminal',
     renameAria: 'Terminal name',
@@ -928,6 +933,10 @@ export const en = {
     title: 'Something went wrong',
     body: 'Claudinha hit an unexpected error rendering this view. Restart the app or report it via Submit Feedback.',
     reload: 'Reload window'
+  },
+
+  merge: {
+    autoCommitNote: 'Any uncommitted work will be committed first.'
   },
 
   permissionRemoveConfirm: {

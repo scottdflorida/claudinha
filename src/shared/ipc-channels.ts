@@ -172,6 +172,14 @@ export const IPC = {
   // main → renderer — workspace window dormant terminal updates
   WORKSPACE_PAUSED_UPDATE: 'workspace:paused-update',
 
+  // main → renderer — bracket the initial batch-spawn loop kicked off by
+  // WORKSPACE_CREATE_WITH_TERMINALS. The renderer uses these to mount a
+  // "Claudinha is launching your agent team…" overlay over the workspace
+  // window so the user doesn't watch terminals trickle in one-by-one over
+  // a half-built UI.
+  WORKSPACE_INITIAL_SPAWN_BEGIN: 'workspace:initial-spawn-begin',
+  WORKSPACE_INITIAL_SPAWN_COMPLETE: 'workspace:initial-spawn-complete',
+
   // --- Completion actions (merge/PR flow) ---
 
   // renderer → main (invoke/reply)
@@ -1239,6 +1247,30 @@ export interface WorkspaceCreateWithTerminalsResult {
   workspaceId?: string
   /** Per-terminal spawn errors (non-fatal; some terminals may have succeeded) */
   terminalErrors?: string[]
+}
+
+/**
+ * workspace:initial-spawn-begin — main signals the workspace window that the
+ * batch-spawn loop is about to run for `expectedCount` panes. The renderer
+ * mounts a covering overlay so the user sees one calm "we're launching your
+ * agents" surface instead of watching panes trickle in.
+ */
+export interface WorkspaceInitialSpawnBeginPayload {
+  workspaceId: string
+  expectedCount: number
+}
+
+/**
+ * workspace:initial-spawn-complete — main signals that the batch-spawn loop
+ * has finished. `activePaneId` is the id of the last successfully spawned
+ * pane; the renderer asserts it as the active pane (Kanban bottom region) and
+ * uses this signal as one of the gates for dismissing the overlay.
+ *
+ * `activePaneId` is null only if every spawn in the batch failed.
+ */
+export interface WorkspaceInitialSpawnCompletePayload {
+  workspaceId: string
+  activePaneId: string | null
 }
 
 /** workspace:resume-last response */

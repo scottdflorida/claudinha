@@ -56,6 +56,8 @@ import type {
   GitInitResult,
   PaneSpawnedPayload,
   PaneClosedPayload,
+  WorkspaceInitialSpawnBeginPayload,
+  WorkspaceInitialSpawnCompletePayload,
   PaneMovedInPayload,
   PaneTerminatedPayload,
   PaneRespawnedPayload,
@@ -2435,6 +2437,24 @@ export function registerIpcHandlers(
     //   2. From <PaneStateProvider> after PANE_SPAWNED et al are registered.
     // We hook the second one and run the spawn loop then.
     const spawnDrones = (): void => {
+      // Bracket the loop with BEGIN/COMPLETE so the renderer can mount its
+      // "Claudinha is launching your agent team…" overlay across the entire
+      // spawn span — otherwise the user watches terminals trickle in over a
+      // half-built Kanban + a "Loading repo data…" rail.
+      if (!newWin.isDestroyed()) {
+        const beginPayload: WorkspaceInitialSpawnBeginPayload = {
+          workspaceId: workspace.id,
+          expectedCount: terminalCount
+        }
+        newWin.webContents.send(IPC.WORKSPACE_INITIAL_SPAWN_BEGIN, beginPayload)
+      }
+
+      // Track the last successfully spawned pane so we can hand it back to
+      // the renderer as the active pane when the loop completes — guarantees
+      // the bottom Kanban region lands on the most recent terminal regardless
+      // of any per-event ordering races on the renderer side.
+      let lastSpawnedPaneId: string | null = null
+
       // For 'shared' mode, create one worktree and reuse its path
       let sharedWorktreePath: string | null = null
 
@@ -2661,6 +2681,7 @@ export function registerIpcHandlers(
           if (!newWin.isDestroyed()) {
             newWin.webContents.send(IPC.PANE_SPAWNED, spawnedPayload)
           }
+          lastSpawnedPaneId = paneId
 
         } catch (err) {
           // Loud failure log so missing terminals aren't a silent mystery. The
@@ -2675,7 +2696,29 @@ export function registerIpcHandlers(
 
       // All terminals spawned — reflect their repos in the window title.
       workspaceManager.applyWindowTitle(winId)
+
+      // Persist the last-spawned pane as the active one so the bottom Kanban
+      // region opens on the most recent terminal (and stays there across
+      // close/reopen). Skip when every spawn failed.
+      if (lastSpawnedPaneId) {
+        workspace.activePaneId = lastSpawnedPaneId
+        saveHiveToStore(workspace)
+      }
+
       workspaceManager.pushManagerUpdate()
+
+      // Tell the renderer the loop is done and which pane it should feature
+      // in the active Kanban region. The renderer combines this with its own
+      // panes-list-length and inspector-summary checks before dismissing the
+      // overlay (so the overlay stays up until the rail and the active pane
+      // are both real).
+      if (!newWin.isDestroyed()) {
+        const completePayload: WorkspaceInitialSpawnCompletePayload = {
+          workspaceId: workspace.id,
+          activePaneId: lastSpawnedPaneId
+        }
+        newWin.webContents.send(IPC.WORKSPACE_INITIAL_SPAWN_COMPLETE, completePayload)
+      }
     }
 
     let readyCount = 0

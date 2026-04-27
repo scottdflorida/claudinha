@@ -378,6 +378,11 @@ export const ptBR: Strings = {
     cancelKeepOpen: 'Cancelar (manter espaço de trabalho aberto)'
   },
 
+  workspaceSpawnOverlay: {
+    title: 'A Claudinha está preparando sua equipe de agentes',
+    body: 'Por favor, dê alguns segundos a ela.'
+  },
+
   paneHeader: {
     rename: 'Renomear terminal',
     renameAria: 'Nome do terminal',
@@ -945,6 +950,10 @@ export const ptBR: Strings = {
     title: 'Algo deu errado',
     body: 'A Claudinha encontrou um erro inesperado ao renderizar esta tela. Reinicie o app ou reporte via Enviar Feedback.',
     reload: 'Recarregar janela'
+  },
+
+  merge: {
+    autoCommitNote: 'Qualquer trabalho não commitado será commitado antes.'
   },
 
   permissionRemoveConfirm: {
