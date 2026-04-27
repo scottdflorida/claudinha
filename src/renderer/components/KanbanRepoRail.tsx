@@ -29,7 +29,7 @@ interface KanbanRepoRailProps {
   activePaneId: string | null
   /** Callback when the user clicks a session row in any repo card. */
   onSelectSession: (paneId: string) => void
-  /** Opens the SpawnDialog to add a new terminal/session. */
+  /** Opens the AddTerminalsDialog to add one or more terminals to this workspace. */
   onSpawnClick: () => void
 }
 
@@ -169,8 +169,8 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
     </header>
   )
 
-  // + Terminal CTA — shown below the header in every rail state that has a
-  // workspace bound. Opens the SpawnDialog.
+  // + Terminal(s) CTA — shown below the header in every rail state that has
+  // a workspace bound. Opens the AddTerminalsDialog.
   const railCta = (
     <div className="shrink-0 px-3 pt-3 pb-2">
       <Button

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { IPC } from '../../shared/ipc-channels'
 import type {
-  PathValidateResult,
   GitInitResult,
   WorkspaceCreateWithTerminalsPayload,
   WorkspaceCreateWithTerminalsResult
@@ -14,6 +13,11 @@ import { Button } from './ui/Button'
 import { SegmentedControl } from './ui/SegmentedControl'
 import { ViewModePreview } from './ui/ViewModePreview'
 import { useStrings } from '../lib/strings'
+import {
+  validateRepoPath,
+  type RepoValidation,
+  EMPTY_VALIDATION
+} from '../lib/repo-path-validation'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -36,14 +40,6 @@ const MODEL_OPTIONS: { value: Model; label: string }[] = [
 type WorktreeMode = 'each-own' | 'shared'
 type NamingMode = 'auto' | 'manual'
 type RepoMode = 'single' | 'per-pane'
-
-interface RepoValidation {
-  valid: boolean | null
-  isGit: boolean | null
-  validating: boolean
-}
-
-const EMPTY_VALIDATION: RepoValidation = { valid: null, isGit: null, validating: false }
 
 const PATH_PLACEHOLDER = navigator.platform.startsWith('Mac')
   ? '/Users/you/my-project'
@@ -246,16 +242,10 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
     if (!p.trim()) { setRepoValid(null); setRepoIsGit(null); return }
     setValidating(true)
     singleValidateTimerRef.current = setTimeout(async () => {
-      try {
-        const result = await ipcInvoke(IPC.PATH_VALIDATE, { path: p.trim() }) as PathValidateResult
-        setRepoValid(result.valid)
-        setRepoIsGit(result.isGitRepo ?? false)
-      } catch {
-        setRepoValid(false)
-        setRepoIsGit(false)
-      } finally {
-        setValidating(false)
-      }
+      const result = await validateRepoPath(p)
+      setRepoValid(result.valid)
+      setRepoIsGit(result.isGit)
+      setValidating(false)
     }, 400)
   }, [])
 
@@ -277,20 +267,12 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
       return arr
     })
     const timer = setTimeout(async () => {
-      try {
-        const result = await ipcInvoke(IPC.PATH_VALIDATE, { path: p.trim() }) as PathValidateResult
-        setRepoValidStates((prev) => {
-          const arr = [...prev]
-          arr[index] = { valid: result.valid, isGit: result.isGitRepo ?? false, validating: false }
-          return arr
-        })
-      } catch {
-        setRepoValidStates((prev) => {
-          const arr = [...prev]
-          arr[index] = { valid: false, isGit: false, validating: false }
-          return arr
-        })
-      }
+      const result = await validateRepoPath(p)
+      setRepoValidStates((prev) => {
+        const arr = [...prev]
+        arr[index] = result
+        return arr
+      })
     }, 400)
     timers.set(index, timer)
   }, [])

@@ -17,7 +17,7 @@ import { KanbanBoard } from './KanbanBoard'
 import { KanbanRepoRail } from './KanbanRepoRail'
 import { KanbanResizeHandle } from './KanbanResizeHandle'
 import { EmptyState } from './EmptyState'
-import { SpawnDialog } from './SpawnDialog'
+import { AddTerminalsDialog } from './AddTerminalsDialog'
 import { PaneCloseConfirmModal } from './PaneCloseConfirmModal'
 import { WorkspaceCloseOverlay } from './WorkspaceCloseOverlay'
 import { WorkspaceSpawnOverlay } from './WorkspaceSpawnOverlay'
@@ -78,11 +78,12 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   const { summary: inspectorSummary } = useInspector(workspaceId ?? null)
   const paneIds = panes.map((p) => p.id)
 
-  // Repo of the most recently spawned pane in this workspace. The SpawnDialog
-  // uses it as the first-choice default for the repo path when the user clicks
-  // "+ Terminal" from within a running workspace. RendererPane arrives in
-  // append order (ADD_PANE → [...panes, newPane]), so the last entry is the
-  // newest; we look up its repoPath via the inspector summary.
+  // Repo of the most recently spawned pane in this workspace. The
+  // AddTerminalsDialog uses it as the first-choice default for the repo path
+  // when the user clicks "+ Terminal(s)" from within a running workspace.
+  // RendererPane arrives in append order (ADD_PANE → [...panes, newPane]),
+  // so the last entry is the newest; we look up its repoPath via the
+  // inspector summary.
   const lastSpawnedRepoPath = useMemo<string | undefined>(() => {
     if (panes.length === 0 || !inspectorSummary) return undefined
     const newest = panes[panes.length - 1]
@@ -672,7 +673,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
         return
       }
 
-      // Cmd+Shift+N / Ctrl+Shift+N — open SpawnDialog
+      // Cmd+Shift+N / Ctrl+Shift+N — open AddTerminalsDialog
       if (e.key === 'N') {
         e.preventDefault()
         setIsSpawnDialogOpen(true)
@@ -816,9 +817,9 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
                 type="button"
                 onClick={openSpawnDialog}
                 className="flex items-center gap-1 text-xs text-fg-secondary hover:text-fg-primary hover:bg-raised rounded px-2 py-0.5 transition-[color,background-color] duration-[80ms]"
-                aria-label={t.pane.create}
+                aria-label={t.windowShell.newTerminalsAria}
               >
-                + {t.pane.singular}
+                {t.windowShell.newTerminalsButton}
               </button>
             )}
           </div>
@@ -1045,14 +1046,16 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
 
       {initialSpawn !== null && <WorkspaceSpawnOverlay />}
 
-      <SpawnDialog
-        isOpen={isSpawnDialogOpen}
-        onClose={closeSpawnDialog}
-        workspaceType={workspaceType}
-        workspaceConstraint={workspaceConstraint}
-        workspaceId={workspaceId}
-        lastSpawnedRepoPath={lastSpawnedRepoPath}
-      />
+      {workspaceId && (
+        <AddTerminalsDialog
+          isOpen={isSpawnDialogOpen}
+          onClose={closeSpawnDialog}
+          workspaceId={workspaceId}
+          workspaceType={workspaceType}
+          workspaceConstraint={workspaceConstraint}
+          lastSpawnedRepoPath={lastSpawnedRepoPath}
+        />
+      )}
       {pendingClosePane !== null && (
         <PaneCloseConfirmModal
           repoName={pendingClosePane.repoName}

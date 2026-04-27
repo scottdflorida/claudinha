@@ -216,6 +216,18 @@ export const en = {
     initGitFailedFmt: (msg: string): string => `Failed to initialize git repository: ${msg}`
   },
 
+  addTerminalsForm: {
+    title: 'Add terminal(s)',
+    cancel: 'Cancel',
+    submitOpening: 'Opening…',
+    submitLabel: (n: number): string =>
+      n === 1 ? 'Add 1 terminal to this workspace' : `Add ${n} terminals to this workspace`,
+    worktreeBranchBannerTitle: 'Locked to this workspace’s worktree',
+    worktreeBranchBannerBody: (branchName: string, worktreePath: string): string =>
+      `New terminals will run on branch ${branchName} at ${worktreePath}.`,
+    failedToAdd: 'Failed to add terminals.'
+  },
+
   newWorkspaceModal: {
     title: 'Create workspace',
     cancel: 'Cancel',
@@ -280,6 +292,8 @@ export const en = {
     workspaceNamePlaceholder: 'Untitled workspace',
     workspaceNameAria: 'Workspace name',
     addTerminal: 'Add terminal',
+    newTerminalsButton: '+ Terminal(s)',
+    newTerminalsAria: 'Add terminals',
     moveTerminal: 'Move terminal',
     closeTerminal: 'Close terminal',
     keyboardShortcuts: 'Keyboard shortcuts',
@@ -297,38 +311,6 @@ export const en = {
     cancel: 'Cancel',
     headerLabel: 'Transplant Terminal',
     loading: 'Loading…'
-  },
-
-  spawnDialog: {
-    title: 'New terminal',
-    submit: 'Open',
-    submitting: 'Opening…',
-    cancel: 'Cancel',
-    promptLabel: 'Initial prompt (optional)',
-    promptPlaceholder: 'Tell Claude what to start working on…',
-    modelLabel: 'Model',
-    effortLabel: 'Effort',
-    failedToCreate: 'Failed to open terminal.',
-    launchModeLabel: 'Launch mode',
-    modeNewWorktree: 'New worktree',
-    modeExistingWorktree: 'Existing worktree',
-    modeManualPath: 'Manual path',
-    repoPathLabel: 'Repository path',
-    setByWorkspace: ' (set by workspace)',
-    browse: 'Browse',
-    worktreeNameLabel: 'Worktree name',
-    worktreeNameHelper: 'Optional — auto-generated if left empty',
-    selectWorktree: 'Select worktree',
-    loadingWorktrees: 'Loading worktrees…',
-    noAdditionalWorktrees: 'No additional worktrees found.',
-    directoryPathLabel: 'Directory path',
-    failedFolderPicker: 'Failed to open folder picker.',
-    failedToSpawn: 'Failed to spawn terminal.',
-    windowTooSmall: (cols: number, rows: number): string =>
-      `Window too small for another terminal at minimum size (${cols}×${rows}). Resize larger and try again.`,
-    invalidPath: 'Invalid path.',
-    mainSuffix: ' (main)',
-    titleWithSession: (name: string, title: string): string => `${name} (${title})`
   },
 
   paneCloseConfirm: {
@@ -694,7 +676,7 @@ export const en = {
     railHeader: 'Repos',
     railNoWorkspace: 'No workspace bound.',
     railLoading: 'Loading repo data…',
-    railNewTerminalButton: '+ Terminal',
+    railNewTerminalButton: '+ Terminal(s)',
     railReposEmpty: 'No repos yet.',
     repoRailSessionsLabel: 'Sessions',
     repoRailPausedLabel: 'Paused',

@@ -92,6 +92,12 @@ export const IPC = {
   // renderer → main (invoke/reply) — create workspace + batch spawn terminals in one step
   WORKSPACE_CREATE_WITH_TERMINALS: 'workspace:create-with-terminals',
 
+  // renderer → main (invoke/reply) — add one or more terminals to an existing workspace.
+  // Same shape as create-with-terminals minus workspace-creation fields (no name,
+  // no viewMode). The handler delegates to the same spawn-terminals helper used
+  // by WORKSPACE_CREATE_WITH_TERMINALS so behavior stays consistent.
+  WORKSPACE_ADD_TERMINALS: 'workspace:add-terminals',
+
   // renderer → main (invoke/reply) — resume the most recently closed workspace
   WORKSPACE_RESUME_LAST: 'workspace:resume-last',
 
@@ -1252,6 +1258,35 @@ export interface WorkspaceCreateWithTerminalsPayload {
 export interface WorkspaceCreateWithTerminalsResult {
   error: string | null
   workspaceId?: string
+  /** Per-terminal spawn errors (non-fatal; some terminals may have succeeded) */
+  terminalErrors?: string[]
+}
+
+/**
+ * workspace:add-terminals — batch-spawn N terminals into an existing workspace.
+ *
+ * Same payload shape as WORKSPACE_CREATE_WITH_TERMINALS minus the workspace-
+ * creation fields: no `name`, no `viewMode`. The handler resolves the bound
+ * BrowserWindow for `workspaceId` and spawns into it.
+ */
+export interface WorkspaceAddTerminalsPayload {
+  workspaceId: string
+  /** Single repo for all panes. Ignored (and may be '') when `repoPaths` is supplied. */
+  repoPath: string
+  /** Per-pane repo paths. When present, length must equal `terminalCount` and takes precedence over `repoPath`. */
+  repoPaths?: string[]
+  terminalCount: number
+  worktreeMode: 'each-own' | 'shared'
+  namingMode: 'auto' | 'manual'
+  manualNames?: string[]
+  effort?: EffortLevel
+  /** Claude model for all spawned terminals (passed via --model on spawn) */
+  model?: Model
+}
+
+/** workspace:add-terminals response */
+export interface WorkspaceAddTerminalsResult {
+  error: string | null
   /** Per-terminal spawn errors (non-fatal; some terminals may have succeeded) */
   terminalErrors?: string[]
 }

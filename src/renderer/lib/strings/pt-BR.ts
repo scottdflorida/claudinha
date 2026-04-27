@@ -231,6 +231,18 @@ export const ptBR: Strings = {
     initGitFailedFmt: (msg: string): string => `Falha ao inicializar o repositório git: ${msg}`
   },
 
+  addTerminalsForm: {
+    title: 'Adicionar terminal(is)',
+    cancel: 'Cancelar',
+    submitOpening: 'Abrindo…',
+    submitLabel: (n: number): string =>
+      n === 1 ? 'Adicionar 1 terminal a este espaço de trabalho' : `Adicionar ${n} terminais a este espaço de trabalho`,
+    worktreeBranchBannerTitle: 'Restrito à worktree deste espaço de trabalho',
+    worktreeBranchBannerBody: (branchName: string, worktreePath: string): string =>
+      `Os novos terminais rodarão na branch ${branchName} em ${worktreePath}.`,
+    failedToAdd: 'Falha ao adicionar terminais.'
+  },
+
   newWorkspaceModal: {
     title: 'Criar espaço de trabalho',
     cancel: 'Cancelar',
@@ -295,6 +307,8 @@ export const ptBR: Strings = {
     workspaceNamePlaceholder: 'Espaço de trabalho sem nome',
     workspaceNameAria: 'Nome do espaço de trabalho',
     addTerminal: 'Adicionar terminal',
+    newTerminalsButton: '+ Terminal(is)',
+    newTerminalsAria: 'Adicionar terminais',
     moveTerminal: 'Mover terminal',
     closeTerminal: 'Fechar terminal',
     keyboardShortcuts: 'Atalhos do teclado',
@@ -312,38 +326,6 @@ export const ptBR: Strings = {
     cancel: 'Cancelar',
     headerLabel: 'Transplantar Terminal',
     loading: 'Carregando…'
-  },
-
-  spawnDialog: {
-    title: 'Novo terminal',
-    submit: 'Abrir',
-    submitting: 'Abrindo…',
-    cancel: 'Cancelar',
-    promptLabel: 'Prompt inicial (opcional)',
-    promptPlaceholder: 'Diga ao Claude no que começar a trabalhar…',
-    modelLabel: 'Modelo',
-    effortLabel: 'Esforço',
-    failedToCreate: 'Falha ao abrir terminal.',
-    launchModeLabel: 'Modo de início',
-    modeNewWorktree: 'Nova worktree',
-    modeExistingWorktree: 'Worktree existente',
-    modeManualPath: 'Caminho manual',
-    repoPathLabel: 'Caminho do repositório',
-    setByWorkspace: ' (definido pelo espaço de trabalho)',
-    browse: 'Procurar',
-    worktreeNameLabel: 'Nome da worktree',
-    worktreeNameHelper: 'Opcional — gerado automaticamente se vazio',
-    selectWorktree: 'Selecionar worktree',
-    loadingWorktrees: 'Carregando worktrees…',
-    noAdditionalWorktrees: 'Nenhuma worktree adicional encontrada.',
-    directoryPathLabel: 'Caminho do diretório',
-    failedFolderPicker: 'Falha ao abrir o seletor de pastas.',
-    failedToSpawn: 'Falha ao abrir terminal.',
-    windowTooSmall: (cols: number, rows: number): string =>
-      `Janela pequena demais para outro terminal no tamanho mínimo (${cols}×${rows}). Aumente e tente novamente.`,
-    invalidPath: 'Caminho inválido.',
-    mainSuffix: ' (principal)',
-    titleWithSession: (name: string, title: string): string => `${name} (${title})`
   },
 
   paneCloseConfirm: {
@@ -709,7 +691,7 @@ export const ptBR: Strings = {
     railHeader: 'Repositórios',
     railNoWorkspace: 'Nenhum espaço de trabalho vinculado.',
     railLoading: 'Carregando dados do repositório…',
-    railNewTerminalButton: '+ Terminal',
+    railNewTerminalButton: '+ Terminal(is)',
     railReposEmpty: 'Nenhum repositório ainda.',
     repoRailSessionsLabel: 'Sessões',
     repoRailPausedLabel: 'Pausados',
