@@ -50,6 +50,12 @@ interface WorkspaceDetailViewProps {
   isDormant: boolean
   isArchived: boolean
   onOpenGrove: () => void
+  /**
+   * Per-terminal Open. For an active workspace this is wired to focusTerminal,
+   * which switches the workspace window's active pane to `paneId` before
+   * raising the window. Falls back to onOpenGrove behavior in older callers.
+   */
+  onOpenPane: (paneId: string) => void
   onArchive: () => void
   onDelete: () => void
   onUnarchive: () => void
@@ -129,6 +135,7 @@ export function WorkspaceView({
   isDormant,
   isArchived,
   onOpenGrove,
+  onOpenPane,
   onArchive,
   onDelete,
   onUnarchive
@@ -191,7 +198,7 @@ export function WorkspaceView({
                     />
                     <span className="flex-1 text-sm font-[500] text-fg-primary truncate">{label}</span>
                     <span className="text-xs text-fg-muted flex-shrink-0">{statusText}</span>
-                    <Button variant="ghost" size="sm" onClick={onOpenGrove}>{t.workspaceView.open}</Button>
+                    <Button variant="ghost" size="sm" onClick={() => onOpenPane(pane.paneId)}>{t.workspaceView.open}</Button>
                   </div>
                   {prompt && (
                     <div className="mt-1 text-xs truncate">

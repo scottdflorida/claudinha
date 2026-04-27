@@ -38,6 +38,7 @@ export function ManagerWindow({ claudeFound }: ManagerWindowProps): React.JSX.El
     archivedWorkspaces,
     nextWorkspaceNumber,
     focusWorkspace,
+    focusTerminal,
     activateWorkspace,
     archiveWorkspace,
     unarchiveWorkspace,
@@ -146,6 +147,16 @@ export function ManagerWindow({ claudeFound }: ManagerWindowProps): React.JSX.El
             focusWorkspace(workspace.id)
           } else {
             activateWorkspace(workspace.id)
+          }
+        }}
+        onOpenPane={(paneId) => {
+          // Active: ask the workspace window to switch its active pane and
+          // raise itself. Dormant: reactivate just that terminal (existing
+          // activate-with-filter path).
+          if (isActive) {
+            focusTerminal(workspace.id, paneId)
+          } else {
+            activateWorkspace(workspace.id, [paneId])
           }
         }}
         onArchive={() => setArchiveConfirmWorkspace(workspace)}

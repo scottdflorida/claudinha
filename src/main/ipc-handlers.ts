@@ -1490,11 +1490,12 @@ export function registerIpcHandlers(
     const workspace = workspaceManager.getWorkspace(payload.workspaceId)
     if (!workspace || !workspace.windowId) return
     const win = windowManager.getWindow(workspace.windowId)
-    if (win && !win.isDestroyed()) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
-      // TODO Phase 5: focus the specific pane in the workspace window
-    }
+    if (!win || win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    // Push the pane switch first so the renderer has updated activePaneId by
+    // the time the window actually paints in the foreground.
+    win.webContents.send(IPC.WORKSPACE_FOCUS_PANE, { paneId: payload.paneId })
+    win.focus()
   })
 
   // manager:show — focus the Claudinha Command (manager) window from any workspace window

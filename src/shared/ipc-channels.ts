@@ -158,6 +158,11 @@ export const IPC = {
   WORKSPACE_SET_VIEW_MODE: 'workspace:set-view-mode',
   WORKSPACE_SET_ACTIVE_PANE: 'workspace:set-active-pane',
 
+  // main → renderer — pushed when the management window asks to focus a
+  // specific terminal in an already-active workspace. The receiving
+  // workspace window switches its active pane to the requested paneId.
+  WORKSPACE_FOCUS_PANE: 'workspace:focus-pane',
+
   // renderer → main (fire-and-forget) — manager navigation
   MANAGER_FOCUS_WORKSPACE: 'manager:focus-workspace',
   MANAGER_FOCUS_TERMINAL: 'manager:focus-terminal',
@@ -1321,6 +1326,16 @@ export interface WorkspaceSetActivePanePayload {
 
 export interface WorkspaceSetActivePaneResult {
   error: string | null
+}
+
+/**
+ * workspace:focus-pane — main pushes this to a workspace window when the
+ * user clicks a per-terminal Open button in the management view. The
+ * workspace window switches its active pane to the given id (same code
+ * path the kanban click takes), and main focuses the window separately.
+ */
+export interface WorkspaceFocusPanePayload {
+  paneId: string
 }
 
 // ---------------------------------------------------------------------------

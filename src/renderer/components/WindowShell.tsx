@@ -5,6 +5,7 @@ import type {
   RateLimitsPayload,
   WorkspaceSetViewModePayload,
   WorkspaceSetActivePanePayload,
+  WorkspaceFocusPanePayload,
   WorkspaceInitialSpawnBeginPayload,
   WorkspaceInitialSpawnCompletePayload
 } from '../../shared/ipc-channels'
@@ -233,6 +234,14 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   // has already set activePaneId to it).
   useIpcListener(IPC.PANE_SPAWNED, (payload) => {
     const { paneId } = payload as { paneId: string }
+    selectActivePane(paneId)
+  })
+
+  // Management window asked us to switch to a specific terminal. Drives the
+  // same selectActivePane path the kanban click uses, so the active card and
+  // keyboard focus both follow.
+  useIpcListener(IPC.WORKSPACE_FOCUS_PANE, (payload) => {
+    const { paneId } = payload as WorkspaceFocusPanePayload
     selectActivePane(paneId)
   })
 
