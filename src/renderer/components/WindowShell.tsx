@@ -165,8 +165,14 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   )
   const onKanbanResizeCommit = useCallback(
     (nextPx: number) => {
-      setKanbanDragHeight(null)
-      void setAppConfig({ kanban: { heightPx: nextPx } })
+      // Hold the drag height until the persisted value catches up via the
+      // setAppConfig IPC roundtrip. If we cleared kanbanDragHeight first,
+      // kanbanVisibleHeight would briefly fall back to the stale
+      // persistedKanbanHeight — flashing the terminal back to its pre-drag
+      // position for a frame before the new config propagates.
+      setAppConfig({ kanban: { heightPx: nextPx } }).finally(() => {
+        setKanbanDragHeight(null)
+      })
     },
     [setAppConfig]
   )
