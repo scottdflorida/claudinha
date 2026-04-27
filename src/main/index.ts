@@ -5,6 +5,12 @@
 // whether the userData folder has state or not.
 import './migrate-user-data'
 import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron'
+import { fixPathForPackagedApp } from './fix-path'
+
+// Restore the user's shell PATH for packaged macOS/Linux launches (Dock,
+// /Applications, Spotlight) so claude, git, etc. are findable. No-op in
+// dev and on Windows. Must run before the first spawn / claude:check.
+fixPathForPackagedApp()
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc-channels'
 import type { WindowInitPayload } from '../shared/ipc-channels'
