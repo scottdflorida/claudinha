@@ -193,7 +193,7 @@ export function KanbanRepoCard({
             <ActionButton
               label={t.kanban.mergeAction}
               disabled={mergeDisabled}
-              tooltip={mergeDisabled ? t.kanban.mergeNoneReady : t.kanban.mergeReady}
+              tooltip={mergeDisabled ? t.kanban.mergeNoneReady : `${t.kanban.mergeReady} ${t.merge.autoCommitNote}`}
               onClick={onMerge}
             />
             <ActionButton
@@ -207,7 +207,7 @@ export function KanbanRepoCard({
             <ActionButton
               label={t.kanban.mergePushAction}
               disabled={mergePushDisabled}
-              tooltip={mergePushDisabled ? t.kanban.mergePushNothing : t.kanban.mergePushReady}
+              tooltip={mergePushDisabled ? t.kanban.mergePushNothing : `${t.kanban.mergePushReady} ${t.merge.autoCommitNote}`}
               onClick={onMergeAndPush}
             />
             <ActionButton
@@ -238,7 +238,7 @@ export function KanbanRepoCard({
             <div className="flex items-center gap-1.5">
               <ActionButton
                 label={t.kanban.retryFailedMerges}
-                tooltip={t.kanban.retryFailedMergesTooltip}
+                tooltip={`${t.kanban.retryFailedMergesTooltip} ${t.merge.autoCommitNote}`}
                 onClick={onRetryFailedMerges}
               />
             </div>

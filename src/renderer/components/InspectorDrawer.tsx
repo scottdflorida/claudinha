@@ -394,7 +394,7 @@ function BulkActions({ workspaceId, summary }: { workspaceId: string; summary: W
           type="button"
           onClick={mergeAll}
           disabled={disabled}
-          title={readyCount === 0 ? t.inspectorDrawer.noPanesReady : undefined}
+          title={readyCount === 0 ? t.inspectorDrawer.noPanesReady : t.merge.autoCommitNote}
           className="flex items-center justify-center gap-1.5 text-xs px-2 py-1.5 rounded bg-accent text-fg-on-accent disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 transition"
         >
           <GitMerge size={14} />

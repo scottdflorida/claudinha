@@ -57,6 +57,8 @@ interface MenuItem {
   label: string
   disabled?: boolean
   disabledTooltip?: string
+  /** Tooltip shown when the item is enabled (e.g., side-effect note). */
+  tooltip?: string
   onSelect: () => void
   /** Non-interactive separator row (divider between sections). */
   separator?: boolean
@@ -177,7 +179,7 @@ function DropdownMenu({
               if (!item.disabled) setSelectedIndex(i)
             }}
             disabled={item.disabled}
-            title={item.disabled ? item.disabledTooltip : undefined}
+            title={item.disabled ? item.disabledTooltip : item.tooltip}
             className={`ui-btn w-full text-left px-3 h-7 text-sm flex items-center transition-colors duration-[80ms]
               ${item.disabled
                 ? 'opacity-40 cursor-not-allowed text-fg-muted'
@@ -460,7 +462,7 @@ export function CompletionActionBar({
                 onClick={() => setOpenMenu(openMenu === 'merge' ? null : 'merge')}
                 color={openMenu === 'merge' ? COMPLETION_MERGE_COLOR : MERGE_COLOR_DIM}
                 active={openMenu === 'merge'}
-                title={`${metaHint}G`}
+                title={`${metaHint}G — ${t.merge.autoCommitNote}`}
               />
               {openMenu === 'merge' && (
                 <DropdownMenu
@@ -470,6 +472,7 @@ export function CompletionActionBar({
                   items={[
                     ...MERGE_STRATEGIES.map((s) => ({
                       label: s.label,
+                      tooltip: t.merge.autoCommitNote,
                       onSelect: () => handleMerge(s.strategy)
                     })),
                     { label: '', separator: true, onSelect: () => { /* noop */ } },
@@ -477,10 +480,12 @@ export function CompletionActionBar({
                       label: t.completionBar.mergeAllGrove,
                       disabled: !workspaceId,
                       disabledTooltip: t.completionBar.noGroveContext,
+                      tooltip: t.merge.autoCommitNote,
                       onSelect: () => handleMergeAll('workspace', 'rebase-ff')
                     },
                     {
                       label: t.completionBar.mergeAllGlobal,
+                      tooltip: t.merge.autoCommitNote,
                       onSelect: () => handleMergeAll('global', 'rebase-ff')
                     }
                   ]}

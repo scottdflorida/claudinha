@@ -79,10 +79,21 @@ export function PaneCloseConfirmModal({
           <DialogCancel onClick={onCancel}>{cancelLabel}</DialogCancel>
           <DialogActions>
             {others.map((opt) => (
-              <ActionButton key={opt.action} opt={opt} disabled={pending} onClick={() => onConfirm(opt.action)} />
+              <ActionButton
+                key={opt.action}
+                opt={opt}
+                disabled={pending}
+                onClick={() => onConfirm(opt.action)}
+                title={opt.action === 'merge-close' ? t.merge.autoCommitNote : undefined}
+              />
             ))}
             {primary && (
-              <ActionButton opt={primary} disabled={pending} onClick={() => onConfirm(primary.action)} />
+              <ActionButton
+                opt={primary}
+                disabled={pending}
+                onClick={() => onConfirm(primary.action)}
+                title={primary.action === 'merge-close' ? t.merge.autoCommitNote : undefined}
+              />
             )}
           </DialogActions>
         </>
@@ -152,23 +163,23 @@ export function PaneCloseConfirmModal({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function ActionButton({ opt, onClick, disabled }: { opt: PaneCloseOption; onClick: () => void; disabled?: boolean }): React.JSX.Element {
+function ActionButton({ opt, onClick, disabled, title }: { opt: PaneCloseOption; onClick: () => void; disabled?: boolean; title?: string }): React.JSX.Element {
   if (opt.variant === 'primary') {
     return (
-      <Button variant="primary" onClick={onClick} disabled={disabled}>
+      <Button variant="primary" onClick={onClick} disabled={disabled} title={title}>
         {opt.label}
       </Button>
     )
   }
   if (opt.variant === 'destructive') {
     return (
-      <Button variant="secondary" destructive onClick={onClick} disabled={disabled}>
+      <Button variant="secondary" destructive onClick={onClick} disabled={disabled} title={title}>
         {opt.label}
       </Button>
     )
   }
   return (
-    <Button variant="secondary" onClick={onClick} disabled={disabled}>
+    <Button variant="secondary" onClick={onClick} disabled={disabled} title={title}>
       {opt.label}
     </Button>
   )
