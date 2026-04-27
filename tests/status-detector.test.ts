@@ -133,6 +133,25 @@ describe('StatusDetector', () => {
       expect(registry.updatePaneStatus).not.toHaveBeenCalled()
     })
 
+    it('chunk with a decorative glyph but no thinking word does NOT flip awaiting → working', () => {
+      // Regression: Claude Code's startup banner / mode-toggle / status
+      // footer routinely paints decorative glyphs like ⏺ ✻ ● ◉. A prior
+      // revision matched any of those glyphs as a "working" signal, which
+      // promoted ~5 of 20 panes per spawn until the SessionStart hook
+      // reverted them to awaiting-prompt — the visible "flip-and-revert"
+      // the user reported. The bridge must require a thinking *word*, not
+      // a decorative character.
+      registry.getPane.mockReturnValue(makePaneState({ id: 'pane-1', status: 'awaiting-prompt' }))
+      detector.registerPane('pane-1')
+
+      detector.onData('pane-1', '\n> ')
+
+      // Banner-shaped chunk with a decorative glyph but no thinking word.
+      detector.onData('pane-1', '● Connected to api.anthropic.com')
+
+      expect(registry.updatePaneStatus).not.toHaveBeenCalled()
+    })
+
     it('starts 30s timer; before 30s onData is a no-op for already-working panes', () => {
       registry.getPane.mockReturnValue(makePaneState({ id: 'pane-1', status: 'working' }))
       detector.registerPane('pane-1')

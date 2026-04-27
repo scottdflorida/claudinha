@@ -132,6 +132,13 @@ export class StatusDetector {
    * plan" diagnostic log. Keyed by paneId, value is timestamp of last log.
    */
   private readonly lastDebugLogAt = new Map<string, number>()
+  /**
+   * Throttle map for the awaiting → working bridge promotion log. Keyed by
+   * paneId. One log line per pane per 5 s so a tool run that emits a long
+   * stream of "Considering"-bearing chunks doesn't drown the console; the
+   * first promotion is what's diagnostic anyway.
+   */
+  private readonly lastBridgeLogAt = new Map<string, number>()
 
   /**
    * Wired after construction (workspaceManager constructs after StatusDetector,
@@ -227,6 +234,7 @@ export class StatusDetector {
     }
     this.panes.delete(paneId)
     this.lastDebugLogAt.delete(paneId)
+    this.lastBridgeLogAt.delete(paneId)
   }
 
   /**
@@ -287,11 +295,25 @@ export class StatusDetector {
           // Mark that we've seen the prompt at least once. Gates the bridge
           // so startup banner text before the first prompt can't promote.
           entry.promptSeen = true
-        } else if (
-          entry.promptSeen &&
-          CLAUDE_PATTERNS.workingHint.some((p) => p.test(clean))
-        ) {
-          this.emitStatus(paneId, 'working')
+        } else if (entry.promptSeen) {
+          const matched = CLAUDE_PATTERNS.workingHint.find((p) => p.test(clean))
+          if (matched) {
+            // Throttled diagnostic — exposes which pattern matched and a
+            // chunk preview so a future "phantom working" report can be
+            // diagnosed from the console rather than guessed at again
+            // (L-051 — instrument the live path before iterating on the
+            // heuristic). One line per pane per 5 s.
+            const now = Date.now()
+            const last = this.lastBridgeLogAt.get(paneId) ?? 0
+            if (now - last > 5000) {
+              this.lastBridgeLogAt.set(paneId, now)
+              const preview = JSON.stringify(clean.slice(0, 200))
+              console.log(
+                `[status-detector] bridge → working pane=${paneId} pattern=${matched.source} chunk=${preview}`
+              )
+            }
+            this.emitStatus(paneId, 'working')
+          }
         }
       }
       return
