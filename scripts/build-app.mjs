@@ -12,7 +12,7 @@
  * then restore the original bytes in a finally block (and on SIGINT/SIGTERM)
  * so the canonical package.json is never left swapped on disk.
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -62,6 +62,45 @@ try {
   }
 } finally {
   restore()
+}
+
+// Post-build guard: confirm scripts/ landed OUTSIDE the asar archive in the
+// macOS .app bundle. If `electron-builder.yml` regresses (e.g. someone moves
+// scripts/ back under `files:`), the relay scripts get packed into app.asar
+// — a file, not a directory — and Claude Code's hook executor fails with
+// "/bin/sh: …/app.asar/scripts/claudinha-hook-relay.sh: Not a directory".
+// We catch that here so it can never ship silently.
+if (exitCode === 0 && process.platform === 'darwin') {
+  const distDir = resolve(repoRoot, 'dist')
+  const requiredScripts = ['claudinha-hook-relay.sh', 'claudinha-statusline.sh']
+  const macAppDirs = existsSync(distDir)
+    ? readdirSync(distDir).filter((name) => /^mac/.test(name))
+    : []
+  if (macAppDirs.length === 0) {
+    console.warn('[build-app] no dist/mac* directory found — skipping asar layout check')
+  } else {
+    for (const macDir of macAppDirs) {
+      const resourcesDir = resolve(
+        distDir,
+        macDir,
+        'Claudinha.app/Contents/Resources/scripts'
+      )
+      if (!existsSync(resourcesDir) || !statSync(resourcesDir).isDirectory()) {
+        console.error(
+          `[build-app] FAIL: ${resourcesDir} missing — scripts/ must ship as extraResources, not inside app.asar`
+        )
+        exitCode = 1
+        continue
+      }
+      for (const script of requiredScripts) {
+        const scriptPath = resolve(resourcesDir, script)
+        if (!existsSync(scriptPath) || !statSync(scriptPath).isFile()) {
+          console.error(`[build-app] FAIL: ${scriptPath} not found`)
+          exitCode = 1
+        }
+      }
+    }
+  }
 }
 
 process.exit(exitCode)

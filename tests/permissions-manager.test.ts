@@ -4,7 +4,7 @@
  * Verifies settings.json merge logic with mocked fs and electron.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Mocks — hoisted before imports
@@ -26,7 +26,8 @@ vi.mock('os', () => ({
 
 vi.mock('electron', () => ({
   app: {
-    getAppPath: vi.fn(() => '/app')
+    getAppPath: vi.fn(() => '/app'),
+    isPackaged: false
   }
 }))
 
@@ -42,7 +43,8 @@ vi.mock('../src/main/permissions-store', async () => {
 })
 
 import fs from 'fs'
-import { PermissionsManager, healStaleWorktreeSettings } from '../src/main/permissions-manager'
+import { app as electronApp } from 'electron'
+import { PermissionsManager, healStaleWorktreeSettings, resolveScriptPath } from '../src/main/permissions-manager'
 
 const mockMkdirSync = vi.mocked(fs.mkdirSync)
 const mockReadFileSync = vi.mocked(fs.readFileSync)
@@ -68,6 +70,74 @@ function makeExistingSettings(overrides: Record<string, unknown> = {}): string {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe('resolveScriptPath', () => {
+  // Restore both isPackaged and process.resourcesPath after each test so the
+  // rest of the file (which assumes dev-style behavior, isPackaged=false)
+  // continues to compute paths off `app.getAppPath()` exactly as before.
+  let savedResourcesDescriptor: PropertyDescriptor | undefined
+
+  beforeEach(() => {
+    savedResourcesDescriptor = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+    ;(electronApp as unknown as { isPackaged: boolean }).isPackaged = false
+  })
+
+  afterEach(() => {
+    ;(electronApp as unknown as { isPackaged: boolean }).isPackaged = false
+    if (savedResourcesDescriptor) {
+      Object.defineProperty(process, 'resourcesPath', savedResourcesDescriptor)
+    } else {
+      // process.resourcesPath isn't defined under vitest by default; remove
+      // anything a test wrote so subsequent tests see the original absence.
+      delete (process as unknown as { resourcesPath?: string }).resourcesPath
+    }
+  })
+
+  it('uses process.resourcesPath when packaged (path must not cross app.asar)', () => {
+    ;(electronApp as unknown as { isPackaged: boolean }).isPackaged = true
+    Object.defineProperty(process, 'resourcesPath', {
+      value: '/Applications/Claudinha.app/Contents/Resources',
+      configurable: true,
+      writable: true
+    })
+
+    const p = resolveScriptPath('claudinha-hook-relay.sh')
+
+    expect(p).toBe(
+      '/Applications/Claudinha.app/Contents/Resources/scripts/claudinha-hook-relay.sh'
+    )
+    // The bug we are pinning a regression for: in a packaged build, the
+    // path must NEVER traverse through `app.asar` — that's a file, not a
+    // directory, and external shells (Claude Code's hook executor) cannot
+    // walk into it. ENOTDIR ("Not a directory") is the symptom this guards.
+    expect(p).not.toContain('app.asar')
+  })
+
+  it('uses app.getAppPath in development', () => {
+    ;(electronApp as unknown as { isPackaged: boolean }).isPackaged = false
+
+    const p = resolveScriptPath('claudinha-hook-relay.sh')
+
+    expect(p).toBe('/app/scripts/claudinha-hook-relay.sh')
+  })
+
+  it('handles statusline script the same way (resourcesPath in packaged, getAppPath in dev)', () => {
+    ;(electronApp as unknown as { isPackaged: boolean }).isPackaged = true
+    Object.defineProperty(process, 'resourcesPath', {
+      value: '/packaged/Resources',
+      configurable: true,
+      writable: true
+    })
+    expect(resolveScriptPath('claudinha-statusline.sh')).toBe(
+      '/packaged/Resources/scripts/claudinha-statusline.sh'
+    )
+
+    ;(electronApp as unknown as { isPackaged: boolean }).isPackaged = false
+    expect(resolveScriptPath('claudinha-statusline.sh')).toBe(
+      '/app/scripts/claudinha-statusline.sh'
+    )
+  })
+})
 
 describe('PermissionsManager.writeSettings', () => {
   let pm: PermissionsManager

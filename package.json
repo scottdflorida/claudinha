@@ -30,7 +30,8 @@
   "files": [
     "out",
     "bin",
-    "assets"
+    "assets",
+    "scripts"
   ],
   "dependencies": {
     "@electron/rebuild": "^3.7.1",

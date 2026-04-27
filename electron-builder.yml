@@ -8,11 +8,17 @@ directories:
 files:
   - out/**/*
   - assets/**/*
-  - scripts/**/*
 
+# scripts/ ships as extraResources (outside app.asar) so the relay scripts
+# can be exec'd by external processes — Claude Code shells out to them via
+# /bin/sh, which cannot traverse into the asar archive (it's a file, not a
+# directory). Keeping them outside the asar is the only way the resulting
+# absolute path can be resolved by a non-Electron process.
 extraResources:
   - from: assets
     to: assets
+  - from: scripts
+    to: scripts
 
 mac:
   icon: assets/icons/icon.png

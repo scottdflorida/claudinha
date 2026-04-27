@@ -63,9 +63,23 @@ const CLAUDINHA_STATUSLINE_PATTERN = /claudinha-statusline\.(?:sh|js)/
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Resolve the absolute path to a bundled script in the scripts/ directory. */
-function resolveScriptPath(scriptName: string): string {
-  return path.join(app.getAppPath(), 'scripts', scriptName)
+/**
+ * Resolve the absolute path to a bundled script in the scripts/ directory.
+ *
+ * In a packaged build, `app.getAppPath()` points inside `app.asar` (a single
+ * archive file). External processes — notably Claude Code, which runs hooks
+ * via `/bin/sh` — cannot traverse into the asar archive and would receive
+ * `ENOTDIR` ("Not a directory") on every hook invocation. The packaging
+ * config ships `scripts/` via `extraResources`, which lands the directory
+ * at `process.resourcesPath/scripts/` (i.e. `Contents/Resources/scripts/`
+ * on macOS) — a regular filesystem path any shell can exec.
+ *
+ * In dev (`npm run dev`), `app.isPackaged` is false and the path falls back
+ * to `app.getAppPath()`, which is the project root.
+ */
+export function resolveScriptPath(scriptName: string): string {
+  const base = app.isPackaged ? process.resourcesPath : app.getAppPath()
+  return path.join(base, 'scripts', scriptName)
 }
 
 /**
