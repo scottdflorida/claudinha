@@ -2,6 +2,22 @@
 
 All notable changes to Claudinha are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), and the project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.0 — 2026-04-27
+
+### Added
+
+- **Workspace spawn loading overlay.** First-time terminal spawn now shows a Claudinha overlay with an eye-blink animation while the PTY warms up.
+- **Rate-limit elapsed-time marker.** For rate-limited sessions, the rate-limit bar now includes a marker showing where you are in the current reset timeline — e.g. if you are 3.5 days from reset on a 7-day limit, the marker sits at the halfway point of the bar regardless of where actual usage is.
+
+### Changed
+
+- **App icon polish.** The icon now respects Apple's macOS safe-area template so it renders at the same visual size as system apps in the Dock and Cmd-Tab switcher, instead of ~24% larger. The character has more breathing room inside the green squircle and the bottom shadow is lighter.
+- **Terminal cursor in Claudinha gold.** The xterm cursor color is locked to Claudinha's gold accent rather than inheriting whatever theme color happens to be active, and the standard ANSI palette is restored so rendering is consistent across themes.
+
+### Fixed
+
+- **Kanban resize drag.** No longer freezes and prevents further resizing.
+
 ## 0.1.1 — 2026-04-24
 
 ### Changed
