@@ -6,6 +6,10 @@ import type { WindowManager } from './window-manager'
 import { CLAUDE_PATTERNS } from './claude-patterns'
 import { PTY_SILENCE_DEBOUNCE_MS, HOOK_FALLBACK_ACTIVATION_MS } from './constants'
 import { trackFallbackActivated } from './analytics/error-instrumentation'
+// stripAnsi lives in src/shared so the renderer-side spawn-overlay detector
+// can reuse the same logic (both need to look at "what the user sees" rather
+// than raw bytes — markers can hide inside OSC title-set sequences).
+import { stripAnsi } from '../shared/strip-ansi'
 
 // ---------------------------------------------------------------------------
 // Internal state per pane
@@ -89,36 +93,6 @@ const PLAN_MODE_ENABLED_MSG = /Enabled.{0,8}plan.{0,8}mode/is
 // fired" so a future failure surfaces actual buffer content instead of
 // silent miss.
 const PLAN_MODE_LOOSE_HINT = /plan/i
-
-// ---------------------------------------------------------------------------
-// ANSI escape code stripping
-// ---------------------------------------------------------------------------
-
-/**
- * Remove ANSI color/cursor escape sequences so regex patterns match cleanly.
- *
- * NOTE on the simple-ESC pattern: the previous version used `[A-Za-z]` and
- * happily stripped ESC + lowercase-letter pairs that aren't valid escapes.
- * That ate the `t` of `to` in Claude Code's plan-mode footer (`shift+tab to
- * cycle` → `shift+tab o cycle`), among other surprising things. ECMA-48
- * 2-byte escapes only use C1-set finals (`@`-`_` ASCII range) plus a small
- * set of DEC-private 2-byte forms (`7`, `8`, `=`, `>`). Lowercase ASCII
- * letters never terminate a real escape. Restricting the match here fixes
- * the false-strip without re-introducing it for any actual escape.
- */
-function stripAnsi(raw: string): string {
-  // CSI sequences: ESC [ ... final-byte
-  return raw
-    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-    // OSC sequences: ESC ] ... BEL/ST
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
-    // Character-set selection (3 bytes): ESC ( B / ESC ) 0 / etc.
-    .replace(/\x1b[()*+\-./][\x20-\x7e]/g, '')
-    // Simple 2-byte escapes — C1-set finals (`@`-`_`) plus DEC private
-    // 7/8/=/> only. Crucially does NOT match lowercase letters, so it can't
-    // chew the first letter of legitimate text bytes following a stray ESC.
-    .replace(/\x1b[@-Z\\\]^_=>78]/g, '')
-}
 
 // ---------------------------------------------------------------------------
 // StatusDetector

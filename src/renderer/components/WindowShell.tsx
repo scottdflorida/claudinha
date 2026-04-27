@@ -42,6 +42,7 @@ import type { PaneCloseWorktreeResult, PaneMergeAndCloseResult, CloseSequencePan
 import type { PaneCloseDescriptor } from '../lib/pane-close-options'
 import { buildPaneCloseOptions } from '../lib/pane-close-options'
 import { useWorkspaceCloseSequence } from '../hooks/useWorkspaceCloseSequence'
+import { stripAnsi } from '../../shared/strip-ansi'
 
 // Inspector drawer is hidden from the UI. Service, IPC, hook, and tests stay
 // intact; KanbanRepoRail still subscribes to INSPECTOR_SUMMARY via useInspector.
@@ -247,31 +248,37 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   //   1. main has signalled COMPLETE,
   //   2. every PANE_SPAWNED has been reduced into local panes state,
   //   3. the inspector summary is non-null (the rail is no longer pending),
-  //   4. the active pane (the last-spawned terminal) has actually rendered
-  //      Claude Code's banner — detected by scanning accumulated PANE_DATA
-  //      for the "Claude Code" string. The first PANE_DATA chunk fires far
-  //      too early (shell init, ANSI cursor positioning); Claude Code itself
-  //      then clears the screen and draws its banner ~2–4s later, so we
-  //      have to wait for the banner text specifically.
-  // A 15s safety timeout dismisses anyway so a slow Claude Code startup
-  // can't strand the user behind the overlay forever.
+  //   4. the active pane (the last-spawned terminal) has finished Claude
+  //      Code's startup — detected by stripping ANSI from accumulated
+  //      PANE_DATA and matching the canonical "awaiting-prompt" patterns
+  //      (`❯` or bare `>` at end of line) that claude-patterns.ts uses on
+  //      the main side. Trying to match the brand string fails because
+  //      Claude Code emits "Claude Code" in an OSC title-set sequence
+  //      (`ESC ] 0 ; Claude Code BEL`) seconds before the visible banner
+  //      draws — that hides inside ANSI and lifts the overlay too early.
+  //      The prompt arrow only appears once Claude is ready for input.
+  // A 25s safety timeout — measured from BEGIN, so a long spawn loop with
+  // many terminals doesn't eat the budget — dismisses anyway so a stuck
+  // Claude Code startup can't strand the user behind the overlay.
+  const PROMPT_PATTERNS = [/❯\s*$/, /(?:^|\n)>\s*$/]
   const [initialSpawn, setInitialSpawn] = useState<{
     expectedCount: number
     completed: boolean
   } | null>(null)
-  // Pane id we're waiting for the Claude Code banner on, plus a rolling
-  // accumulator of recent PTY data for substring detection. Both held in
-  // refs so the high-frequency PANE_DATA listener doesn't re-render
+  // Pane id we're waiting on, plus a rolling accumulator of recent PTY data.
+  // Both refs so the high-frequency PANE_DATA listener doesn't re-render
   // WindowShell on every chunk — only the one-shot `setActivePaneReady(true)`
   // does.
   const awaitingActivePaneRef = useRef<string | null>(null)
   const activePaneDataAccumRef = useRef<string>('')
+  const initialSpawnDeadlineRef = useRef<number>(0)
   const [activePaneReady, setActivePaneReady] = useState(false)
 
   useIpcListener(IPC.WORKSPACE_INITIAL_SPAWN_BEGIN, (payload) => {
     const { expectedCount } = payload as WorkspaceInitialSpawnBeginPayload
     awaitingActivePaneRef.current = null
     activePaneDataAccumRef.current = ''
+    initialSpawnDeadlineRef.current = Date.now() + 25000
     setActivePaneReady(false)
     setInitialSpawn({ expectedCount, completed: false })
   })
@@ -295,21 +302,20 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
     setInitialSpawn((prev) => (prev ? { ...prev, completed: true } : prev))
   })
 
-  // Listen for PANE_DATA so we know when Claude Code has actually rendered
-  // its banner in the active terminal. We can't trust the first chunk —
-  // shells emit cursor positioning / prompt bytes before Claude Code starts,
-  // and Claude Code then clears the screen before drawing its banner. So we
-  // accumulate (capped at 16 KB so the buffer can't grow unbounded) and
-  // scan for "Claude Code" text, which is the most reliable marker that
-  // the banner is on screen. The listener short-circuits cheaply when no
+  // Listen for PANE_DATA so we know when Claude Code is fully booted in the
+  // active terminal. The accumulator holds the last ~4 KB of PTY bytes
+  // (prompt arrow always lives at the trailing edge), strips ANSI to get
+  // what the user actually sees, and matches against the canonical
+  // awaiting-prompt patterns. The listener short-circuits cheaply when no
   // spawn is in flight, so overhead during normal operation is negligible.
   useIpcListener(IPC.PANE_DATA, (payload) => {
     const awaiting = awaitingActivePaneRef.current
     if (!awaiting) return
     const { paneId, data } = payload as { paneId: string; data: string }
     if (paneId !== awaiting) return
-    activePaneDataAccumRef.current = (activePaneDataAccumRef.current + data).slice(-16384)
-    if (/Claude Code/i.test(activePaneDataAccumRef.current)) {
+    activePaneDataAccumRef.current = (activePaneDataAccumRef.current + data).slice(-4096)
+    const visible = stripAnsi(activePaneDataAccumRef.current)
+    if (PROMPT_PATTERNS.some((re) => re.test(visible))) {
       awaitingActivePaneRef.current = null
       activePaneDataAccumRef.current = ''
       setActivePaneReady(true)
@@ -318,24 +324,28 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
 
   // Overlay dismissal effect: clears initialSpawn once the loop is done AND
   // panes are reduced into state AND the inspector summary has populated AND
-  // Claude Code's banner has rendered in the active pane.
+  // Claude Code's prompt has rendered in the active pane.
   useEffect(() => {
-    if (!initialSpawn || !initialSpawn.completed) return
-    const ready =
-      panes.length >= initialSpawn.expectedCount
-      && inspectorSummary !== null
-      && activePaneReady
-    if (ready) {
-      setInitialSpawn(null)
-      return
+    if (!initialSpawn) return
+    if (initialSpawn.completed) {
+      const ready =
+        panes.length >= initialSpawn.expectedCount
+        && inspectorSummary !== null
+        && activePaneReady
+      if (ready) {
+        setInitialSpawn(null)
+        return
+      }
     }
-    // Safety net so a slow Claude Code startup can't pin the user behind
-    // the overlay forever.
+    // Safety net measured from BEGIN — large spawn loops can chew >10s on
+    // their own, so timing the timeout from COMPLETE leaves Claude Code
+    // too little budget to actually boot.
+    const remaining = Math.max(0, initialSpawnDeadlineRef.current - Date.now())
     const t = setTimeout(() => {
       awaitingActivePaneRef.current = null
       activePaneDataAccumRef.current = ''
       setInitialSpawn(null)
-    }, 15000)
+    }, remaining)
     return () => clearTimeout(t)
   }, [initialSpawn, panes.length, inspectorSummary, activePaneReady])
 
