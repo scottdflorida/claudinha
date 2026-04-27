@@ -6,6 +6,7 @@ import { IPC } from '../../shared/ipc-channels'
 import type { PaneDataPayload } from '../../shared/ipc-channels'
 import { ipcSend, useIpcListener } from '../hooks/useIpc'
 import { SCROLLBACK_LINES } from '../lib/constants'
+import { rewriteCursorBlock } from '../lib/rewrite-cursor-block'
 
 // ---------------------------------------------------------------------------
 // xterm.js theme objects — dark (§11.1) and light (§11.2)
@@ -356,7 +357,14 @@ export const XTermView = forwardRef<XTermViewHandle, XTermViewProps>(
     useIpcListener(IPC.PANE_DATA, (payload) => {
       const { paneId: dataPaneId, data } = payload as PaneDataPayload
       if (dataPaneId !== paneId) return
-      termRef.current?.write(data)
+      // Rewrite ink-text-input's inverse-space cursor pattern to a gold
+      // full-block character. The actual xterm cursor is hidden by Claude
+      // (`\x1b[?25l`), so the input "cursor" is just a foreground-colored
+      // cell from `\x1b[7m \x1b[27m` — gold-tinting that one cell here is
+      // the only way to color it without dragging the whole default-fg
+      // palette along (see rewrite-cursor-block.ts).
+      const themeMode = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'
+      termRef.current?.write(rewriteCursorBlock(data, themeMode))
     })
 
     // ---------------------------------------------------------------------------
