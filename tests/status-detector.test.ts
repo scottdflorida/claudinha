@@ -100,15 +100,36 @@ describe('StatusDetector', () => {
       detector.registerPane('pane-1')
 
       // The detector requires the prompt to be seen at least once before it
-      // trusts non-prompt output as a "working" signal — otherwise startup
+      // trusts subsequent output as a "working" signal — otherwise startup
       // banner text would false-positive (commit 688b0ea). So feed the prompt
-      // first, then real working output.
+      // first, then a positive thinking indicator.
       detector.onData('pane-1', '\n> ')
       expect(registry.updatePaneStatus).not.toHaveBeenCalled()
 
-      // Now non-prompt output after a seen prompt → working transition
-      detector.onData('pane-1', 'some output')
+      // Now a chunk containing a thinking indicator → working transition
+      detector.onData('pane-1', 'Considering…')
       expect(registry.updatePaneStatus).toHaveBeenCalledWith('pane-1', 'working', 'pty-fallback', null)
+    })
+
+    it('idle UI redraw after prompt does NOT flip awaiting → working', () => {
+      // Regression: Claude Code's idle redraws (input-box repaint, token
+      // counter / status footer, cursor positioning) emit visible characters
+      // after stripAnsi but do NOT mean Claude is working. Prior to the
+      // workingHint gate, any such chunk after the prompt was seen would
+      // false-positive a freshly spawned pane to 'working' while the user
+      // was idle — observed when launching a 20-pane workspace.
+      registry.getPane.mockReturnValue(makePaneState({ id: 'pane-1', status: 'awaiting-prompt' }))
+      detector.registerPane('pane-1')
+
+      // Render the prompt so promptSeen flips to true.
+      detector.onData('pane-1', '\n> ')
+
+      // Now feed an idle UI redraw chunk: visible text but no thinking
+      // indicator. This is the shape of Claude Code's status-footer / input
+      // box repaints at rest.
+      detector.onData('pane-1', 'Tokens: 0 · context 200k · sonnet')
+
+      expect(registry.updatePaneStatus).not.toHaveBeenCalled()
     })
 
     it('starts 30s timer; before 30s onData is a no-op for already-working panes', () => {

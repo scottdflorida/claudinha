@@ -75,6 +75,34 @@ const AWAITING_PROMPT_PATTERNS: RegExp[] = [
   /❯\s*$/
 ]
 
+/**
+ * `workingHint` patterns: positive evidence that Claude is *actively* thinking
+ * or running a tool — used to gate the awaiting-prompt → working PTY bridge
+ * in StatusDetector. The hook map already covers the user-submits transition
+ * via `UserPromptSubmit: 'working'`; this list exists so the bridge fires
+ * only as defense-in-depth when a thinking indicator appears in the terminal
+ * stream, NOT for every idle UI redraw Claude Code emits while at rest.
+ *
+ * Without this gate, any non-prompt visible content (input-box repaints,
+ * status-line/token counters, cursor-positioning glyphs that survive
+ * stripAnsi) was promoting just-spawned panes to `working` while the user
+ * was idle — see the L-013 follow-up about the bridge having outlived its
+ * original purpose.
+ */
+const WORKING_HINT_PATTERNS: RegExp[] = [
+  // Inline thinking labels Claude Code prints to the transcript while
+  // composing a response. Whitespace-tolerant because ink fragments text
+  // via cursor-position escapes between glyphs after stripAnsi.
+  /Considering/i,
+  /Thinking/i,
+  /Marinating/i,
+  /Pondering/i,
+  /thought\s+for\b/i,
+  // Tool-call header glyphs Claude Code paints when running a tool
+  // (• and ⏺ are the most common; the others are version-spread variants).
+  /[⏺✻●◉]/u,
+]
+
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
@@ -82,7 +110,8 @@ const AWAITING_PROMPT_PATTERNS: RegExp[] = [
 export const CLAUDE_PATTERNS = {
   needsInput: NEEDS_INPUT_PATTERNS,
   done: DONE_PATTERNS,
-  awaitingPrompt: AWAITING_PROMPT_PATTERNS
+  awaitingPrompt: AWAITING_PROMPT_PATTERNS,
+  workingHint: WORKING_HINT_PATTERNS
 } as const
 
 // ---------------------------------------------------------------------------

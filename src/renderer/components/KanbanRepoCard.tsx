@@ -117,10 +117,10 @@ export function KanbanRepoCard({
 
   return (
     <section
-      className="rounded-md bg-overlay border border-[var(--color-border-subtle)] overflow-hidden"
+      className="rounded-md bg-overlay border border-[var(--color-border-subtle)] overflow-hidden flex flex-col min-h-0 max-h-full"
       aria-label={t.kanban.repoCardAriaFmt(rollup.repoLabel)}
     >
-      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[var(--color-border-subtle)]">
+      <header className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-[var(--color-border-subtle)]">
         <div className="flex items-center gap-1.5 min-w-0">
           <button
             type="button"
@@ -154,7 +154,7 @@ export function KanbanRepoCard({
       </header>
 
       {/* Rollup line: pane count · +N -M · status dots */}
-      <div className="px-3 py-1.5 flex items-center gap-3 text-[11px] text-fg-muted tabular-nums border-b border-[var(--color-border-subtle)]">
+      <div className="shrink-0 px-3 py-1.5 flex items-center gap-3 text-[11px] text-fg-muted tabular-nums border-b border-[var(--color-border-subtle)]">
         <span>{rollup.paneCount} {t.kanban.agentsPlural(rollup.paneCount)}</span>
         {(rollup.totalLinesAdded > 0 || rollup.totalLinesRemoved > 0) && (
           <span>
@@ -188,7 +188,7 @@ export function KanbanRepoCard({
           is Merge + push / Create PR. Collapses with the repo chevron so a
           collapsed card shrinks to header + rollup only. */}
       {expanded && (
-        <div className="px-3 py-2 flex flex-col gap-1.5 border-b border-[var(--color-border-subtle)]">
+        <div className="shrink-0 px-3 py-2 flex flex-col gap-1.5 border-b border-[var(--color-border-subtle)]">
           <div className="flex items-center gap-1.5">
             <ActionButton
               label={t.kanban.mergeAction}
@@ -246,9 +246,14 @@ export function KanbanRepoCard({
         </div>
       )}
 
-      {/* Sessions list (default expanded; collapsible at the repo level) */}
+      {/* Sessions list (default expanded; collapsible at the repo level).
+          flex-1 min-h-0 overflow-y-auto: the agent list is the only growing
+          child, so the card's header / rollup / bulk-action buttons stay
+          visible regardless of agent count, and the list scrolls inside the
+          card once the agents would push it past the rail's available height
+          (e.g. 20-agent workspace with one repo). */}
       {expanded && (
-        <ul className="flex flex-col py-1.5 px-1.5 gap-0.5">
+        <ul className="flex-1 min-h-0 overflow-y-auto flex flex-col py-1.5 px-1.5 gap-0.5">
           {panes.length === 0 ? (
             <li className="text-[11px] text-fg-muted px-2 py-1">{t.kanban.noActiveAgents}</li>
           ) : (

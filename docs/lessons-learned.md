@@ -1060,3 +1060,30 @@ The user wanted to run the installed Claudinha as an orchestrator and the dev bu
 **How to avoid this in the future:**
 Before adding `app.requestSingleInstanceLock()` (or any other guard rooted in `userData`) to an Electron app, ask: *"Does this product also get run unpackaged via `npm run dev`, and if so, will the dev process and an installed copy share `userData`?"* If yes, gate the guard or split `userData` for the dev branch — `if (!app.isPackaged) { app.setName(...); app.setPath('userData', ...) }` before any code that touches it. The same principle applies to anything else stored in `userData` (electron-store files, SQLite DBs, log files): assume two coexisting Electron processes for the same product **will** collide on those files unless you explicitly partition them. And when diagnosing "Electron starts then exits with no window," the single-instance lock is the first hypothesis to check, before anything in the renderer or vite config — silent exit between "main process loaded" and "window shown" is the lock's signature.
 
+---
+
+## L-053: A "fallback bridge" stays load-bearing only as long as its gap is open — when the primary signal closes the gap, the bridge's heuristic has to be retuned or it starts firing in scenarios it was never designed for
+
+**Date:** 2026-04-27
+**Source:** User launched a 20-pane workspace; ~half the panes flipped to status `working` one-by-one ~1 s apart while the user was idle, terminals still showing the Claude Code banner + idle prompt with no output.
+**Category:** implementation pattern
+
+**What happened:**
+`StatusDetector` had an "awaiting-prompt → working" PTY bridge added under L-013 (2026-03-23) to close a real gap: at the time, the hook map only carried `SessionStart / PreToolUse / PostToolUse / Stop`, so between the user submitting a prompt and Claude calling its first tool, the status sat on `awaiting-prompt` for several seconds while "Considering…" was visible in the terminal. The bridge's heuristic was "after we've seen the prompt at least once, any non-prompt visible output means Claude is working." That heuristic was correct *for the inputs that existed when it was written* — between submission and first tool, almost the only thing Claude Code paints is a thinking indicator. Later, `UserPromptSubmit: 'working'` was added to the hook map, which fires at the moment of submission and closes the gap. But the bridge wasn't revisited, so it kept firing in hook mode — and because Claude Code's idle TUI keeps repainting the input box, the token/status footer, and cursor positioning, those repaints satisfied "non-prompt visible content after prompt seen" and silently flipped freshly-spawned panes to `working` while the user hadn't typed anything. The bug was invisible at low pane counts (one paint, one false-positive, no one notices); 20 panes spawning sequentially turned it into a visible 1-per-second cascade.
+
+**Why the agent got it wrong:**
+Two reinforcing mistakes, the first when the bridge was added and the second when `UserPromptSubmit` was added.
+
+1. *When the bridge was added:* The author wrote the gate as "any non-prompt content" rather than "a positive thinking signal" because in the only context the bridge was meant to fire (mid-thinking), the two were observationally equivalent. The bridge encoded the *negation* of "prompt visible" instead of a *positive* description of "Claude is thinking." That phrasing baked in the assumption that the bridge would never run *outside* the mid-thinking window — i.e. it relied on the *caller* to guarantee context, instead of self-validating.
+
+2. *When `UserPromptSubmit: 'working'` was added:* The author updated the hook map to close the L-013 gap at the source. They didn't ask "does any other code path that exists *because of* this gap need to be revisited?" The bridge wasn't named, wasn't tagged, and wasn't grep-able for "L-013" — so adding the new hook wasn't accompanied by retuning or removing the now-redundant fallback. The bridge kept running, but the surface it was running against had widened from "mid-thinking only" to "any time the pane is on `awaiting-prompt`," including idle-at-rest. Its negative gate ("not the prompt") false-positived immediately.
+
+**How to avoid this in the future:**
+Two decision rules, one per mistake:
+
+*When writing a fallback gate that detects state X:* prefer a positive signal of X over a negation of "not-X." Negations are scoped to the inputs you tested and silently widen when new inputs appear. If you must use a negation (e.g. because the positive signal is too noisy), name and document the *invariant* the gate relies on ("this only runs in the window between submit and first tool, so non-prompt visible content == thinking") so a future agent reading the code knows what it would take to invalidate the gate.
+
+*When adding a primary signal that closes a known gap:* grep for the lesson ID (or any code comment that mentions "fallback," "bridge," "between events," "L-NNN") and audit each match. If the new primary signal makes any fallback redundant, decide deliberately: tighten the fallback's gate to a positive signal so it can stay in as defense-in-depth, or remove it entirely. Don't leave a fallback in place "just in case" — its heuristic is now operating against a different distribution of inputs than it was tuned for, and that's where false positives come from. Self-check before merging the primary: *"Which fallbacks were added because the primary used to be missing, and have I retuned each of them now that the primary exists?"*
+
+Related: L-009 (external hook events ≠ semantic status — same shape: a heuristic correct for one context misfiring in another). L-013 (the lesson that motivated the bridge in the first place — preserved as guidance; only the bridge's implementation needed updating).
+

@@ -259,19 +259,26 @@ export class StatusDetector {
 
     if (!entry.isActive) {
       // Even with hooks as primary, detect awaiting-prompt → working transition
-      // from PTY output. Hook events don't fire during Claude's initial thinking
-      // phase (before any tool call), so without this the status stays
-      // "awaiting-prompt" while "Considering..." is visible in the terminal.
+      // from PTY output as defense-in-depth. The hook map already covers the
+      // user-submits case via `UserPromptSubmit: 'working'` (hook-listener.ts);
+      // this bridge only needs to fire when a positive thinking/tool indicator
+      // shows up in the chunk. Promoting on "any non-prompt visible content"
+      // is too loose — Claude Code's idle UI redraws (input-box repaints,
+      // token/status footer, cursor positioning) routinely emit visible
+      // characters at rest and would flip a brand-new pane to `working`
+      // without the user ever submitting a prompt.
       const pane = this.sessionRegistry.getPane(paneId)
       if (pane && pane.status === 'awaiting-prompt') {
         const clean = stripAnsi(data)
         const isPrompt = CLAUDE_PATTERNS.awaitingPrompt.some((p) => p.test(clean))
         if (isPrompt) {
-          // Mark that we've seen the prompt at least once. Only after this
-          // do we trust that non-prompt output means Claude is actively working
-          // (vs. startup banner text before the first prompt appears).
+          // Mark that we've seen the prompt at least once. Gates the bridge
+          // so startup banner text before the first prompt can't promote.
           entry.promptSeen = true
-        } else if (entry.promptSeen && clean.trim().length > 0) {
+        } else if (
+          entry.promptSeen &&
+          CLAUDE_PATTERNS.workingHint.some((p) => p.test(clean))
+        ) {
           this.emitStatus(paneId, 'working')
         }
       }
