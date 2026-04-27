@@ -250,17 +250,19 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   //   3. the inspector summary is non-null (the rail is no longer pending),
   //   4. the active pane (the last-spawned terminal) has finished Claude
   //      Code's startup — detected by stripping ANSI from accumulated
-  //      PANE_DATA and matching the canonical "awaiting-prompt" patterns
-  //      (`❯` or bare `>` at end of line) that claude-patterns.ts uses on
-  //      the main side. Trying to match the brand string fails because
+  //      PANE_DATA and looking for the `❯` prompt arrow anywhere in the
+  //      visible text. Trying to match the brand string fails because
   //      Claude Code emits "Claude Code" in an OSC title-set sequence
   //      (`ESC ] 0 ; Claude Code BEL`) seconds before the visible banner
-  //      draws — that hides inside ANSI and lifts the overlay too early.
-  //      The prompt arrow only appears once Claude is ready for input.
+  //      draws. The prompt arrow only appears once Claude is ready for
+  //      input — and we deliberately don't anchor it to end-of-string
+  //      because Claude Code emits cursor-positioning / refresh chatter
+  //      after the prompt is drawn, which would push the arrow away from
+  //      the trailing edge and we'd never match.
   // A 25s safety timeout — measured from BEGIN, so a long spawn loop with
   // many terminals doesn't eat the budget — dismisses anyway so a stuck
   // Claude Code startup can't strand the user behind the overlay.
-  const PROMPT_PATTERNS = [/❯\s*$/, /(?:^|\n)>\s*$/]
+  const CLAUDE_PROMPT_MARKER = /❯/
   const [initialSpawn, setInitialSpawn] = useState<{
     expectedCount: number
     completed: boolean
@@ -303,19 +305,18 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   })
 
   // Listen for PANE_DATA so we know when Claude Code is fully booted in the
-  // active terminal. The accumulator holds the last ~4 KB of PTY bytes
-  // (prompt arrow always lives at the trailing edge), strips ANSI to get
-  // what the user actually sees, and matches against the canonical
-  // awaiting-prompt patterns. The listener short-circuits cheaply when no
-  // spawn is in flight, so overhead during normal operation is negligible.
+  // active terminal. The accumulator holds the last ~8 KB of PTY bytes;
+  // stripAnsi gets us "what the user sees", and we look for `❯` anywhere
+  // in that text. The listener short-circuits cheaply when no spawn is in
+  // flight, so overhead during normal operation is negligible.
   useIpcListener(IPC.PANE_DATA, (payload) => {
     const awaiting = awaitingActivePaneRef.current
     if (!awaiting) return
     const { paneId, data } = payload as { paneId: string; data: string }
     if (paneId !== awaiting) return
-    activePaneDataAccumRef.current = (activePaneDataAccumRef.current + data).slice(-4096)
+    activePaneDataAccumRef.current = (activePaneDataAccumRef.current + data).slice(-8192)
     const visible = stripAnsi(activePaneDataAccumRef.current)
-    if (PROMPT_PATTERNS.some((re) => re.test(visible))) {
+    if (CLAUDE_PROMPT_MARKER.test(visible)) {
       awaitingActivePaneRef.current = null
       activePaneDataAccumRef.current = ''
       setActivePaneReady(true)
