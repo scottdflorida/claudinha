@@ -18,7 +18,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "dist": "electron-vite build && electron-builder",
+    "dist": "node scripts/build-app.mjs",
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
