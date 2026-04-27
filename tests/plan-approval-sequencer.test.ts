@@ -138,7 +138,8 @@ function makePane(overrides: Partial<PaneState>): PaneState {
       modelDisplayName: null,
       linesAdded: null,
       linesRemoved: null,
-      sessionTitle: null
+      sessionTitle: null,
+      initialPrompt: null
     },
     gitStatus: null,
     completionActionStatus: null,

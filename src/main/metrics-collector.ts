@@ -21,8 +21,12 @@ interface JsonlEntry {
   type?: string
   isSidechain?: boolean
   isApiErrorMessage?: boolean
+  /** Set on system-injected user entries (e.g. context-compaction summaries). Skip when extracting the human-authored starting prompt. */
+  isMeta?: boolean
   message?: {
     role?: string
+    /** Either a plain string or an array of content blocks (Anthropic SDK format) */
+    content?: string | Array<{ type?: string; text?: string }>
     usage?: {
       input_tokens?: number
       output_tokens?: number
@@ -35,6 +39,29 @@ interface JsonlEntry {
   /** Present on custom-title entries (AI-generated session title) */
   customTitle?: string
   [key: string]: unknown
+}
+
+type JsonlMessageContent = string | Array<{ type?: string; text?: string }> | undefined
+
+/**
+ * Extract a plain-text representation of a JSONL message's `content` field.
+ * Returns null when there is no usable text (empty string, tool-result-only
+ * arrays, etc.) so the caller can skip non-prompt entries.
+ */
+function extractMessageText(content: JsonlMessageContent): string | null {
+  if (typeof content === 'string') {
+    const trimmed = content.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+  if (Array.isArray(content)) {
+    for (const block of content) {
+      if (block && block.type === 'text' && typeof block.text === 'string') {
+        const trimmed = block.text.trim()
+        if (trimmed.length > 0) return trimmed
+      }
+    }
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +305,7 @@ export class MetricsCollector {
       totalTokens: existingMetrics.totalTokens,
       toolsUsed: existingMetrics.toolsUsed,
       sessionTitle: existingMetrics.sessionTitle,
+      initialPrompt: existingMetrics.initialPrompt,
 
       // Statusline-derived fields
       contextPercent: data.context_window?.used_percentage ?? existingMetrics.contextPercent,
@@ -388,6 +416,7 @@ export class MetricsCollector {
     let latestUsage: JsonlEntry['message'] | null = null
     let latestModelId: string | null = null
     let sessionTitle: string | null = null
+    let initialPrompt: string | null = null
     const toolCounts: ToolUsageSummary = new Map()
 
     for (const line of lines) {
@@ -405,6 +434,19 @@ export class MetricsCollector {
       // Extract AI-generated session title (PE-04)
       if (entry.type === 'custom-title' && entry.customTitle) {
         sessionTitle = entry.customTitle
+      }
+
+      // Capture the first human-authored user message as the session's
+      // starting prompt. Skip `isMeta` entries (system-injected, e.g.
+      // compaction summaries) and tool-result-only payloads with no text.
+      if (
+        initialPrompt === null &&
+        entry.type === 'user' &&
+        !entry.isMeta &&
+        entry.message?.role === 'user'
+      ) {
+        const text = extractMessageText(entry.message.content)
+        if (text) initialPrompt = text
       }
 
       // Count tool usage
@@ -459,6 +501,7 @@ export class MetricsCollector {
       toolsUsed: toolCounts.size > 0 ? toolCounts : existingMetrics.toolsUsed,
       contextPercent: contextPercent ?? existingMetrics.contextPercent,
       sessionTitle: sessionTitle ?? existingMetrics.sessionTitle,
+      initialPrompt: initialPrompt ?? existingMetrics.initialPrompt,
       // Statusline-derived (preserved)
       totalCostUsd: existingMetrics.totalCostUsd,
       durationMs: existingMetrics.durationMs,

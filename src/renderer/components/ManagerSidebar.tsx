@@ -3,12 +3,12 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
-  TreePine,
   Sprout,
   Lock,
   Settings
 } from 'lucide-react'
 import type { RendererWorkspace } from '../../shared/types'
+import { ClaudinhaIcon } from './ui/ClaudinhaIcon'
 import { useStrings } from '../lib/strings'
 
 // ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ function WorkspaceRow({ workspace, isActive, isDormant, isArchived, isSelected, 
 
       {/* Pane count */}
       <span className="flex items-center gap-0.5 text-[11px] font-[500] text-fg-muted tabular-nums flex-shrink-0">
-        <TreePine size={12} className="text-fg-muted" />
+        <ClaudinhaIcon size={12} className="text-fg-muted" />
         <span>{paneCount}</span>
       </span>
     </div>

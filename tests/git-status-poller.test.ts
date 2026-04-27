@@ -48,7 +48,8 @@ function makeMetrics() {
     modelDisplayName: null,
     linesAdded: null,
     linesRemoved: null,
-    sessionTitle: null
+    sessionTitle: null,
+    initialPrompt: null
   }
 }
 

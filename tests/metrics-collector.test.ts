@@ -60,7 +60,8 @@ function makeMetrics() {
     modelDisplayName: null,
     linesAdded: null,
     linesRemoved: null,
-    sessionTitle: null
+    sessionTitle: null,
+    initialPrompt: null
   }
 }
 
@@ -712,6 +713,61 @@ describe('MetricsCollector', () => {
 
       const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
       expect(metrics.sessionTitle).toBe('updated-title')
+    })
+
+    it('extracts the first user message into initialPrompt (string content)', async () => {
+      setupForJsonl(
+        makeJsonl(
+          { type: 'user', message: { role: 'user', content: 'Refactor the auth middleware to drop session tokens' } },
+          { type: 'assistant', message: { usage: { input_tokens: 50, output_tokens: 25 } } },
+          { type: 'user', message: { role: 'user', content: 'Also add a test' } }
+        )
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.initialPrompt).toBe('Refactor the auth middleware to drop session tokens')
+    })
+
+    it('extracts initialPrompt from a content-array (text-block) message', async () => {
+      setupForJsonl(
+        makeJsonl(
+          { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'Fix the failing test' }] } },
+          { type: 'assistant', message: { usage: { input_tokens: 10, output_tokens: 5 } } }
+        )
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.initialPrompt).toBe('Fix the failing test')
+    })
+
+    it('skips isMeta user entries when extracting initialPrompt', async () => {
+      setupForJsonl(
+        makeJsonl(
+          { type: 'user', isMeta: true, message: { role: 'user', content: 'Caveat: …' } },
+          { type: 'user', message: { role: 'user', content: 'The actual first prompt' } }
+        )
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.initialPrompt).toBe('The actual first prompt')
+    })
+
+    it('preserves existing initialPrompt when JSONL has no user message', async () => {
+      setupForJsonl(
+        makeJsonl({ type: 'assistant', message: { usage: { input_tokens: 100, output_tokens: 50 } } }),
+        { initialPrompt: 'Earlier captured prompt' }
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.initialPrompt).toBe('Earlier captured prompt')
     })
 
     it('JSONL fallback uses 1M context window for claude-opus-4-6[1m] (PE-02)', async () => {

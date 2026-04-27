@@ -93,6 +93,10 @@ export interface TerminalSnapshot {
   completionAction?: 'merged' | 'pr-created' | 'manual-close'
   /** URL of the PR created for this terminal (when completionAction === 'pr-created') */
   prUrl?: string
+  /** User-set rename captured at close so dormant cards keep the kanban-set name */
+  userName?: string | null
+  /** First user message extracted from the JSONL transcript at close time */
+  initialPrompt?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +220,8 @@ export interface PaneMetrics {
 
   // From JSONL transcript (PE-04)
   sessionTitle: string | null // AI-generated session title (from custom-title entry)
+  /** First user message extracted from the JSONL transcript (used as the dormant card subtitle) */
+  initialPrompt: string | null
 }
 
 // ---------------------------------------------------------------------------

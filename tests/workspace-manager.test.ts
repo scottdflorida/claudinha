@@ -50,7 +50,8 @@ function makeMetrics() {
     modelDisplayName: null,
     linesAdded: null,
     linesRemoved: null,
-    sessionTitle: null
+    sessionTitle: null,
+    initialPrompt: null
   }
 }
 
@@ -333,6 +334,22 @@ describe('WorkspaceManager', () => {
       expect(workspace.pausedTerminals[0].wasActiveAtClose).toBe(false)
       expect(workspace.pausedTerminals[0].sessionId).toBe('sess-1')
     })
+
+    it('persists userName and initialPrompt onto the dormant snapshot', () => {
+      const workspace = workspaceManager.createWorkspace({ type: 'general', constraint: {}, windowId: 'win-1' })
+      workspaceManager.addDroneToHive(workspace.id, 'pane-1')
+
+      const pane = makePaneState({
+        id: 'pane-1',
+        workspaceId: workspace.id,
+        userName: 'fix-the-login-bug',
+        metrics: { ...makeMetrics(), initialPrompt: 'Please fix the broken login form' }
+      })
+      workspaceManager.removeDroneFromHive(workspace.id, pane)
+
+      expect(workspace.pausedTerminals[0].userName).toBe('fix-the-login-bug')
+      expect(workspace.pausedTerminals[0].initialPrompt).toBe('Please fix the broken login form')
+    })
   })
 
   describe('deactivateWorkspace', () => {
@@ -364,6 +381,25 @@ describe('WorkspaceManager', () => {
       workspaceManager.deactivateWorkspace(workspace.id)
       expect(workspace.status).toBe('dormant')
     })
+
+    it('carries userName and initialPrompt from each active pane into its snapshot', () => {
+      const workspace = workspaceManager.createWorkspace({ type: 'general', constraint: {}, windowId: 'win-1' })
+      workspaceManager.addDroneToHive(workspace.id, 'pane-1')
+
+      const pane = makePaneState({
+        id: 'pane-1',
+        workspaceId: workspace.id,
+        userName: 'add-search-filter',
+        metrics: { ...makeMetrics(), initialPrompt: 'Add a free-text filter to the workspace search' }
+      })
+      mockRegistry.getPane.mockImplementation((id: string) => id === 'pane-1' ? pane : undefined)
+
+      workspaceManager.deactivateWorkspace(workspace.id)
+
+      expect(workspace.pausedTerminals[0].userName).toBe('add-search-filter')
+      expect(workspace.pausedTerminals[0].initialPrompt).toBe('Add a free-text filter to the workspace search')
+      expect(workspace.pausedTerminals[0].wasActiveAtClose).toBe(true)
+    })
   })
 
   describe('activateWorkspace', () => {
@@ -387,7 +423,7 @@ describe('WorkspaceManager', () => {
       return workspace
     }
 
-    it('resumes all dormant terminals when no terminalIdFilter is passed (Tend workspace)', () => {
+    it('resumes all dormant terminals when no terminalIdFilter is passed (Open workspace)', () => {
       const workspace = makeDormantHiveWithTwoDrones()
 
       const result = workspaceManager.activateWorkspace(workspace.id)
@@ -398,7 +434,7 @@ describe('WorkspaceManager', () => {
       expect(workspace.status).toBe('active')
     })
 
-    it('resumes a terminal with wasActiveAtClose=false (regression for empty Tend workspace)', () => {
+    it('resumes a terminal with wasActiveAtClose=false (regression for empty Open workspace)', () => {
       const workspace = makeDormantHiveWithTwoDrones()
 
       const result = workspaceManager.activateWorkspace(workspace.id)
@@ -409,7 +445,7 @@ describe('WorkspaceManager', () => {
       expect(closed!.wasActiveAtClose).toBe(false)
     })
 
-    it('restricts resume to terminalIdFilter when provided (individual Tend)', () => {
+    it('restricts resume to terminalIdFilter when provided (individual Open)', () => {
       const workspace = makeDormantHiveWithTwoDrones()
 
       const result = workspaceManager.activateWorkspace(workspace.id, ['pane-closed'])

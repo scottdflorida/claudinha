@@ -151,12 +151,8 @@ export const en = {
 
   workspaceView: {
     moreActions: 'More actions',
-    typeGeneral: 'General workspace',
-    typeRepo: 'Repo workspace',
-    typeWorktree: 'Worktree workspace',
     unarchive: 'Unarchive',
     openWorkspace: 'Open workspace',
-    tendWorkspace: 'Tend workspace',
     panesHeading: 'Terminals',
     paneLabel: (i: number): string => `Terminal ${i + 1}`,
     awaitingOrders: 'Awaiting orders',
@@ -165,7 +161,8 @@ export const en = {
     dormantPanesHeading: (n: number): string => `Dormant Terminals (${n})`,
     deletePermanently: 'Delete permanently',
     archiveWorkspace: 'Archive workspace',
-    paneCountLabel: (n: number): string => (n === 1 ? '1 terminal' : `${n} terminals`)
+    paneCountLabel: (n: number): string => (n === 1 ? '1 terminal' : `${n} terminals`),
+    startingPrompt: 'Starting Prompt'
   },
 
   launchFormUI: {

@@ -164,12 +164,8 @@ export const ptBR: Strings = {
 
   workspaceView: {
     moreActions: 'Mais ações',
-    typeGeneral: 'Espaço de trabalho geral',
-    typeRepo: 'Espaço de trabalho de repositório',
-    typeWorktree: 'Espaço de trabalho de worktree',
     unarchive: 'Desarquivar',
     openWorkspace: 'Abrir espaço de trabalho',
-    tendWorkspace: 'Retomar espaço de trabalho',
     panesHeading: 'Terminais',
     paneLabel: (i: number): string => `Terminal ${i + 1}`,
     awaitingOrders: 'Aguardando ordens',
@@ -178,7 +174,8 @@ export const ptBR: Strings = {
     dormantPanesHeading: (n: number): string => `Terminais pausados (${n})`,
     deletePermanently: 'Excluir permanentemente',
     archiveWorkspace: 'Arquivar espaço de trabalho',
-    paneCountLabel: (n: number): string => (n === 1 ? '1 terminal' : `${n} terminais`)
+    paneCountLabel: (n: number): string => (n === 1 ? '1 terminal' : `${n} terminais`),
+    startingPrompt: 'Prompt inicial'
   },
 
   launchFormUI: {

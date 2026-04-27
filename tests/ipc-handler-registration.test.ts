@@ -252,7 +252,8 @@ describe('PANE_LIST_GET handler', () => {
       modelDisplayName: 'Opus 4.7',
       linesAdded: 0,
       linesRemoved: 0,
-      sessionTitle: null
+      sessionTitle: null,
+      initialPrompt: null
     },
     createdAt: Date.now(),
     terminated: false,

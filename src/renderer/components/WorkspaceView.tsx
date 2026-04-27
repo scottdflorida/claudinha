@@ -1,9 +1,21 @@
 import React, { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { RendererWorkspace } from '../../shared/types'
+import type { RendererWorkspace, TerminalSnapshot } from '../../shared/types'
 import { Button } from './ui/Button'
 import { formatTimeAgo } from '../lib/formatTimeAgo'
 import { useStrings } from '../lib/strings'
+import { resolvePaneDisplayName } from '../../shared/pane-display'
+
+// Adapter for resolvePaneDisplayName so dormant snapshots reuse the kanban's
+// fallback chain (userName → sessionTitle → worktreeName) without each card
+// site reimplementing the precedence.
+function dormantTerminalDisplayName(t: TerminalSnapshot): string {
+  return resolvePaneDisplayName({
+    worktreeName: t.worktreeName,
+    userName: t.userName,
+    metrics: { sessionTitle: t.sessionTitle }
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -104,12 +116,6 @@ export function WorkspaceView({
   const repoPath = workspace.constraint.repoPath ?? workspace.constraint.worktreePath ?? '—'
   const paneCount = isActive ? workspace.activePaneCount : workspace.pausedTerminals.length
 
-  const typeLabel = workspace.type === 'general'
-    ? t.workspaceView.typeGeneral
-    : workspace.type === 'repo'
-      ? t.workspaceView.typeRepo
-      : t.workspaceView.typeWorktree
-
   return (
     <div className="flex-1 min-h-0 overflow-y-auto w-full">
       <div className="max-w-[720px]">
@@ -119,7 +125,7 @@ export function WorkspaceView({
           <h2 className="text-lg font-[600] text-fg-primary truncate">{workspace.name}</h2>
           <p className="text-xs text-fg-muted mt-1 truncate" title={repoPath}>{repoPath}</p>
           <p className="text-sm text-fg-secondary mt-1">
-            {typeLabel} · {t.workspaceView.paneCountLabel(paneCount)}
+            {t.workspaceView.paneCountLabel(paneCount)}
           </p>
         </div>
 
@@ -129,7 +135,7 @@ export function WorkspaceView({
             <Button variant="secondary" size="sm" onClick={onUnarchive}>{t.workspaceView.unarchive}</Button>
           ) : (
             <Button variant="primary" size="sm" onClick={onOpenGrove}>
-              {isActive ? t.workspaceView.openWorkspace : t.workspaceView.tendWorkspace}
+              {t.workspaceView.openWorkspace}
             </Button>
           )}
           <OverflowMenu
@@ -170,19 +176,27 @@ export function WorkspaceView({
         {/* Dormant workspace — dormant panes listed as primary content */}
         {(isDormant || isArchived) && workspace.pausedTerminals.length > 0 && (
           <div className="flex flex-col gap-1">
-            {workspace.pausedTerminals.map((terminal) => (
-              <div
-                key={terminal.paneId}
-                className="bg-surface rounded-md border border-[var(--color-border-subtle)] p-3"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="flex-1 text-sm font-[500] text-fg-secondary truncate">
-                    {terminal.sessionTitle || `${terminal.repoName}/${terminal.worktreeName}`}
-                  </span>
-                  <span className="text-xs text-fg-muted flex-shrink-0">{formatTimeAgo(terminal.snapshotAt)}</span>
+            {workspace.pausedTerminals.map((terminal) => {
+              const label = `${terminal.repoName}/${dormantTerminalDisplayName(terminal)}`
+              const prompt = terminal.initialPrompt?.trim()
+              return (
+                <div
+                  key={terminal.paneId}
+                  className="bg-surface rounded-md border border-[var(--color-border-subtle)] p-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 text-sm font-[500] text-fg-secondary truncate">{label}</span>
+                    <span className="text-xs text-fg-muted flex-shrink-0">{formatTimeAgo(terminal.snapshotAt)}</span>
+                  </div>
+                  {prompt && (
+                    <div className="mt-1 text-xs truncate">
+                      <span className="text-fg-muted">{t.workspaceView.startingPrompt}: </span>
+                      <span className="text-fg-secondary">{prompt}</span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -204,7 +218,7 @@ export function WorkspaceView({
           {dormantExpanded && (
             <div className="flex flex-col">
               {workspace.pausedTerminals.map((terminal) => {
-                const label = terminal.sessionTitle || `${terminal.repoName}/${terminal.worktreeName}`
+                const label = `${terminal.repoName}/${dormantTerminalDisplayName(terminal)}`
                 return (
                   <div
                     key={terminal.paneId}

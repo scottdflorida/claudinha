@@ -261,7 +261,9 @@ export class WorkspaceManager {
       sessionTitle: pane.metrics.sessionTitle,
       wasActiveAtClose: false,
       snapshotAt: Date.now(),
-      gitStatus: pane.gitStatus ?? null
+      gitStatus: pane.gitStatus ?? null,
+      userName: pane.userName ?? null,
+      initialPrompt: pane.metrics.initialPrompt ?? null
     }
     workspace.pausedTerminals.push(snapshot)
     saveWorkspace(workspace)
@@ -382,7 +384,9 @@ export class WorkspaceManager {
           sessionTitle: pane.metrics.sessionTitle,
           wasActiveAtClose: true,
           snapshotAt: Date.now(),
-          gitStatus: pane.gitStatus ?? null
+          gitStatus: pane.gitStatus ?? null,
+          userName: pane.userName ?? null,
+          initialPrompt: pane.metrics.initialPrompt ?? null
         }
         workspace.pausedTerminals.push(snapshot)
         addPausedTerminal(workspaceId, snapshot)
