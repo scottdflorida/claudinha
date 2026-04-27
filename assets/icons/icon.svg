@@ -16,7 +16,7 @@
     <linearGradient id="bgBottomShade" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#000000" stop-opacity="0"/>
       <stop offset="0.65" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="1" stop-color="#00310F" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#00310F" stop-opacity="0.22"/>
     </linearGradient>
     <!-- Face body: warm butter → deep amber -->
     <linearGradient id="faceGrad" x1="0" y1="0" x2="0" y2="1">
@@ -69,6 +69,8 @@
   <rect x="3" y="3" width="1018" height="1018" rx="228.5" ry="228.5"
         fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2"/>
 
+  <!-- Character scaled to 90% around the canvas center (512,512) for more breathing room -->
+  <g transform="translate(51.2 51.2) scale(0.9)">
   <!-- Character group: preserves the original (translate -38 -104, scale 11) mapping -->
   <g transform="translate(-38 -104) scale(11)">
     <!-- Feet (shadowed, same gradient as face so they read as one form) -->
@@ -104,6 +106,7 @@
     <!-- Tiny secondary highlight dots for a wetter bead read -->
     <circle cx="37.5" cy="44.8" r="0.9" fill="#ffffff" fill-opacity="0.35"/>
     <circle cx="67.5" cy="44.8" r="0.9" fill="#ffffff" fill-opacity="0.35"/>
+  </g>
   </g>
 
   </g>
