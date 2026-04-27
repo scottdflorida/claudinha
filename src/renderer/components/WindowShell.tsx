@@ -236,20 +236,30 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   // agent team…" overlay instead of letting the user watch terminals trickle
   // in over a half-built Kanban + a "Loading repo data…" rail.
   //
-  // Dismissal is gated on three conditions so the overlay never lifts onto a
+  // Dismissal is gated on four conditions so the overlay never lifts onto a
   // still-half-built UI:
   //   1. main has signalled COMPLETE,
-  //   2. every PANE_SPAWNED has been reduced into local panes state, and
-  //   3. the inspector summary is non-null (the rail is no longer pending).
-  // A 5s safety timeout dismisses anyway so a stuck inspector can't strand
-  // the user behind the overlay forever.
+  //   2. every PANE_SPAWNED has been reduced into local panes state,
+  //   3. the inspector summary is non-null (the rail is no longer pending),
+  //   4. the active pane (the last-spawned terminal) has received its first
+  //      PANE_DATA chunk — so the user never sees an empty xterm with just
+  //      a blinking cursor while Claude Code is still booting.
+  // A 10s safety timeout dismisses anyway so a slow Claude Code startup
+  // can't strand the user behind the overlay forever.
   const [initialSpawn, setInitialSpawn] = useState<{
     expectedCount: number
     completed: boolean
   } | null>(null)
+  // Pane id we're waiting for first PANE_DATA on. Held in a ref so the
+  // high-frequency PANE_DATA listener doesn't re-render WindowShell on
+  // every chunk — only the one-shot `setActivePaneDataReady(true)` does.
+  const awaitingActivePaneDataRef = useRef<string | null>(null)
+  const [activePaneDataReady, setActivePaneDataReady] = useState(false)
 
   useIpcListener(IPC.WORKSPACE_INITIAL_SPAWN_BEGIN, (payload) => {
     const { expectedCount } = payload as WorkspaceInitialSpawnBeginPayload
+    awaitingActivePaneDataRef.current = null
+    setActivePaneDataReady(false)
     setInitialSpawn({ expectedCount, completed: false })
   })
 
@@ -260,23 +270,48 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
     // listener above already calls selectActivePane on each event. This
     // eliminates any ordering / stale-closure race that could leave
     // activePaneId pointed at an earlier pane.
-    if (lastPaneId) selectActivePane(lastPaneId)
+    if (lastPaneId) {
+      selectActivePane(lastPaneId)
+      awaitingActivePaneDataRef.current = lastPaneId
+    } else {
+      // Every spawn failed — nothing to wait for; let the dismissal effect
+      // through.
+      setActivePaneDataReady(true)
+    }
     setInitialSpawn((prev) => (prev ? { ...prev, completed: true } : prev))
   })
 
+  // Listen for PANE_DATA so we know when Claude Code has actually started
+  // emitting in the active terminal. The listener short-circuits cheaply
+  // when no spawn is in flight (`awaitingActivePaneDataRef.current` is
+  // null), so the overhead during normal operation is negligible.
+  useIpcListener(IPC.PANE_DATA, (payload) => {
+    const awaiting = awaitingActivePaneDataRef.current
+    if (!awaiting) return
+    const { paneId } = payload as { paneId: string; data: string }
+    if (paneId !== awaiting) return
+    awaitingActivePaneDataRef.current = null
+    setActivePaneDataReady(true)
+  })
+
   // Overlay dismissal effect: clears initialSpawn once the loop is done AND
-  // panes are reduced into state AND the inspector summary has populated.
+  // panes are reduced into state AND the inspector summary has populated AND
+  // the active pane has received its first PTY data.
   useEffect(() => {
     if (!initialSpawn || !initialSpawn.completed) return
-    const ready = panes.length >= initialSpawn.expectedCount && inspectorSummary !== null
+    const ready =
+      panes.length >= initialSpawn.expectedCount
+      && inspectorSummary !== null
+      && activePaneDataReady
     if (ready) {
       setInitialSpawn(null)
       return
     }
-    // Safety net so a slow inspector can't pin the user behind the overlay.
-    const t = setTimeout(() => setInitialSpawn(null), 5000)
+    // Safety net so a slow Claude Code startup can't pin the user behind
+    // the overlay forever.
+    const t = setTimeout(() => setInitialSpawn(null), 10000)
     return () => clearTimeout(t)
-  }, [initialSpawn, panes.length, inspectorSummary])
+  }, [initialSpawn, panes.length, inspectorSummary, activePaneDataReady])
 
   useEffect(() => {
     if (workspaceName !== undefined) setDisplayName(workspaceName)

@@ -10,7 +10,27 @@ import { useStrings } from '../lib/strings'
 // user one calm "we're launching your agents" surface to look at instead.
 //
 // Mounting/dismissal is owned by WindowShell — see its initialSpawn state.
+// The mascot stays solid (no body pulse) and her eyes do a quick blink every
+// few seconds — the body-opacity pulse used elsewhere reads as "loading
+// stalled" rather than "Claudinha is thinking" at this size.
 // ---------------------------------------------------------------------------
+
+const EYE_BLINK_KEYFRAMES = `
+@keyframes spawn-overlay-eye-blink {
+  0%, 88%   { r: 9; }
+  92%, 96%  { r: 0.8; }
+  100%      { r: 9; }
+}
+.spawn-overlay-mascot svg circle {
+  animation: spawn-overlay-eye-blink 3.6s ease-in-out infinite;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spawn-overlay-mascot svg circle {
+    animation: none;
+  }
+}
+`
 
 export function WorkspaceSpawnOverlay(): React.JSX.Element {
   const t = useStrings()
@@ -39,7 +59,10 @@ export function WorkspaceSpawnOverlay(): React.JSX.Element {
         cursor: 'wait'
       }}
     >
-      <BrandMark size={96} blink />
+      <style>{EYE_BLINK_KEYFRAMES}</style>
+      <div className="spawn-overlay-mascot">
+        <BrandMark size={96} />
+      </div>
       <div style={{ textAlign: 'center', maxWidth: 420, padding: '0 16px' }}>
         <div
           style={{
