@@ -49,9 +49,12 @@ try {
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
   }
 
+  // Forward any extra CLI args (e.g. `npm run dist -- --publish=always --mac`)
+  // to electron-builder so the release workflow can drive it from CI.
+  const builderArgs = process.argv.slice(2)
   const steps = [
     [localBin('electron-vite'), ['build']],
-    [localBin('electron-builder'), []]
+    [localBin('electron-builder'), builderArgs]
   ]
   for (const [cmd, args] of steps) {
     const result = spawnSync(cmd, args, { cwd: repoRoot, stdio: 'inherit' })

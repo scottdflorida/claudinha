@@ -27,6 +27,21 @@ Running several Claude Code sessions in parallel from the terminal is powerful b
 
 ## Install
 
+### Download the installer (recommended)
+
+Grab the latest installer from the [Releases page](https://github.com/scottdflorida/claudinha/releases/latest). Drag the app to `/Applications` (macOS) or run the installer (Windows/Linux), and you're done — no terminal required, and the app icon stays put when you pin it to the Dock or Start Menu.
+
+- **macOS, Apple Silicon (M-series):** `Claudinha-<version>-arm64.dmg`
+- **macOS, Intel:** `Claudinha-<version>.dmg`
+- **Windows:** `Claudinha-Setup-<version>.exe`
+- **Linux:** `Claudinha-<version>.AppImage` (`chmod +x` and double-click)
+
+> **First-launch warning:** Builds are not code-signed, so on first launch the OS will warn you. On macOS, right-click `Claudinha.app` in Finder → **Open** → **Open**. On Windows, click **More info → Run anyway** in the SmartScreen prompt. After that initial allow, double-click works normally.
+
+### Via npm (terminal-launched)
+
+If you'd rather launch from the terminal — useful for headless setups or if you prefer staying off `/Applications` — Claudinha is on npm:
+
 ```bash
 npm install -g claudinha
 claudinha
@@ -34,7 +49,9 @@ claudinha
 
 First install takes a minute or two: npm pulls the Electron runtime (~150 MB) and then rebuilds the native `node-pty` module for your platform. `claudinha` on its own launches the app.
 
-### Troubleshooting first-install failures
+Note: this install method runs Claudinha as the underlying Electron binary from `node_modules`, so it doesn't support pinning Claudinha to the Dock or Start Menu — pinning would launch stock Electron, not Claudinha. Use a downloaded installer above for the pinned-and-stable experience.
+
+#### Troubleshooting first-install failures
 
 Most install failures come from the native-module rebuild (`node-pty`). If `npm install -g claudinha` errors out with `node-gyp`, `ELIFECYCLE`, or messages about `C++`, `python`, or `msbuild`, you need a toolchain:
 

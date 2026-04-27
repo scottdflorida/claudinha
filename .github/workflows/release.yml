@@ -1,17 +1,25 @@
-name: Release (manual)
+name: Release
 
-# Builds unsigned Claudinha installers for macOS, Windows, and Linux and
-# uploads them to a matching GitHub Release via electron-builder's
-# --publish=always flag.
+# Builds unsigned Claudinha installers for macOS, Windows, and Linux on every
+# tag push (vX.Y.Z) and uploads them as a draft GitHub Release via
+# electron-builder's --publish=always. Review the draft in the GitHub UI and
+# click "Publish release" once you've smoke-tested the artifacts.
 #
-# Currently DORMANT: Claudinha distributes via npm only, so this workflow
-# does not auto-fire on tag pushes. Trigger it manually from the Actions
-# tab if you ever want to ship prebuilt installers alongside an npm
-# release. Builds remain unsigned — see the project README for the
-# Gatekeeper / SmartScreen consequences if you re-enable this path.
+# Builds are NOT code-signed or notarized. macOS users will see a Gatekeeper
+# warning on first launch (right-click → Open → Open); Windows users may see
+# SmartScreen. The README documents this for end users.
+#
+# Manual trigger via workflow_dispatch is preserved as a fallback for
+# rebuilding a release without bumping the tag.
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   release:
@@ -40,6 +48,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
 
       - name: Build and publish (macOS)
         if: matrix.platform == 'mac'
