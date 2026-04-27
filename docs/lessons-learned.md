@@ -1042,3 +1042,21 @@ Each prior round felt like progress. L-046 was correct as far as it went (the la
 
 **How to avoid this in the future:**
 Concrete decision rule: **after two failed iterations on the same heuristic, stop iterating and instrument.** The third round must produce *data* (a log, a captured trace, a reproduction with diagnostics), not another hypothesis. Add temporary logging at the exact decision point, hand the build to the user, capture what the production path actually sees, then design the fix from the log — not from a fresh re-read of the code. The diagnostic comes out as part of the same commit that ships the real fix, so there's no debt left behind. Self-check before round three: *"Am I about to ship another guess based on code reading, or am I about to capture real production state and ship a fix based on it?"* If it's the former, change plans.
+
+---
+
+## L-052: Two Electron processes for the same product share `userData` on case-insensitive filesystems, so the single-instance lock collides silently
+
+**Date:** 2026-04-27
+**Source:** User reported `npm run build && npm run dev` exits with no window when an installed `/Applications/Claudinha.app` is already running.
+**Category:** implementation pattern
+
+**What happened:**
+The user wanted to run the installed Claudinha as an orchestrator and the dev build (`npm run dev`) as the test target, both at the same time. The dev process started, vite finished, the main process printed `start electron app...`, and then the window never appeared — the process exited silently. There was no error in the console, no crash dialog, nothing.
+
+**Why the agent got it wrong (the original install of the lock):**
+`app.requestSingleInstanceLock()` was added to prevent the user from launching two copies of the installed app. The agent reasoned about it as "a guard against two instances of *this binary*" — i.e. two `/Applications/Claudinha.app` launches — and didn't consider that "this binary" can be ambiguous. The dev Electron and the installed Electron are different binaries living at different paths, but Electron's lock is keyed off `userData/SingletonLock`, and `userData` defaults to `<appData>/<app.name>`. The installed bundle uses `productName: "Claudinha"`; the dev binary uses `package.json#name: "claudinha"`. On case-insensitive macOS (APFS default) and Windows (NTFS default) filesystems, those two names resolve to **the same directory**, so the two processes share **the same SingletonLock file**. The dev process loses the race and `app.quit()`s with no UI feedback. None of this is visible from reading `index.ts` alone — it requires knowing where Electron stores the lock, knowing that macOS is case-insensitive by default, and knowing that `productName` and `name` differ in case for this project. Three pieces of background that are individually obscure and together produce a silent failure.
+
+**How to avoid this in the future:**
+Before adding `app.requestSingleInstanceLock()` (or any other guard rooted in `userData`) to an Electron app, ask: *"Does this product also get run unpackaged via `npm run dev`, and if so, will the dev process and an installed copy share `userData`?"* If yes, gate the guard or split `userData` for the dev branch — `if (!app.isPackaged) { app.setName(...); app.setPath('userData', ...) }` before any code that touches it. The same principle applies to anything else stored in `userData` (electron-store files, SQLite DBs, log files): assume two coexisting Electron processes for the same product **will** collide on those files unless you explicitly partition them. And when diagnosing "Electron starts then exits with no window," the single-instance lock is the first hypothesis to check, before anything in the renderer or vite config — silent exit between "main process loaded" and "window shown" is the lock's signature.
+

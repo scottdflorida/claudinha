@@ -1,8 +1,14 @@
-// MUST be first — side-effect import runs the Claudio → Claudinha userData
-// migration before any electron-store consumer (app-config-store,
-// workspace-store, permissions-store, session-history-store, etc.) is loaded.
-// Once a store's module-level `new Store(...)` runs, it has already decided
-// whether the userData folder has state or not.
+// MUST be first — side-effect import redirects the userData folder in dev so
+// the dev process does not collide with an installed /Applications/Claudinha.app
+// on the single-instance lock (see src/main/dev-mode.ts for the full why).
+// Has to run before any code reads app.getPath('userData'), including the
+// migration import below.
+import './dev-mode'
+// MUST run after './dev-mode' and before any electron-store consumer
+// (app-config-store, workspace-store, permissions-store, session-history-store,
+// etc.) is loaded — the migration copies legacy Claudio/ userData into the
+// resolved Claudinha/ folder, and once a store's module-level `new Store(...)`
+// runs, it has already decided whether the userData folder has state or not.
 import './migrate-user-data'
 import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron'
 import { fixPathForPackagedApp } from './fix-path'
