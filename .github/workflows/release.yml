@@ -1,9 +1,21 @@
 name: Release
 
 # Builds unsigned Claudinha installers for macOS, Windows, and Linux on every
-# tag push (vX.Y.Z) and uploads them as a draft GitHub Release via
-# electron-builder's --publish=always. Review the draft in the GitHub UI and
-# click "Publish release" once you've smoke-tested the artifacts.
+# tag push (vX.Y.Z) and attaches them to a single draft GitHub Release.
+# Review the draft in the GitHub UI and click "Publish release" once you've
+# smoke-tested the artifacts.
+#
+# Two-stage flow:
+#   1. `build` (matrix per platform) — runs typecheck, tests (mac/linux only),
+#      and electron-builder with --publish=never. Each platform uploads its
+#      `dist/` artifacts as a workflow artifact.
+#   2. `release` (single job, runs after all platforms build) — downloads
+#      every platform's artifacts and creates one draft release.
+#
+# This avoids the "duplicate draft per platform" race that electron-builder's
+# --publish=always hits when the matrix runs in parallel: GitHub draft
+# releases aren't tag-indexed, so each parallel job thinks no release exists
+# yet and creates its own.
 #
 # Builds are NOT code-signed or notarized. macOS users will see a Gatekeeper
 # warning on first launch (right-click → Open → Open); Windows users may see
@@ -22,7 +34,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -71,23 +83,55 @@ jobs:
         if: matrix.platform != 'win'
         run: npm test
 
-      - name: Build and publish (macOS)
+      - name: Build (macOS)
         if: matrix.platform == 'mac'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # No signing: CSC_IDENTITY_AUTO_DISCOVERY=false prevents electron-builder
           # from attempting to pick up a local/keychain identity.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npm run dist -- --publish=always --mac
+        run: npm run dist -- --publish=never --mac
 
-      - name: Build and publish (Windows)
+      - name: Build (Windows)
         if: matrix.platform == 'win'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist -- --publish=always --win
+        run: npm run dist -- --publish=never --win
 
-      - name: Build and publish (Linux)
+      - name: Build (Linux)
         if: matrix.platform == 'linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist -- --publish=always --linux
+        run: npm run dist -- --publish=never --linux
+
+      - name: Upload installers (${{ matrix.platform }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.platform }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.yml
+            dist/*.blockmap
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: installers-*
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: ls -lh artifacts/
+
+      - name: Create or update draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: true
+          files: artifacts/*
+          fail_on_unmatched_files: true
