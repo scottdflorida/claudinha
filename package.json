@@ -1,6 +1,6 @@
 {
   "name": "claudinha",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A terminal manager for Claude Code.",
   "author": "Scott Florida",
   "repository": {
@@ -31,7 +31,10 @@
     "out",
     "bin",
     "assets",
-    "scripts"
+    "scripts/claudinha-hook-relay.js",
+    "scripts/claudinha-hook-relay.sh",
+    "scripts/claudinha-statusline.js",
+    "scripts/claudinha-statusline.sh"
   ],
   "dependencies": {
     "@electron/rebuild": "^3.7.1",
