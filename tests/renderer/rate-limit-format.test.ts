@@ -93,7 +93,7 @@ describe('RateLimitBar rendering', () => {
     expect(getByText('5h: 42% resets in 1h 16m')).toBeTruthy()
     expect(getByText('7d: 77% resets in 2d')).toBeTruthy()
     // Two progress fill spans should exist with explicit % widths
-    const fills = container.querySelectorAll('span[aria-hidden="true"]')
+    const fills = container.querySelectorAll('span[data-rate-limit-fill]')
     expect(fills).toHaveLength(2)
     expect((fills[0] as HTMLElement).style.width).toBe('42%')
     expect((fills[1] as HTMLElement).style.width).toBe('77%')
@@ -115,7 +115,7 @@ describe('RateLimitBar rendering', () => {
     expect(getByText('5h: —')).toBeTruthy()
     expect(getByText('7d: —')).toBeTruthy()
     // No fill bars exist (placeholders have no aria-hidden progress span)
-    const fills = container.querySelectorAll('span[aria-hidden="true"]')
+    const fills = container.querySelectorAll('span[data-rate-limit-fill]')
     expect(fills).toHaveLength(0)
     // Placeholders preserve the 240px gauge width so real data fills in without reflow
     const placeholders = container.querySelectorAll('span.text-fg-muted')
@@ -141,7 +141,7 @@ describe('RateLimitBar rendering', () => {
     expect(getByText('5h: —')).toBeTruthy()
     expect(getByText('7d: 77% resets in 2d')).toBeTruthy()
     // Exactly one live fill (the 7d gauge) — the stale 5h has no progress span.
-    const fills = container.querySelectorAll('span[aria-hidden="true"]')
+    const fills = container.querySelectorAll('span[data-rate-limit-fill]')
     expect(fills).toHaveLength(1)
   })
 
@@ -155,7 +155,7 @@ describe('RateLimitBar rendering', () => {
     )
     expect(getByText('5h: 42% resets in 1h')).toBeTruthy()
     expect(getByText('7d: —')).toBeTruthy()
-    const fills = container.querySelectorAll('span[aria-hidden="true"]')
+    const fills = container.querySelectorAll('span[data-rate-limit-fill]')
     expect(fills).toHaveLength(1)
   })
 
@@ -167,7 +167,7 @@ describe('RateLimitBar rendering', () => {
         sevenDay: null
       })
     )
-    const fill = container.querySelector('span[aria-hidden="true"]') as HTMLElement
+    const fill = container.querySelector('span[data-rate-limit-fill]') as HTMLElement
     const wrapper = fill.parentElement as HTMLElement
     // Bolder red border at the warning threshold (= status-lost / danger-fg-dark)
     expect(wrapper.style.borderColor).toBe('rgb(219, 77, 63)') // #DB4D3F
@@ -188,9 +188,51 @@ describe('RateLimitBar rendering', () => {
         sevenDay: null
       })
     )
-    const fill = container.querySelector('span[aria-hidden="true"]') as HTMLElement
+    const fill = container.querySelector('span[data-rate-limit-fill]') as HTMLElement
     const wrapper = fill.parentElement as HTMLElement
     expect(wrapper.style.border).toContain('var(--color-border-strong)')
+  })
+
+  it('renders the now-marker centered on the elapsed-time percentage', () => {
+    // 5h window with 1h until reset → 4h elapsed → 80% of the way through.
+    const reset = new Date(NOW + 60 * 60 * 1000).toISOString()
+    const { container } = render(
+      React.createElement(RateLimitBar, {
+        fiveHour: { usedPercentage: 42, resetsAt: reset },
+        sevenDay: null
+      })
+    )
+    const marker = container.querySelector('span[data-rate-limit-now-marker]') as HTMLElement
+    expect(marker).toBeTruthy()
+    expect(marker.style.width).toBe('5px')
+    // Centered on 80% means left = calc(80% - 2.5px)
+    expect(marker.style.left).toBe('calc(80% - 2.5px)')
+    expect(marker.style.pointerEvents).toBe('none')
+    // Marker sits above the fill (z-0) but below the label text (z-2)
+    expect(marker.style.zIndex).toBe('1')
+  })
+
+  it('clamps the now-marker at 100% when resetsAt is past (within grace)', () => {
+    // 30s past resetsAt — formatRateLimitLabel still returns a label, and the
+    // marker should pin at the right edge rather than overflowing the gauge.
+    const reset = new Date(NOW - 30 * 1000).toISOString()
+    const { container } = render(
+      React.createElement(RateLimitBar, {
+        fiveHour: { usedPercentage: 85, resetsAt: reset },
+        sevenDay: null
+      })
+    )
+    const marker = container.querySelector('span[data-rate-limit-now-marker]') as HTMLElement
+    expect(marker).toBeTruthy()
+    expect(marker.style.left).toBe('calc(100% - 2.5px)')
+  })
+
+  it('does not render a now-marker for placeholder gauges', () => {
+    const { container } = render(
+      React.createElement(RateLimitBar, { fiveHour: null, sevenDay: null })
+    )
+    const markers = container.querySelectorAll('span[data-rate-limit-now-marker]')
+    expect(markers).toHaveLength(0)
   })
 })
 

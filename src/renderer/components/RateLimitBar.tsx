@@ -65,6 +65,14 @@ const RATE_LIMIT_STALE_GRACE_MS = 60_000
  */
 const GAUGE_WIDTH_PX = 240
 
+// Window durations — used to position the elapsed-time marker within each
+// gauge. Hardcoded because the labels '5h' / '7d' already carry these
+// constants; the IPC payload itself only ships `usedPercentage` + `resetsAt`.
+const FIVE_HOUR_MS = 5 * 60 * 60 * 1000
+const SEVEN_DAY_MS = 7 * 24 * 60 * 60 * 1000
+
+const NOW_MARKER_WIDTH_PX = 5
+
 /**
  * Gauge fill color — a calm muted blue at all times below the warning
  * threshold, switching to a dark red once usage reaches
@@ -134,10 +142,10 @@ export function RateLimitBar({ fiveHour, sevenDay }: RateLimitBarProps): React.J
     <div className="flex items-center gap-3">
       <span className="text-[11px] text-fg-secondary">{t.rateLimit.rateLimitsHeader}</span>
       {fiveHourLabel && fiveHour
-        ? <RateLimitGauge label={fiveHourLabel} window={fiveHour} />
+        ? <RateLimitGauge label={fiveHourLabel} window={fiveHour} windowDurationMs={FIVE_HOUR_MS} />
         : <RateLimitPlaceholder label="5h: —" />}
       {sevenDayLabel && sevenDay
-        ? <RateLimitGauge label={sevenDayLabel} window={sevenDay} />
+        ? <RateLimitGauge label={sevenDayLabel} window={sevenDay} windowDurationMs={SEVEN_DAY_MS} />
         : <RateLimitPlaceholder label="7d: —" />}
     </div>
   )
@@ -173,15 +181,35 @@ function RateLimitPlaceholder({ label }: RateLimitPlaceholderProps): React.JSX.E
 interface RateLimitGaugeProps {
   label: { text: string; isWarning: boolean }
   window: RateLimitWindow
+  windowDurationMs: number
+}
+
+/**
+ * Compute how far through the window we are, as a 0–100 percentage. The
+ * marker rides at this position so the user can compare it against the
+ * usage fill to see consumption rate at a glance — marker ahead of fill =
+ * pacing under the limit; fill ahead of marker = burning faster than time.
+ */
+function computeElapsedPct(resetsAt: string, durationMs: number): number {
+  const resetsAtMs = new Date(resetsAt).getTime()
+  if (!Number.isFinite(resetsAtMs) || durationMs <= 0) return 0
+  const startedAtMs = resetsAtMs - durationMs
+  const elapsed = Date.now() - startedAtMs
+  return Math.max(0, Math.min(100, (elapsed / durationMs) * 100))
 }
 
 /**
  * RateLimitGauge — single rate limit pill with a progress bar fill behind the text.
  */
-function RateLimitGauge({ label, window: rlWindow }: RateLimitGaugeProps): React.JSX.Element {
+function RateLimitGauge({
+  label,
+  window: rlWindow,
+  windowDurationMs
+}: RateLimitGaugeProps): React.JSX.Element {
   const pct = Math.max(0, Math.min(100, rlWindow.usedPercentage))
   const fillColor = rateLimitFillColor(pct)
   const borderColor = label.isWarning ? RATE_LIMIT_WARNING_COLOR : GAUGE_BORDER_COLOR
+  const elapsedPct = computeElapsedPct(rlWindow.resetsAt, windowDurationMs)
   return (
     <span
       style={{
@@ -198,6 +226,7 @@ function RateLimitGauge({ label, window: rlWindow }: RateLimitGaugeProps): React
     >
       <span
         aria-hidden
+        data-rate-limit-fill
         style={{
           position: 'absolute',
           left: 0,
@@ -209,8 +238,29 @@ function RateLimitGauge({ label, window: rlWindow }: RateLimitGaugeProps): React
         }}
       />
       <span
+        aria-hidden
+        data-rate-limit-now-marker
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: `calc(${elapsedPct}% - ${NOW_MARKER_WIDTH_PX / 2}px)`,
+          width: NOW_MARKER_WIDTH_PX,
+          background:
+            'linear-gradient(to right,' +
+            ' rgba(var(--rate-limit-now-marker-rgb) / 0.12) 0%,' +
+            ' rgba(var(--rate-limit-now-marker-rgb) / 0.32) 25%,' +
+            ' rgba(var(--rate-limit-now-marker-rgb) / 0.48) 50%,' +
+            ' rgba(var(--rate-limit-now-marker-rgb) / 0.32) 75%,' +
+            ' rgba(var(--rate-limit-now-marker-rgb) / 0.12) 100%)',
+          boxShadow: '0 0 4px rgba(var(--rate-limit-now-marker-rgb) / 0.16)',
+          pointerEvents: 'none',
+          zIndex: 1
+        }}
+      />
+      <span
         className="relative text-[11px] tabular-nums"
-        style={{ zIndex: 1, color: RATE_LIMIT_TEXT_VAR }}
+        style={{ zIndex: 2, color: RATE_LIMIT_TEXT_VAR }}
       >
         {label.text}
       </span>

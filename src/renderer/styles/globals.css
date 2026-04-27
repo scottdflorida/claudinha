@@ -119,7 +119,7 @@
 
   --color-status-awaiting:    #9A938A;
   --color-status-working:     #EDE8DC;
-  --color-status-needs-input: #6FA8FF;
+  --color-status-needs-input: #b0b9f9;
   --color-status-done:        #D6A240;
   --color-status-lost:        #D95E47;
 
@@ -138,6 +138,9 @@
   --rate-limit-fill:         #2D4D81;
   --rate-limit-fill-warning: #7A2E2E;
   --rate-limit-text:         #E9EDE6;
+  /* Now-marker color as space-separated R G B so callers can compose alphas
+     via rgba(var(...) / N). Hex tokens trip the L-043 /opacity no-op trap. */
+  --rate-limit-now-marker-rgb: 240 235 224;
 
   /* Border for small floating-overlay pills (e.g. MetricsOverlay). Needs to
      POP against the dark overlay bg, so it picks the warm-light gray family
@@ -193,7 +196,7 @@
 
   --color-status-awaiting:    #857B68;
   --color-status-working:     #2A2418;
-  --color-status-needs-input: #2568E0;
+  --color-status-needs-input: #939cd6;
   --color-status-done:        #D6A240;
   --color-status-lost:        #B4432F;
 
@@ -212,6 +215,7 @@
   --rate-limit-fill:         #4E85DF;
   --rate-limit-fill-warning: #DB4D3F;
   --rate-limit-text:         #18150F;
+  --rate-limit-now-marker-rgb: 34 30 22;
 
   /* Border for small floating-overlay pills (e.g. MetricsOverlay). Light
      theme keeps the warm beige that already reads correctly against the
@@ -263,7 +267,7 @@
     --color-brand-soft-fg: #18150F;
     --color-status-awaiting:    #9A938A;
     --color-status-working:     #EDE8DC;
-    --color-status-needs-input: #6FA8FF;
+    --color-status-needs-input: #b0b9f9;
     --color-status-done:        #D6A240;
     --color-status-lost:        #D95E47;
     --color-info-subtle-bg:    #1F2C4A;
@@ -277,6 +281,7 @@
     --rate-limit-fill:         #2D4D81;
     --rate-limit-fill-warning: #7A2E2E;
     --rate-limit-text:         #E9EDE6;
+    --rate-limit-now-marker-rgb: 240 235 224;
     --color-overlay-border:    #9A938A;
     --color-selection-bg: color-mix(in oklch, var(--color-accent) 55%, transparent);
     --color-selection-fg: var(--color-fg-primary);
@@ -318,7 +323,7 @@
     --color-brand-soft-fg: #FBF7EE;
     --color-status-awaiting:    #857B68;
     --color-status-working:     #2A2418;
-    --color-status-needs-input: #2568E0;
+    --color-status-needs-input: #939cd6;
     --color-status-done:        #D6A240;
     --color-status-lost:        #B4432F;
     --color-info-subtle-bg:    #E4ECFB;
@@ -332,6 +337,7 @@
     --rate-limit-fill:         #4E85DF;
     --rate-limit-fill-warning: #DB4D3F;
     --rate-limit-text:         #18150F;
+    --rate-limit-now-marker-rgb: 34 30 22;
     --color-overlay-border:    #CDC3AC;
     --color-selection-bg: color-mix(in oklch, var(--color-accent) 35%, transparent);
     --color-selection-fg: var(--color-fg-primary);
