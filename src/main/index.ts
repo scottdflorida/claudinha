@@ -250,10 +250,14 @@ app.on('second-instance', () => {
 
 function applyDockIcon(): void {
   if (!app.dock) return
+  // In dev (npm run dev) use the badged "DEV" icon so the developer can
+  // tell the dev process apart from an installed /Applications/Claudinha.app
+  // running side by side. Production launches always use the plain icon.
+  const iconFile = app.isPackaged ? 'icon.png' : 'icon-dev.png'
   const candidates = [
-    join(app.getAppPath(), 'assets', 'icons', 'icon.png'),
-    join(__dirname, '..', '..', 'assets', 'icons', 'icon.png'),
-    join(process.cwd(), 'assets', 'icons', 'icon.png')
+    join(app.getAppPath(), 'assets', 'icons', iconFile),
+    join(__dirname, '..', '..', 'assets', 'icons', iconFile),
+    join(process.cwd(), 'assets', 'icons', iconFile)
   ]
   console.log('[main] dock icon candidates:', candidates)
   for (const p of candidates) {

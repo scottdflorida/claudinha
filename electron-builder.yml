@@ -8,6 +8,10 @@ directories:
 files:
   - out/**/*
   - assets/**/*
+  # icon-dev.png is the badged "DEV" icon used only by `npm run dev` to
+  # disambiguate the dev process from an installed copy in the dock; it has
+  # no purpose inside a packaged installer.
+  - "!assets/icons/icon-dev.png"
 
 # scripts/ ships as extraResources (outside app.asar) so the relay scripts
 # can be exec'd by external processes — Claude Code shells out to them via
@@ -17,6 +21,9 @@ files:
 extraResources:
   - from: assets
     to: assets
+    filter:
+      - "**/*"
+      - "!icons/icon-dev.png"
   - from: scripts
     to: scripts
 

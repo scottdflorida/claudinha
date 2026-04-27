@@ -48,7 +48,8 @@ export class WindowManager {
    * internal map, and wires the 'closed' event for cleanup.
    */
   createWindow(options?: CreateWindowOptions): BrowserWindow {
-    const iconPath = join(app.getAppPath(), 'assets', 'icons', 'icon.png')
+    const iconFile = app.isPackaged ? 'icon.png' : 'icon-dev.png'
+    const iconPath = join(app.getAppPath(), 'assets', 'icons', iconFile)
 
     const win = new BrowserWindow({
       width: options?.width ?? 1200,
