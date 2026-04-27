@@ -611,6 +611,47 @@ describe('WorkspaceManager', () => {
       expect(typeof state.activeWorkspaces[0].lastActiveAt).toBe('number')
     })
 
+    it('summarizes each active pane (id, names, status, initialPrompt) for the management view', () => {
+      const workspace = workspaceManager.createWorkspace({ type: 'general', constraint: {}, windowId: 'win-1' })
+      workspaceManager.addDroneToHive(workspace.id, 'pane-1')
+
+      const livePane = makePaneState({
+        id: 'pane-1',
+        workspaceId: workspace.id,
+        userName: 'fix-the-login',
+        repoName: 'webapp',
+        worktreeName: 'wt-abc123',
+        status: 'working',
+        activeToolName: 'Edit',
+        metrics: {
+          ...makeMetrics(),
+          sessionTitle: 'auth refactor',
+          initialPrompt: 'Refactor login to drop session tokens'
+        }
+      })
+      mockRegistry.getPanesForWorkspace.mockImplementation((id: string) => id === workspace.id ? [livePane] : [])
+
+      const state = workspaceManager.buildManagerState()
+      const active = state.activeWorkspaces.find((w) => w.id === workspace.id)!
+      expect(active.activePanes).toHaveLength(1)
+      expect(active.activePanes[0]).toEqual({
+        paneId: 'pane-1',
+        repoName: 'webapp',
+        worktreeName: 'wt-abc123',
+        userName: 'fix-the-login',
+        sessionTitle: 'auth refactor',
+        status: 'working',
+        activeToolName: 'Edit',
+        initialPrompt: 'Refactor login to drop session tokens'
+      })
+    })
+
+    it('returns activePanes: [] for dormant workspaces (no live panes to summarize)', () => {
+      workspaceManager.createWorkspace({ type: 'general', constraint: {} })
+      const state = workspaceManager.buildManagerState()
+      expect(state.dormantWorkspaces[0].activePanes).toEqual([])
+    })
+
     it('exposes nextWorkspaceNumber (used to prefill the Workspace Name field)', () => {
       // Fresh store — next number is 1
       expect(workspaceManager.buildManagerState().nextWorkspaceNumber).toBe(1)

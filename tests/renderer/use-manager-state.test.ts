@@ -20,6 +20,7 @@ function makeHive(overrides: Partial<RendererWorkspace> = {}): RendererWorkspace
     constraint: {},
     status: 'dormant',
     activePaneCount: 0,
+    activePanes: [],
     pausedTerminals: [],
     lastActiveAt: 1_700_000_000_000,
     completionPolicy: null,

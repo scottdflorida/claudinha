@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { RendererWorkspace, TerminalSnapshot } from '../../shared/types'
+import type { RendererWorkspace, TerminalSnapshot, ActivePaneSummary, PaneStatus } from '../../shared/types'
 import { Button } from './ui/Button'
 import { formatTimeAgo } from '../lib/formatTimeAgo'
 import { useStrings } from '../lib/strings'
 import { resolvePaneDisplayName } from '../../shared/pane-display'
+import { formatStatusLabel } from './StatusOverlay'
 
 // Adapter for resolvePaneDisplayName so dormant snapshots reuse the kanban's
 // fallback chain (userName → sessionTitle → worktreeName) without each card
@@ -15,6 +16,28 @@ function dormantTerminalDisplayName(t: TerminalSnapshot): string {
     userName: t.userName,
     metrics: { sessionTitle: t.sessionTitle }
   })
+}
+
+function activePaneDisplayName(p: ActivePaneSummary): string {
+  return resolvePaneDisplayName({
+    worktreeName: p.worktreeName,
+    userName: p.userName,
+    metrics: { sessionTitle: p.sessionTitle }
+  })
+}
+
+// Single CSS-var color per status, sized to the existing 8px dot. Mirrors the
+// minimum-information chrome the workspace window uses (full StatusOverlay is
+// overkill for this management-card surface).
+function statusDotColor(status: PaneStatus): string {
+  switch (status) {
+    case 'working': return 'var(--color-accent)'
+    case 'done': return 'var(--color-success-fg, #4ade80)'
+    case 'needs-input': return 'var(--color-warning-fg, #f59e0b)'
+    case 'error': return 'var(--color-danger-fg, #ef4444)'
+    case 'awaiting-prompt':
+    default: return 'var(--color-fg-muted)'
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -150,24 +173,35 @@ export function WorkspaceView({
       <div className="mt-4">
         <h3 className="text-xs font-[600] uppercase tracking-wide text-fg-muted mb-2">{t.workspaceView.panesHeading}</h3>
 
-        {isActive && paneCount > 0 ? (
+        {isActive && workspace.activePanes.length > 0 ? (
           <div className="flex flex-col gap-2">
-            {Array.from({ length: workspace.activePaneCount }, (_, i) => (
-              <div
-                key={i}
-                className="bg-surface rounded-md border border-[var(--color-border-subtle)] p-3"
-              >
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: 'var(--color-accent)' }}
-                  />
-                  <span className="flex-1 text-sm font-[500] text-fg-primary">{t.workspaceView.paneLabel(i)}</span>
-                  <span className="text-xs text-fg-muted">{t.workspaceView.awaitingOrders}</span>
-                  <Button variant="ghost" size="sm" onClick={onOpenGrove}>{t.workspaceView.open}</Button>
+            {workspace.activePanes.map((pane) => {
+              const label = `${pane.repoName}/${activePaneDisplayName(pane)}`
+              const statusText = formatStatusLabel(pane.status, pane.activeToolName, false, false, t)
+              const prompt = pane.initialPrompt?.trim()
+              return (
+                <div
+                  key={pane.paneId}
+                  className="bg-surface rounded-md border border-[var(--color-border-subtle)] p-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: statusDotColor(pane.status) }}
+                    />
+                    <span className="flex-1 text-sm font-[500] text-fg-primary truncate">{label}</span>
+                    <span className="text-xs text-fg-muted flex-shrink-0">{statusText}</span>
+                    <Button variant="ghost" size="sm" onClick={onOpenGrove}>{t.workspaceView.open}</Button>
+                  </div>
+                  {prompt && (
+                    <div className="mt-1 text-xs truncate">
+                      <span className="text-fg-muted">{t.workspaceView.startingPrompt}: </span>
+                      <span className="text-fg-secondary">{prompt}</span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : !isActive && paneCount === 0 ? (
           <p className="text-sm text-fg-muted">{t.workspaceView.noPanes}</p>

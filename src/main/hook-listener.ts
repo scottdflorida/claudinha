@@ -11,6 +11,7 @@ import type { MetricsCollector } from './metrics-collector'
 import type { StatusDetector } from './status-detector'
 import type { GitStatusPoller } from './git-status-poller'
 import type { InspectorService } from './inspector'
+import type { WorkspaceManager } from './workspace-manager'
 import { CLAUDE_PATTERNS, classifyStopOutput } from './claude-patterns'
 import { trackHookFailure } from './analytics/error-instrumentation'
 
@@ -139,6 +140,17 @@ export class HookListener {
    */
   setGitStatusPoller(poller: GitStatusPoller): void {
     this.gitStatusPoller = poller
+  }
+
+  /**
+   * Wired after construction so each status emit also fans out a manager
+   * window refresh (active-pane cards live-update). Held nullable so unit
+   * tests don't have to satisfy the dependency.
+   */
+  private workspaceManager: WorkspaceManager | null = null
+
+  setWorkspaceManager(wm: WorkspaceManager): void {
+    this.workspaceManager = wm
   }
 
   constructor(
@@ -409,6 +421,7 @@ export class HookListener {
         source: 'hook'
       }
       win.webContents.send(IPC.PANE_STATUS, statusPayload)
+      this.workspaceManager?.pushManagerUpdate()
       this.toolDisplayTiming.set(paneId, {
         displayedAt: now,
         pendingTimer: null,
@@ -469,6 +482,7 @@ export class HookListener {
       source: 'hook'
     }
     win.webContents.send(IPC.PANE_STATUS, payload)
+    this.workspaceManager?.pushManagerUpdate()
 
     timing.displayedAt = Date.now()
     timing.pendingTimer = null

@@ -3,6 +3,7 @@ import type { PaneStatusPayload, PanePermissionModePayload } from '../shared/ipc
 import type { PaneStatus } from '../shared/types'
 import type { SessionRegistry } from './session-registry'
 import type { WindowManager } from './window-manager'
+import type { WorkspaceManager } from './workspace-manager'
 import { CLAUDE_PATTERNS } from './claude-patterns'
 import { PTY_SILENCE_DEBOUNCE_MS, HOOK_FALLBACK_ACTIVATION_MS } from './constants'
 import { trackFallbackActivated } from './analytics/error-instrumentation'
@@ -132,10 +133,21 @@ export class StatusDetector {
    */
   private readonly lastDebugLogAt = new Map<string, number>()
 
+  /**
+   * Wired after construction (workspaceManager constructs after StatusDetector,
+   * so the DI graph can't pass it in). Held nullable so unit tests don't have
+   * to satisfy the dependency.
+   */
+  private workspaceManager: WorkspaceManager | null = null
+
   constructor(
     private readonly sessionRegistry: SessionRegistry,
     private readonly windowManager: WindowManager
   ) {}
+
+  setWorkspaceManager(wm: WorkspaceManager): void {
+    this.workspaceManager = wm
+  }
 
   // ---------------------------------------------------------------------------
   // Public API
@@ -434,5 +446,6 @@ export class StatusDetector {
       source: 'pty-fallback'
     }
     win.webContents.send(IPC.PANE_STATUS, payload)
+    this.workspaceManager?.pushManagerUpdate()
   }
 }

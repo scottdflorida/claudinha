@@ -163,6 +163,12 @@ export interface RendererWorkspace {
   constraint: WorkspaceConstraint
   status: WorkspaceStatus
   activePaneCount: number
+  /**
+   * Per-pane snapshot of every currently-running terminal in this workspace.
+   * Empty for dormant/archived workspaces. Mirrors the dormant TerminalSnapshot's
+   * render contract so the management view renders both states symmetrically.
+   */
+  activePanes: ActivePaneSummary[]
   pausedTerminals: TerminalSnapshot[]
   /** Epoch ms of the most recent activity in this workspace — used for sort + "Xm ago" display */
   lastActiveAt: number
@@ -170,6 +176,23 @@ export interface RendererWorkspace {
   completionPolicy?: CompletionPolicy | null
   /** Current view mode (wall | kanban). Absent in legacy payloads; defaults to 'wall'. */
   viewMode?: 'wall' | 'kanban'
+}
+
+/**
+ * Per-pane snapshot the management window needs to render an active workspace's
+ * terminal cards. Captures only what the card surface needs: identity, name
+ * inputs (forwarded into resolvePaneDisplayName), live status + tool, and the
+ * starting prompt.
+ */
+export interface ActivePaneSummary {
+  paneId: string
+  repoName: string
+  worktreeName: string
+  userName: string | null
+  sessionTitle: string | null
+  status: PaneStatus
+  activeToolName: string | null
+  initialPrompt: string | null
 }
 
 // ---------------------------------------------------------------------------

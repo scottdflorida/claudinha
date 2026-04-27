@@ -3,7 +3,6 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
-  Sprout,
   Lock,
   Settings
 } from 'lucide-react'
@@ -309,7 +308,7 @@ export function ManagerSidebar({
           `}
           style={{ height: 36 }}
         >
-          <Sprout size={16} className="text-accent flex-shrink-0" />
+          <ClaudinhaIcon size={16} className="text-brand flex-shrink-0" />
           <span className="flex-1 text-[13px] font-[550] text-fg-primary text-left">{t.managerSidebar.newWorkspace}</span>
         </button>
       </div>

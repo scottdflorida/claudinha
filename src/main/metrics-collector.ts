@@ -6,6 +6,7 @@ import type { PaneMetrics, ToolUsageSummary } from '../shared/types'
 import type { SessionRegistry } from './session-registry'
 import type { WindowManager } from './window-manager'
 import type { InspectorService } from './inspector'
+import type { WorkspaceManager } from './workspace-manager'
 import {
   abbreviateModel,
   getModelContextWindow,
@@ -143,6 +144,13 @@ export class MetricsCollector {
    */
   private inspector: InspectorService | null = null
 
+  /**
+   * Wired after construction so transcript-derived metric updates
+   * (sessionTitle, initialPrompt) propagate to the management window's
+   * active-pane cards. Held nullable so unit tests don't have to satisfy it.
+   */
+  private workspaceManager: WorkspaceManager | null = null
+
   constructor(
     private readonly sessionRegistry: SessionRegistry,
     private readonly windowManager: WindowManager
@@ -154,6 +162,10 @@ export class MetricsCollector {
    */
   setInspector(inspector: InspectorService): void {
     this.inspector = inspector
+  }
+
+  setWorkspaceManager(wm: WorkspaceManager): void {
+    this.workspaceManager = wm
   }
 
   // ---------------------------------------------------------------------------
@@ -512,6 +524,10 @@ export class MetricsCollector {
     }
 
     this.sessionRegistry.updatePaneMetrics(paneId, updatedMetrics)
+
+    // Refresh the management window's active-pane cards — this is where
+    // sessionTitle and initialPrompt land, and the manager card needs them.
+    this.workspaceManager?.pushManagerUpdate()
 
     // Emit pane:metrics IPC
     const win = this.windowManager.getWindow(pane.windowId)

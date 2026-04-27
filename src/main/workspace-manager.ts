@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { BrowserWindow } from 'electron'
-import type { Workspace, WorkspaceType, WorkspaceConstraint, WorkspaceStatus, TerminalSnapshot, RendererWorkspace, PaneState, CompletionPolicy } from '../shared/types'
+import type { Workspace, WorkspaceType, WorkspaceConstraint, WorkspaceStatus, TerminalSnapshot, RendererWorkspace, ActivePaneSummary, PaneState, CompletionPolicy } from '../shared/types'
 import type { WindowInitPayload } from '../shared/ipc-channels'
 import type { WindowManager } from './window-manager'
 import type { SessionRegistry } from './session-registry'
@@ -573,6 +573,17 @@ export class WorkspaceManager {
    * Build the ManagerStatePayload for sending to the Manager window.
    */
   buildManagerState(): { activeWorkspaces: RendererWorkspace[]; dormantWorkspaces: RendererWorkspace[]; archivedWorkspaces: RendererWorkspace[]; nextWorkspaceNumber: number } {
+    const summarizePane = (p: PaneState): ActivePaneSummary => ({
+      paneId: p.id,
+      repoName: p.repoName,
+      worktreeName: p.worktreeName,
+      userName: p.userName ?? null,
+      sessionTitle: p.metrics.sessionTitle,
+      status: p.status,
+      activeToolName: p.activeToolName,
+      initialPrompt: p.metrics.initialPrompt
+    })
+
     const toRendererHive = (workspace: Workspace): RendererWorkspace => ({
       id: workspace.id,
       name: workspace.name,
@@ -581,6 +592,7 @@ export class WorkspaceManager {
       constraint: workspace.constraint,
       status: workspace.status,
       activePaneCount: workspace.activePaneIds.length,
+      activePanes: this.sessionRegistry.getPanesForWorkspace(workspace.id).map(summarizePane),
       pausedTerminals: workspace.pausedTerminals,
       lastActiveAt: workspace.lastActiveAt,
       completionPolicy: workspace.completionPolicy ?? null,
