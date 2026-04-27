@@ -37,7 +37,12 @@ const onSignal = (signal) => {
 process.on('SIGINT', () => onSignal('SIGINT'))
 process.on('SIGTERM', () => onSignal('SIGTERM'))
 
-const localBin = (name) => resolve(repoRoot, 'node_modules', '.bin', name)
+// On Windows, node_modules/.bin entries are .cmd shims that aren't directly
+// executable — Node's spawn needs both the explicit extension and `shell: true`
+// to invoke them. macOS/Linux have real binary symlinks, so no extension and
+// no shell are fine there.
+const isWin = process.platform === 'win32'
+const localBin = (name) => resolve(repoRoot, 'node_modules', '.bin', name + (isWin ? '.cmd' : ''))
 
 let exitCode = 0
 try {
@@ -57,7 +62,7 @@ try {
     [localBin('electron-builder'), builderArgs]
   ]
   for (const [cmd, args] of steps) {
-    const result = spawnSync(cmd, args, { cwd: repoRoot, stdio: 'inherit' })
+    const result = spawnSync(cmd, args, { cwd: repoRoot, stdio: 'inherit', shell: isWin })
     if (result.status !== 0) {
       exitCode = result.status ?? 1
       break
