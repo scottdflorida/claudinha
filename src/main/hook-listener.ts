@@ -11,7 +11,7 @@ import type { MetricsCollector } from './metrics-collector'
 import type { StatusDetector } from './status-detector'
 import type { GitStatusPoller } from './git-status-poller'
 import type { InspectorService } from './inspector'
-import { CLAUDE_PATTERNS } from './claude-patterns'
+import { CLAUDE_PATTERNS, classifyStopOutput } from './claude-patterns'
 import { trackHookFailure } from './analytics/error-instrumentation'
 
 // ---------------------------------------------------------------------------
@@ -315,17 +315,14 @@ export class HookListener {
 
     if (!newStatus) return // Unknown event — ignore
 
-    // Refine Stop → needs-input when Claude's last output ends with a question mark.
-    // This catches cases where Claude asks "Should I go ahead?" without a formal
-    // permission prompt — semantically it's waiting for user input, not done.
+    // Refine Stop → needs-input when Claude's last output looks like a question.
+    // Claude often asks "Should I go ahead? Those are the next steps." — a
+    // last-line check would miss the `?` because it's followed by a clarifier.
+    // The classifier scans a tail window for question patterns; tweakable in
+    // claude-patterns.ts.
     if (hookEventName === 'Stop' && newStatus === 'done' && this.statusDetector) {
       const lastOutput = this.statusDetector.getLastOutput(paneId)
-      if (lastOutput) {
-        const lastLine = lastOutput.trimEnd().split('\n').pop()?.trim()
-        if (lastLine && lastLine.endsWith('?')) {
-          newStatus = 'needs-input'
-        }
-      }
+      newStatus = classifyStopOutput(lastOutput)
     }
 
     // Plan-mode override: Claude Code's plan mode always ends by asking the

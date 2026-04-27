@@ -11,6 +11,8 @@
  * the last chunk of PTY output received after 500ms of silence.
  */
 
+import type { PaneStatus } from '../shared/types'
+
 // ---------------------------------------------------------------------------
 // Pattern categories
 // ---------------------------------------------------------------------------
@@ -82,3 +84,63 @@ export const CLAUDE_PATTERNS = {
   done: DONE_PATTERNS,
   awaitingPrompt: AWAITING_PROMPT_PATTERNS
 } as const
+
+// ---------------------------------------------------------------------------
+// Stop-time classifier — drives Done vs Needs Input routing on Stop hooks.
+// ---------------------------------------------------------------------------
+//
+// When Claude Code emits a `Stop` hook the agent's turn has ended. The hook
+// alone can't tell us whether Claude finished a task or asked the user a
+// plain-text question (the Notification hook only fires for permission
+// prompts and AskUserQuestion). Without a refinement Claude's questions
+// land in the Done column and stop scrolling for input. The classifier
+// scans the tail of the most recent PTY buffer for question patterns and
+// flips the status to needs-input when one matches.
+//
+// Two pattern lists are exposed so the default can be flipped later:
+//   - questionPatterns: a match means "Claude is asking the user something".
+//   - completionPatterns: a match means "Claude is announcing completion".
+// Question patterns are checked first (so "Done. Did that work?" still
+// routes to needs-input). When neither matches, defaultStatus wins.
+// To flip the default later, populate completionPatterns with explicit
+// completion phrases and change defaultStatus to 'needs-input'.
+
+const STOP_QUESTION_PATTERNS: RegExp[] = [
+  // A `?` near the end of the buffer. The {0,200} bound after the `?`
+  // catches a clarifier sentence + the "Worked for…" footer + the prompt
+  // prefix without false-matching `?` buried earlier (e.g. in code blocks).
+  /\?[^?]{0,200}$/s,
+  // Common interrogative phrasings, useful when the question is buried
+  // before a longer post-question commentary.
+  /\bWant me to\b[^.?!\n]{0,200}\?/i,
+  /\bShould (I|we)\b[^.?!\n]{0,200}\?/i,
+  /\bDo you want\b[^.?!\n]{0,200}\?/i,
+  /\bWould you like\b[^.?!\n]{0,200}\?/i
+]
+
+const STOP_COMPLETION_PATTERNS: RegExp[] = []
+
+export const STOP_CLASSIFIER = {
+  questionPatterns: STOP_QUESTION_PATTERNS,
+  completionPatterns: STOP_COMPLETION_PATTERNS,
+  defaultStatus: 'done' as PaneStatus
+} as const
+
+const STOP_TAIL_SCAN_CHARS = 2000
+
+export function classifyStopOutput(
+  lastOutput: string | null | undefined
+): PaneStatus {
+  if (!lastOutput) return STOP_CLASSIFIER.defaultStatus
+  const tail =
+    lastOutput.length > STOP_TAIL_SCAN_CHARS
+      ? lastOutput.slice(-STOP_TAIL_SCAN_CHARS)
+      : lastOutput
+  for (const pattern of STOP_CLASSIFIER.questionPatterns) {
+    if (pattern.test(tail)) return 'needs-input'
+  }
+  for (const pattern of STOP_CLASSIFIER.completionPatterns) {
+    if (pattern.test(tail)) return 'done'
+  }
+  return STOP_CLASSIFIER.defaultStatus
+}

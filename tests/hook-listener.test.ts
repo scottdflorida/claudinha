@@ -19,9 +19,18 @@ vi.mock('electron', () => ({
   app: { getAppPath: vi.fn(() => '/app') }
 }))
 
-vi.mock('../src/main/claude-patterns', () => ({
-  CLAUDE_PATTERNS: { needsInput: [] }
-}))
+vi.mock('../src/main/claude-patterns', async () => {
+  // Override CLAUDE_PATTERNS.needsInput to keep Notification refinement
+  // deterministic in this suite, but use the REAL classifyStopOutput /
+  // STOP_CLASSIFIER so question-detection tests exercise production logic.
+  const actual = await vi.importActual<typeof import('../src/main/claude-patterns')>(
+    '../src/main/claude-patterns'
+  )
+  return {
+    ...actual,
+    CLAUDE_PATTERNS: { needsInput: [] }
+  }
+})
 
 import { HookListener } from '../src/main/hook-listener'
 
@@ -216,6 +225,45 @@ describe('HookListener', () => {
       expect(registry.updatePaneStatus).toHaveBeenCalledWith(
         'pane-1',
         'error',
+        'hook',
+        null
+      )
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Stop question heuristic
+  //
+  // The Stop hook defaults to 'done', but the classifyStopOutput helper can
+  // refine to 'needs-input' when Claude's tail buffer contains a plain-text
+  // question that the Notification hook won't catch (Notification only fires
+  // for permission prompts and AskUserQuestion-style tool calls).
+  // -------------------------------------------------------------------------
+
+  describe('Stop question heuristic', () => {
+    it('routes Stop → needs-input when the last buffer has a question followed by a clarifier', async () => {
+      // Real-world case: Claude ends with a question and then adds one more
+      // sentence summarizing the choice. A last-line check would miss the
+      // question because the very last line is declarative.
+      const buffer =
+        'Want me to fix #4 (paths in the wave guide) and draft the Track 11 ' +
+        'continuation kickoff variant now? Those are the two cheapest ' +
+        'pre-launch chores.\n\n* Worked for 1m 34s\n\n> '
+      const mockDetector = {
+        getLastOutput: vi.fn(() => buffer)
+      }
+      listener.setStatusDetector(
+        mockDetector as unknown as Parameters<HookListener['setStatusDetector']>[0]
+      )
+
+      await sendPayload(socketPath, {
+        hookEventName: 'Stop',
+        paneId: 'pane-1'
+      })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'needs-input',
         'hook',
         null
       )

@@ -940,3 +940,23 @@ The original code read like a safe idempotency guard — "if our commands are al
 
 **How to avoid this in the future:**
 Any persistence written with an absolute path, version number, hostname, or any other ambient value baked in will eventually diverge from what the current code would write. Dedup/upsert logic that compares by the *current* serialization is guaranteed to leave stale siblings behind the day the ambient value shifts — installs move, users rename directories, hostnames change. Match persisted entries by a *recognition predicate* (does this entry look like something we wrote, regardless of path?) separate from the *equality check* (is this entry exactly what we'd write now?), then either replace or skip based on both. Concrete self-check before writing merge/upsert code: *"If the field I'm writing contains any value derived from the current environment (absolute path, app version, hostname, pid), can I recognise an earlier version of my own entry that used a different value? If not, add a sentinel/marker or match by structural pattern, not by equality."* And: when the on-disk state can only be written by this app but can persist across app renames/moves, include a one-shot migration sweep at launch — not just a per-spawn correction — so users already holding the broken state see the fix without needing to trigger the code path that touches each stale record.
+
+---
+
+## L-046: A "last-line" check on a streamed agent buffer misses any signal followed by a clarifier sentence, footer, or prompt prefix
+
+**Date:** 2026-04-27
+**Source:** feedback — screenshot of a Claudinha kanban card stuck in WORKING after the agent ended its turn with "Want me to fix #4? Those are the two cheapest pre-launch chores." The Stop hook's last-line `endsWith('?')` refinement missed the question because the very last line is the clarifier ("Those are…"), not the question. Notification doesn't fire on plain-text questions, so the card never moved to NEEDS INPUT.
+**Category:** status detection / heuristic design
+
+**What happened:**
+The `Stop` hook handler in `hook-listener.ts` defaulted to `done` and refined to `needs-input` only when `lastOutput.split('\n').pop().endsWith('?')`. Two things in real PTY buffers break that:
+1. Claude regularly follows a question with one more declarative sentence ("Those are the two cheapest pre-launch chores.") — so the literal last line is declarative even though the message is asking something.
+2. Claude Code prints a `* Worked for Xm Ys` footer and a `> ` prompt prefix below the response — the actual response lines are never the literal last line of the buffer.
+Either condition individually defeats the heuristic; together they're the common case. The card sat in WORKING until the user manually re-classified it.
+
+**Why the agent got it wrong:**
+The original heuristic was written for the most legible mental model — "if the message ends with a question mark, treat it as a question." That holds when you imagine the message as a clean, isolated paragraph. It fails the moment you remember the buffer is the *streamed terminal view*, which has its own framing layer (footers, prompt prefixes, line wrap) and its own conventional ending (the clarifier sentence after a question is a strong stylistic norm in Claude's writing). The reasoning gap was treating the agent's logical message and the terminal buffer as the same thing — and assuming the *signal* (a question) lives at the *boundary* (last line) instead of somewhere in a *region* (the recent tail). Same gap applies to any other "last X" check on streaming output: last line, last token, last paragraph — each works until the surrounding output adds anything after the signal.
+
+**How to avoid this in the future:**
+When classifying a multi-line agent buffer for a signal, ask: *"Could this signal be followed by metadata, a footer, a prompt prefix, a clarifying sentence, or commentary?"* If the answer is "yes" or "I don't know," scan a tail *window* (last N chars or last paragraph after blank lines), not the literal last line. Bound the scan with a regex that won't false-match earlier code blocks (e.g. `\?[^?]{0,200}$/s` — a `?` followed by ≤200 non-`?` chars to end). Concretely: prefer `region matches a question pattern` over `last line ends with the signal character`. Same rule applies to inverted detection (Done vs Needs Input) — the "completion" signal can be buried before clarifying notes, so completion patterns also need region-scoped matching, not boundary matching.

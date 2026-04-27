@@ -1,4 +1,4 @@
-import { CLAUDE_PATTERNS } from '../src/main/claude-patterns'
+import { CLAUDE_PATTERNS, STOP_CLASSIFIER, classifyStopOutput } from '../src/main/claude-patterns'
 
 // ---------------------------------------------------------------------------
 // Helper — test a string against a pattern array
@@ -133,5 +133,78 @@ describe('CLAUDE_PATTERNS.awaitingPrompt', () => {
 
   it('does NOT match cost summaries', () => {
     expect(matchesAny(awaitingPrompt, 'Total cost: $0.02')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// classifyStopOutput — Stop-time Done vs Needs Input refinement
+// ---------------------------------------------------------------------------
+
+describe('classifyStopOutput', () => {
+  it('returns the configured default for null/undefined/empty input', () => {
+    expect(classifyStopOutput(null)).toBe(STOP_CLASSIFIER.defaultStatus)
+    expect(classifyStopOutput(undefined)).toBe(STOP_CLASSIFIER.defaultStatus)
+    expect(classifyStopOutput('')).toBe(STOP_CLASSIFIER.defaultStatus)
+  })
+
+  it('routes the screenshot case (question + clarifier) to needs-input', () => {
+    const buffer =
+      'Want me to fix #4 (paths in the wave guide) and draft the Track 11 ' +
+      'continuation kickoff variant now? Those are the two cheapest ' +
+      'pre-launch chores.'
+    expect(classifyStopOutput(buffer)).toBe('needs-input')
+  })
+
+  it('handles a tail with the "Worked for…" footer and prompt prefix', () => {
+    const buffer =
+      'Should I delete the orphaned worktree, or do you want to inspect it first? ' +
+      'I can do either.\n\n* Worked for 42s\n\n> '
+    expect(classifyStopOutput(buffer)).toBe('needs-input')
+  })
+
+  it('routes a purely declarative wrap-up to done', () => {
+    expect(classifyStopOutput('All set. Tests pass and the dev server is happy.')).toBe('done')
+  })
+
+  it('routes "Want me to …?" buried before commentary to needs-input', () => {
+    const buffer =
+      'I patched the renderer and added a regression test. Want me to also ' +
+      'apply the same fix to the Notification fallback? That would keep the ' +
+      'two paths consistent.'
+    expect(classifyStopOutput(buffer)).toBe('needs-input')
+  })
+
+  it('routes "Should I …?" / "Do you want …?" / "Would you like …?" to needs-input', () => {
+    expect(classifyStopOutput('Should I run the migration now? It is reversible.')).toBe(
+      'needs-input'
+    )
+    expect(classifyStopOutput('Do you want me to revert that file? Easy to undo.')).toBe(
+      'needs-input'
+    )
+    expect(classifyStopOutput('Would you like a summary first? Or jump straight in?')).toBe(
+      'needs-input'
+    )
+  })
+
+  it('does NOT false-match a `?` from a code block far before the end', () => {
+    // The `?` in the code block is followed by ~1500 chars of declarative
+    // padding, so the {0,200} bound after `?` cannot reach end-of-string.
+    const padding = 'Lorem ipsum non-question summary text. '.repeat(50)
+    const buffer = 'Use the `obj?.field` access pattern.\n' + padding
+    expect(classifyStopOutput(buffer)).toBe('done')
+  })
+
+  it('handles very large buffers by scanning only the tail', () => {
+    const noisyHead = 'No question marks here. '.repeat(500) // > 2000 chars
+    const tail = ' Final thought — should we proceed?'
+    expect(classifyStopOutput(noisyHead + tail)).toBe('needs-input')
+  })
+
+  it('keeps defaultStatus as `done` (guards against accidental flip)', () => {
+    expect(STOP_CLASSIFIER.defaultStatus).toBe('done')
+  })
+
+  it('exposes empty completion patterns until the default is flipped', () => {
+    expect(STOP_CLASSIFIER.completionPatterns).toHaveLength(0)
   })
 })
