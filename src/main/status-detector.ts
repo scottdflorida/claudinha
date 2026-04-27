@@ -40,8 +40,12 @@ interface PaneEntry {
   promptSeen: boolean
   /**
    * Rolling tail of ANSI-stripped PTY output, capped at PLAN_MODE_BUFFER_BYTES.
-   * Used by `detectPermissionMode` so a signal split across multiple chunks
-   * (or fragmented by ink's cursor-positioning re-renders) is still found.
+   * Two consumers:
+   *   - `detectPermissionMode` (this file) — needs accumulation because ink
+   *     fragments mode-footer text via cursor-positioning between glyphs.
+   *   - `getLastOutput` → HookListener Stop classifier — needs accumulation
+   *     because ink overwrites the visible question with input-box redraws,
+   *     so the literal last `onData` chunk is just the prompt redraw.
    */
   recentStripped: string
 }
@@ -224,13 +228,19 @@ export class StatusDetector {
    * No-op when fallback is not active (hook-based detection is in use).
    */
   /**
-   * Return the last PTY output for a pane, ANSI-stripped.
+   * Return a rolling tail of recent ANSI-stripped PTY output for a pane.
    * Used by HookListener to refine Stop → done/needs-input classification.
+   *
+   * Returns `recentStripped` (a 16KB rolling buffer appended on every
+   * `onData`), NOT just the last PTY frame. Claude Code is an ink TUI: it
+   * emits the question text in one frame and then re-renders the input box
+   * in subsequent frames, so the literal last frame typically contains only
+   * cursor positioning + the prompt and is useless for question detection.
    */
   getLastOutput(paneId: string): string | null {
     const entry = this.panes.get(paneId)
-    if (!entry || !entry.lastChunk) return null
-    return stripAnsi(entry.lastChunk)
+    if (!entry || entry.recentStripped.length === 0) return null
+    return entry.recentStripped
   }
 
   onData(paneId: string, data: string): void {

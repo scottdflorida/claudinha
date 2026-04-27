@@ -316,6 +316,45 @@ describe('StatusDetector', () => {
   })
 
   // -------------------------------------------------------------------------
+  // getLastOutput — rolling tail used by HookListener Stop classifier
+  // -------------------------------------------------------------------------
+
+  describe('getLastOutput', () => {
+    it('returns null for unknown panes and panes with no data yet', () => {
+      expect(detector.getLastOutput('never-registered')).toBeNull()
+      detector.registerPane('pane-1')
+      expect(detector.getLastOutput('pane-1')).toBeNull()
+    })
+
+    it('accumulates across multiple onData chunks (not just the most recent frame)', () => {
+      registry.getPane.mockReturnValue(makePaneState({ id: 'pane-1' }))
+      detector.registerPane('pane-1')
+
+      // Frame 1: agent's question. Frame 2: ink redraw of the input box that
+      // would clobber a single-frame `lastChunk` view. The classifier needs
+      // both, so the question text from frame 1 must still be visible.
+      detector.onData('pane-1', 'Should I delete X?\n')
+      detector.onData('pane-1', '\x1b[H\x1b[2J❯ ')
+
+      const out = detector.getLastOutput('pane-1')
+      expect(out).not.toBeNull()
+      expect(out!).toContain('Should I delete X?')
+    })
+
+    it('returns ANSI-stripped text (no escape bytes leak through)', () => {
+      registry.getPane.mockReturnValue(makePaneState({ id: 'pane-1' }))
+      detector.registerPane('pane-1')
+
+      detector.onData('pane-1', '\x1b[31mred\x1b[0m and \x1b[1mbold\x1b[0m')
+
+      const out = detector.getLastOutput('pane-1')
+      expect(out).not.toBeNull()
+      expect(out!).not.toMatch(/\x1b\[/)
+      expect(out!).toContain('red and bold')
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // Plan-mode detection (Phase: Kanban polish)
   // -------------------------------------------------------------------------
 
