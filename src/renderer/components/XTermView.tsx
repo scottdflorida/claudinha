@@ -11,36 +11,24 @@ import { SCROLLBACK_LINES } from '../lib/constants'
 // xterm.js theme objects — dark (§11.1) and light (§11.2)
 // ---------------------------------------------------------------------------
 
-// Palettes retuned for Claudinha's warm neutrals. Terminal background sits on
-// --color-bg-canvas (dark) / --color-bg-sunken (light) so the terminal feels
-// flush with the rest of the chrome. Cursor uses Claudinha gold (mirrors
-// --color-brand per theme) so the input position reads as branded chrome
-// and doubles as a clear "type here" cue. xterm's theme is a static JS
-// object — these gold values must be retuned by hand if --color-brand is
-// retuned in globals.css.
+// Theme covers only the Claudinha-specific surfaces — background, foreground,
+// cursor, selection. The 16 standard ANSI colors are intentionally NOT
+// overridden so xterm.js falls back to its built-in defaults, which match
+// what Terminal.app and other terminals ship; Claude Code's boot critter and
+// other ANSI-colored UI was designed against that conventional palette and
+// looked desaturated when we retuned the codes to warm neutrals.
+//
+// Cursor is locked to Claudinha gold (mirrors --color-brand per theme); the
+// PTY can't override it because we consume OSC 10/11/12 in the parser
+// (registered after term.open() below). Retune by hand if --color-brand
+// changes in globals.css.
 const DARK_XTERM_THEME = {
   background:          '#121212',
   foreground:          '#F0EBE0',
   cursor:              '#E8B84B',
   cursorAccent:        '#121212',
   selectionBackground: '#3D7CFF66',
-  selectionForeground: undefined,
-  black:               '#2A2620',
-  red:                 '#D95E47',
-  green:               '#7FC7A5',
-  yellow:              '#D9A24A',
-  blue:                '#6FA8FF',
-  magenta:             '#C38BC9',
-  cyan:                '#79BFC0',
-  white:               '#F0EBE0',
-  brightBlack:         '#6A645B',
-  brightRed:           '#E8785F',
-  brightGreen:         '#94D4B5',
-  brightYellow:        '#EABA68',
-  brightBlue:          '#8EB9FF',
-  brightMagenta:       '#D6A8DC',
-  brightCyan:          '#94D1D2',
-  brightWhite:         '#FBF7EE'
+  selectionForeground: undefined
 }
 
 const LIGHT_XTERM_THEME = {
@@ -49,23 +37,7 @@ const LIGHT_XTERM_THEME = {
   cursor:              '#B8872E',
   cursorAccent:        '#FBF7EE',
   selectionBackground: '#2568E055',
-  selectionForeground: undefined,
-  black:               '#2A2418',
-  red:                 '#B4432F',
-  green:               '#376B4D',
-  yellow:              '#7E5C1E',
-  blue:                '#1E55BD',
-  magenta:             '#7D4A87',
-  cyan:                '#2F6768',
-  white:               '#857B68',
-  brightBlack:         '#6A645B',
-  brightRed:           '#C55346',
-  brightGreen:         '#4F8E60',
-  brightYellow:        '#A27830',
-  brightBlue:          '#2874C9',
-  brightMagenta:       '#8C5B95',
-  brightCyan:          '#437C7E',
-  brightWhite:         '#221E16'
+  selectionForeground: undefined
 }
 
 function getXTermTheme() {
@@ -186,6 +158,18 @@ export const XTermView = forwardRef<XTermViewHandle, XTermViewProps>(
       term.loadAddon(serializeAddon)
       term.open(container)
 
+      // Lock cursor / foreground / background colors to our theme. Claude
+      // Code emits OSC 12 (cursor color) on startup which would otherwise
+      // override our brand-gold cursor. Returning true from the handler
+      // consumes the sequence so xterm's default OSC handler never runs.
+      // OSC 10 (foreground) and OSC 11 (background) are locked too so
+      // future TUI updates can't desync the terminal from our chrome.
+      const oscDisposables = [
+        term.parser.registerOscHandler(10, () => true),
+        term.parser.registerOscHandler(11, () => true),
+        term.parser.registerOscHandler(12, () => true)
+      ]
+
       termRef.current = term
       fitAddonRef.current = fitAddon
       serializeAddonRef.current = serializeAddon
@@ -260,6 +244,7 @@ export const XTermView = forwardRef<XTermViewHandle, XTermViewProps>(
       return () => {
         clearTimeout(initialFitTimer)
         inputDisposable.dispose()
+        for (const d of oscDisposables) d.dispose()
         textarea?.removeEventListener('focus', handleTextareaFocus)
         term.dispose()
         termRef.current = null
