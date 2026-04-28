@@ -1112,3 +1112,26 @@ Two decision rules:
 
 Related: L-024 (permanent UI fixtures must show placeholders, not disappear, when data is pending — same root family: surface-level vs. element-level reasoning). L-044 (a mode-gated component hides every affordance it contains — audit each affordance — symmetric inverse: there, the gate was too coarse; here, the gate was too fine, leaving one affordance ungated).
 
+---
+
+## L-055: An "audit each affordance" lesson freezes only the affordances known at audit time — re-run the audit when the underlying state union grows
+
+**Date:** 2026-04-27
+**Source:** User feedback — "I had two simple agents… first one merged but the second one says 'Action failed' and there is no apparent way to do anything about it." Two trees in Kanban view, one merge succeeded, one failed; the failed one stranded the user with a non-interactive red chip and no recovery path.
+**Category:** UX pattern / scope discipline
+
+**What happened:**
+L-044 (2026-04-24) had already established the rule that suppressing a mode-gated component must enumerate every affordance it contains and confirm coverage in the alternate mode. That audit produced inline equivalents in Kanban for the `dirty-main` and `conflict` completion-action states (chip becomes a button, modal auto-opens on transition). What it did NOT cover — because it didn't yet exist as a user-visible failure surface at the time of the audit — was the `error` state. When merges later started failing for ordinary reasons (rebase conflicts on second-of-two trees, etc.), the Kanban surface had no per-card recovery: the "Action failed" chip rendered as a non-interactive `<span>`, no auto-open modal fired, and the only path out was a repo-rail bulk button that gives no error context. The user hit exactly the dead-end L-044 was meant to prevent, just for a state L-044's audit hadn't enumerated.
+
+**Why the agent got it wrong:**
+L-044 was filed as "audit each affordance" but the audit it produced was implicitly time-stamped: it enumerated the completion-action states that were live at the moment of the audit (`dirty-main`, `conflict`) and shipped per-state coverage for those two. The `CompletionActionState` union in `src/shared/types.ts` already included `'error'` at audit time, but the audit reasoned about *visible affordances in the suppressed component* rather than about *every value of the underlying state union the component reacts to*. The two framings produce different completeness checks: the affordance-frame says "I see Resolve / Abort / Retry buttons; cover those." The state-union-frame says "the action bar branches on N states; cover all N." The first frame is local and easy; the second forces you to look at the source of branching and asks you to defend every leg.
+
+When a fourth completion-action state (`error`) became user-reachable via everyday merge failures, no one re-ran the audit because the lesson said "audit each affordance," not "re-audit when the state union grows." The lesson encoded the right principle but anchored to the wrong invariant.
+
+**How to avoid this in the future:**
+When a component is mode-gated (suppressed in one of its host UIs), express the audit in terms of the **state union the component branches on**, not the **buttons it currently renders**. Concretely: open the component, find the `switch (state)` (or equivalent), list every case, and confirm each case has equivalent coverage in the alternate mode. Then add a comment near the state-union definition that names the alternate-mode surfaces, so a future addition to the union triggers a re-audit at definition time rather than waiting for a user to hit the gap.
+
+Decision rule when adding a new value to a state union that already drives mode-gated UI: grep every `case 'old-state':` (or every reference to the union type's existing values), enumerate the surfaces that branched on it, and confirm the new value has matching coverage on each surface — *especially* on the alternate-mode surface that was originally hand-built to cover the gap. Self-check: *"This component is suppressed in Kanban. If I look at every branch in its switch, does each one have an inline equivalent? If a state was added since the last audit, who re-ran it?"*
+
+Related: L-044 (the parent lesson — same audit framing, narrower scope at the time). L-024 (permanent UI fixtures must stay visible) — same family: invisible failure modes only show up when the rare condition fires, so the audit must be exhaustive at definition time, not at observation time.
+
