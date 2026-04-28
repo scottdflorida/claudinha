@@ -627,6 +627,7 @@ export class CompletionExecutor {
     if (this.ptyPool.isAlive(paneId)) {
       try {
         this.ptyPool.write(paneId, CONFLICT_RESOLUTION_PROMPT + '\r')
+        this.focusPaneInWindow(paneId)
         return { error: null }
       } catch (err) {
         console.warn('[completion-executor] write to alive PTY failed, falling back to respawn:', err)
@@ -859,6 +860,23 @@ export class CompletionExecutor {
     // don't rely on a fixed timeout (L-013: dual-mode detection gaps).
     await this.waitForReadyState(paneId, RESUME_WAIT_TIMEOUT_MS)
     this.ptyPool.write(paneId, CONFLICT_RESOLUTION_PROMPT + '\r')
+    this.focusPaneInWindow(paneId)
+  }
+
+  /**
+   * Move keyboard + visible focus to a pane after the executor has pasted
+   * something into its PTY on the user's behalf. Without this, "Resolve with
+   * Claude" lands the prompt in the right terminal but leaves the user
+   * looking at the previously-active pane (or the Kanban card grid), which
+   * reads as a no-op. Mirrors the MANAGER_FOCUS_TERMINAL flow in
+   * ipc-handlers — same IPC, same renderer-side handler (selectActivePane).
+   */
+  private focusPaneInWindow(paneId: string): void {
+    const pane = this.sessionRegistry.getPane(paneId)
+    if (!pane) return
+    const win = this.windowManager.getWindow(pane.windowId)
+    if (!win || win.isDestroyed()) return
+    win.webContents.send(IPC.WORKSPACE_FOCUS_PANE, { paneId })
   }
 
   /**

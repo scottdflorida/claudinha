@@ -601,4 +601,71 @@ describe('CompletionExecutor', () => {
       expect(windowManager._sendSpy).not.toHaveBeenCalled()
     })
   })
+
+  // =========================================================================
+  // resolveConflictWithClaude — focus-after-paste signal
+  // =========================================================================
+
+  describe('resolveConflictWithClaude', () => {
+    it('after a successful paste into the alive PTY, sends WORKSPACE_FOCUS_PANE so the renderer focuses the terminal', async () => {
+      const pane = makePaneState({
+        completionActionStatus: { state: 'conflict' },
+        windowId: 'win-1'
+      })
+      registry.getPane.mockReturnValue(pane)
+      mockGetMainRepoPath.mockResolvedValue('/main/repo')
+      ptyPool.isAlive.mockReturnValue(true)
+
+      const result = await executor.resolveConflictWithClaude('pane-1')
+
+      expect(result.error).toBeNull()
+      expect(ptyPool.write).toHaveBeenCalledWith('pane-1', expect.stringContaining('Claudinha paused a rebase'))
+      const focusCalls = windowManager._sendSpy.mock.calls.filter(
+        (c) => c[0] === IPC.WORKSPACE_FOCUS_PANE
+      )
+      expect(focusCalls).toHaveLength(1)
+      expect(focusCalls[0][1]).toEqual({ paneId: 'pane-1' })
+    })
+
+    it('does NOT send WORKSPACE_FOCUS_PANE when the alive-PTY write throws (so the focus signal does not race ahead of the respawn fallback)', async () => {
+      const pane = makePaneState({
+        completionActionStatus: { state: 'conflict' },
+        sessionId: null,
+        windowId: 'win-1'
+      })
+      registry.getPane.mockReturnValue(pane)
+      mockGetMainRepoPath.mockResolvedValue('/main/repo')
+      ptyPool.isAlive.mockReturnValue(true)
+      ptyPool.write.mockImplementation(() => { throw new Error('pty closed') })
+
+      // sessionId is null so the respawn fallback short-circuits with an error.
+      // What we care about: the focus signal must not have fired on the failed write.
+      const result = await executor.resolveConflictWithClaude('pane-1')
+
+      expect(result.error).toMatch(/no session id/i)
+      const focusCalls = windowManager._sendSpy.mock.calls.filter(
+        (c) => c[0] === IPC.WORKSPACE_FOCUS_PANE
+      )
+      expect(focusCalls).toHaveLength(0)
+    })
+
+    it('does not crash if the workspace window is gone by the time the focus signal fires', async () => {
+      const pane = makePaneState({
+        completionActionStatus: { state: 'conflict' },
+        windowId: 'win-1'
+      })
+      registry.getPane.mockReturnValue(pane)
+      mockGetMainRepoPath.mockResolvedValue('/main/repo')
+      ptyPool.isAlive.mockReturnValue(true)
+      windowManager._mockWindow.isDestroyed.mockReturnValue(true)
+
+      const result = await executor.resolveConflictWithClaude('pane-1')
+
+      expect(result.error).toBeNull()
+      const focusCalls = windowManager._sendSpy.mock.calls.filter(
+        (c) => c[0] === IPC.WORKSPACE_FOCUS_PANE
+      )
+      expect(focusCalls).toHaveLength(0)
+    })
+  })
 })
