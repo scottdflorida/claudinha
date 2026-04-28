@@ -89,7 +89,7 @@ export function PaneGrid({
               }}
               aria-hidden={!isVisible}
             >
-              <Pane paneId={paneId} onRequestClose={onRequestClosePane} chromeMode="kanban" />
+              <Pane paneId={paneId} onRequestClose={onRequestClosePane} chromeMode="kanban" isVisible={isVisible} />
             </div>
           )
         })}

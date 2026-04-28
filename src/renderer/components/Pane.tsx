@@ -34,6 +34,12 @@ interface PaneProps {
    *     inside the header instead.
    */
   chromeMode?: 'wall' | 'kanban'
+  /**
+   * Whether this pane's wrapper is currently `visibility: visible` (kanban
+   * stack only — wall layout always shows every pane). Forwarded to XTermView
+   * so it can fit + refresh on hidden→visible transitions.
+   */
+  isVisible?: boolean
 }
 
 /**
@@ -49,7 +55,7 @@ interface PaneProps {
  *     StatusOverlay (top border center, absolute)
  *     MetricsOverlay (bottom border center, absolute) — added in B-026
  */
-export function Pane({ paneId, onRequestClose, chromeMode = 'wall' }: PaneProps): React.JSX.Element {
+export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = true }: PaneProps): React.JSX.Element {
   const {
     panes,
     focusedPaneId,
@@ -292,6 +298,7 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall' }: PaneProps)
               ref={xTermRef}
               paneId={paneId}
               focused={isFocused}
+              isVisible={isVisible}
               initialSerializedBuffer={pane?.initialBuffer}
               onFocusRequested={handleClick}
             />

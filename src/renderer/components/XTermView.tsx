@@ -78,6 +78,16 @@ interface XTermViewProps {
    */
   initialSerializedBuffer?: string | null
   /**
+   * Whether this terminal's container is currently visible. Defaults to true.
+   * Used in kanban-stack mode where every pane stays mounted but only one is
+   * `visibility: visible` at a time. On hidden→visible transitions xterm's
+   * canvas atlas can hold stale or empty glyphs (the GPU may have dropped the
+   * texture while the parent was hidden), and ResizeObserver doesn't fire
+   * because dimensions haven't changed. We force a fit + refresh on the
+   * transition so the freshly-shown pane paints immediately.
+   */
+  isVisible?: boolean
+  /**
    * Fires when xterm's helper textarea gains DOM focus — by user click, Tab,
    * or a programmatic term.focus() call. Parent uses this to mirror xterm's
    * real focus into React's focusedPaneId so the two cannot desynchronize
@@ -102,7 +112,7 @@ interface XTermViewProps {
  * - SerializeAddon supports pane:move buffer capture (B-048).
  */
 export const XTermView = forwardRef<XTermViewHandle, XTermViewProps>(
-  function XTermView({ paneId, focused, initialSerializedBuffer, onFocusRequested }, ref) {
+  function XTermView({ paneId, focused, initialSerializedBuffer, isVisible = true, onFocusRequested }, ref) {
     const onFocusRequestedRef = useRef(onFocusRequested)
     useEffect(() => {
       onFocusRequestedRef.current = onFocusRequested
@@ -349,6 +359,39 @@ export const XTermView = forwardRef<XTermViewHandle, XTermViewProps>(
         window.removeEventListener('focus', handleFocus)
       }
     }, [paneId])
+
+    // ---------------------------------------------------------------------------
+    // Kanban-stack visibility recovery — when this pane becomes the active
+    // kanban card after being hidden, force a fit + refresh. ResizeObserver
+    // doesn't fire (container dimensions don't change between visibility
+    // states), and the canvas atlas may be empty if the texture was dropped
+    // while the parent was hidden. Without this the freshly-shown pane
+    // renders blank until the user manually resizes the kanban board.
+    // ---------------------------------------------------------------------------
+
+    const wasVisibleRef = useRef(isVisible)
+    useEffect(() => {
+      const wasVisible = wasVisibleRef.current
+      wasVisibleRef.current = isVisible
+      if (!isVisible || wasVisible) return
+      const term = termRef.current
+      const fitAddon = fitAddonRef.current
+      if (!term || !fitAddon) return
+      // Defer one frame so any layout pass triggered by the visibility change
+      // has settled before we measure. Without it, fit() can read a stale 0×0
+      // bounding box from the rAF before the visible class lands.
+      const id = requestAnimationFrame(() => {
+        try {
+          fitAddon.fit()
+          ipcSend(IPC.PANE_RESIZE, { paneId, cols: term.cols, rows: term.rows })
+          term.clearTextureAtlas()
+          term.refresh(0, Math.max(0, term.rows - 1))
+        } catch {
+          // Terminal may not be fully initialized
+        }
+      })
+      return () => cancelAnimationFrame(id)
+    }, [isVisible, paneId])
 
     // ---------------------------------------------------------------------------
     // PTY output — receive pane:data and write directly to terminal
