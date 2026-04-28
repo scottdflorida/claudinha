@@ -73,24 +73,28 @@ export function Dialog({
     <dialog
       ref={dialogRef}
       onClick={handleBackdropClick}
-      className="fixed top-1/2 left-1/2 z-modal bg-raised border border-[var(--color-border-strong)] rounded-2xl shadow-lg p-0 m-0 overflow-hidden"
+      className="fixed top-1/2 left-1/2 z-modal bg-raised border border-[var(--color-border-strong)] rounded-2xl shadow-lg p-0 m-0 overflow-hidden flex flex-col"
       style={{
         maxWidth: SIZE_MAX_WIDTH[size],
         width: '100%',
+        // Cap the dialog at the viewport height (with a small margin) so that
+        // tall content scrolls inside the body section instead of pushing the
+        // dialog off-screen where it would be clipped + unreachable.
+        maxHeight: 'calc(100vh - 32px)',
         transform: 'translate(-50%, -50%)',
         animation: 'dialog-enter 260ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards'
       }}
     >
       {banner && (
         <>
-          <div className="px-6 py-3 bg-surface flex items-center gap-4">
+          <div className="shrink-0 px-6 py-3 bg-surface flex items-center gap-4">
             {banner}
           </div>
-          <div className="h-px bg-border-subtle" />
+          <div className="shrink-0 h-px bg-border-subtle" />
         </>
       )}
       {/* Header */}
-      <div className="flex items-start justify-between px-6 pt-6 pb-4">
+      <div className="shrink-0 flex items-start justify-between px-6 pt-6 pb-4">
         <div className="flex flex-col gap-1 min-w-0 flex-1">
           <h2 className="text-lg font-[600] text-fg-primary leading-tight">{title}</h2>
           {subtitle && (
@@ -109,19 +113,21 @@ export function Dialog({
       </div>
 
       {/* Divider */}
-      <div className="h-px bg-border-subtle mx-0" />
+      <div className="shrink-0 h-px bg-border-subtle mx-0" />
 
-      {/* Body */}
-      <div className="px-6 py-5 text-sm text-fg-secondary">
+      {/* Body — flex-grows to fill available space, scrolls when its content
+          overflows. min-h-0 lets the flex layout actually shrink it below
+          its intrinsic content height, which is what enables the scroll. */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 text-sm text-fg-secondary">
         {children}
       </div>
 
       {footer && (
         <>
           {/* Divider */}
-          <div className="h-px bg-border-subtle" />
+          <div className="shrink-0 h-px bg-border-subtle" />
           {/* Footer */}
-          <div className="px-6 py-4 flex items-center justify-between gap-3">
+          <div className="shrink-0 px-6 py-4 flex items-center justify-between gap-3">
             {footer}
           </div>
         </>
