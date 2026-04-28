@@ -31,6 +31,8 @@ interface KanbanColumnProps {
   onResolveDirtyMain?: (paneId: string) => void
   /** Optional: forwarded to each KanbanCard for the "Conflict" chip click. */
   onResolveConflict?: (paneId: string) => void
+  /** Optional: forwarded to each KanbanCard for the "Action failed" chip click. */
+  onShowError?: (paneId: string) => void
 }
 
 /**
@@ -42,7 +44,7 @@ interface KanbanColumnProps {
  * fixtures must stay visible so users can tell "no agents in this state" from
  * "the column is broken."
  */
-export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onDiffClick, onCloseCard, onResolveDirtyMain, onResolveConflict }: KanbanColumnProps): React.JSX.Element {
+export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onDiffClick, onCloseCard, onResolveDirtyMain, onResolveConflict, onShowError }: KanbanColumnProps): React.JSX.Element {
   const color = STATUS_COLORS[status]
   const count = panes.length
   // Error column gets a subtle red wash + thicker header underline when it has
@@ -102,6 +104,7 @@ export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, 
               onClose={onCloseCard ? () => onCloseCard(pane.id) : undefined}
               onResolveDirtyMain={onResolveDirtyMain ? () => onResolveDirtyMain(pane.id) : undefined}
               onResolveConflict={onResolveConflict ? () => onResolveConflict(pane.id) : undefined}
+              onShowError={onShowError ? () => onShowError(pane.id) : undefined}
             />
           ))
         )}

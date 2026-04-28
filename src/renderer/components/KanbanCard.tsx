@@ -22,6 +22,8 @@ interface KanbanCardProps {
   onResolveDirtyMain?: () => void
   /** Click on the "Conflict" chip — opens the conflict resolution modal. */
   onResolveConflict?: () => void
+  /** Click on the "Action failed" chip — opens the error details modal. */
+  onShowError?: () => void
 }
 
 /**
@@ -68,7 +70,7 @@ const TONE_CLASSES: Record<'neutral' | 'good' | 'warn' | 'bad', string> = {
   bad: 'text-danger-fg'
 }
 
-export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, onClose, onResolveDirtyMain, onResolveConflict }: KanbanCardProps): React.JSX.Element {
+export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, onClose, onResolveDirtyMain, onResolveConflict, onShowError }: KanbanCardProps): React.JSX.Element {
   const t = useStrings()
   const agentName = resolvePaneDisplayName(pane)
   const activity = activityFor(pane, t)
@@ -227,12 +229,16 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, 
             ? onResolveDirtyMain
             : state === 'conflict'
               ? onResolveConflict
-              : null
+              : state === 'error'
+                ? onShowError
+                : null
           const tooltip = state === 'dirty-main'
             ? t.kanban.actionMainDirtyResolve
             : state === 'conflict'
               ? t.kanban.actionConflictResolve
-              : sync.label
+              : state === 'error'
+                ? t.kanban.actionFailedDetails
+                : sync.label
           return handler ? (
             <button
               type="button"

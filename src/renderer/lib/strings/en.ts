@@ -652,6 +652,7 @@ export const en = {
     actionMainDirtyResolve: 'Main has uncommitted changes — click to resolve',
     actionConflictResolve: 'Merge conflict — click to resolve or abort',
     actionFailed: 'Action failed',
+    actionFailedDetails: 'Action failed — click to see why',
     newTerminalAria: 'New terminal',
     collapseSessionList: 'Collapse session list',
     expandSessionList: 'Expand session list',
@@ -693,7 +694,32 @@ export const en = {
     approveInSequenceTooltip: 'Approves each plan with auto-accept edits, kicking off the next when the current run ends.',
     retryFailedMerges: 'Retry failed merges',
     retryFailedMergesTooltip: 'Retries every tree in this repo whose last merge failed. Uses rebase-ff.',
-    noActiveAgents: 'No active agents.'
+    noActiveAgents: 'No active agents.',
+    changeReport: {
+      button: (pending: number): string =>
+        pending === 0 ? 'Change report' : `Change report (${pending} to verify)`,
+      tooltip: 'Open the auto-generated checklist of merged changes for this repo.',
+      modalTitle: (repoLabel: string): string => `Change report — ${repoLabel}`,
+      pendingHeader: 'Changes to be verified',
+      verifiedHeader: 'Verified changes',
+      pendingEmpty: 'No changes waiting on verification.',
+      verifiedEmpty: 'No verified changes yet.',
+      filesChanged: 'Files changed',
+      filesMore: (n: number): string => `+ ${n} more`,
+      llmFailedNote: 'Auto-summary failed; verify the diff manually.',
+      llmPendingNote: 'Auto-summary in progress…',
+      clearVerified: 'Clear verified',
+      clearVerifiedConfirm: (n: number): string =>
+        n === 1 ? 'Remove 1 verified entry?' : `Remove ${n} verified entries?`,
+      clearVerifiedCancel: 'Cancel',
+      clearVerifiedDisabled: 'Nothing verified to clear.',
+      subProgress: (done: number, total: number): string => `${done} of ${total} verified`,
+      mergedAt: (when: string): string => `Merged ${when}`,
+      agentLabel: 'Agent',
+      strategyLabel: (strategy: string): string => `Strategy: ${strategy}`,
+      branchLabel: (branch: string): string => `Into ${branch}`,
+      closeButton: 'Close'
+    }
   },
 
   completionBar: {
@@ -752,6 +778,7 @@ export const en = {
     title: 'Merge or PR failed',
     close: 'Close',
     retry: 'Retry',
+    markResolved: 'Mark resolved',
     bodyHeader: 'Claude reported the following:'
   },
 

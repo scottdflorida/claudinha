@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // KanbanCard reads from usePaneState() to support inline rename. The tests
 // here only care about layout/projection — provide a no-op stub so the cards
@@ -30,6 +30,20 @@ vi.mock('../../src/renderer/hooks/usePaneState', async (importOriginal) => {
 vi.mock('../../src/renderer/components/DiffViewerModal', () => ({
   DiffViewerModal: () => null
 }))
+
+// jsdom is missing showModal/close on HTMLDialogElement. KanbanBoard now
+// auto-opens the CompletionErrorModal when a pane is in error state, so even
+// column-placement tests that include an errored pane mount the dialog.
+beforeEach(() => {
+  if (!HTMLDialogElement.prototype.showModal) {
+    ;(HTMLDialogElement.prototype as any).showModal = function () {
+      this.open = true
+    }
+    ;(HTMLDialogElement.prototype as any).close = function () {
+      this.open = false
+    }
+  }
+})
 
 import { render, fireEvent, within } from '@testing-library/react'
 import { KanbanBoard } from '../../src/renderer/components/KanbanBoard'
