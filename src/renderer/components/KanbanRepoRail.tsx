@@ -16,12 +16,34 @@ import type {
   RepoRetryFailedMergesPayload,
   RepoRetryFailedMergesResult
 } from '../../shared/ipc-channels'
+import type { ReadyPaneEntry, RepoRollup } from '../../shared/types'
 import { ipcInvoke } from '../hooks/useIpc'
 import { useInspector } from '../hooks/useInspector'
 import { KanbanRepoCard } from './KanbanRepoCard'
 import { ClaudeMdEditorModal } from './ClaudeMdEditorModal'
+import { ChangeReportModal } from './ChangeReportModal'
 import { Button } from './ui/Button'
 import { useStrings } from '../lib/strings'
+
+/**
+ * Push gate. Exported for unit-testing.
+ *
+ * Pushing the base branch only makes sense when (a) main really is ahead of
+ * origin/main AND (b) at least one agent in this repo has been engaged this
+ * session — i.e. has moved past `awaiting-prompt`. Without (b), prior
+ * unpushed commits the user already has on main (from earlier sessions or
+ * out-of-band work) would light Push up the moment a fresh workspace opens,
+ * contradicting the "I haven't done anything yet" reading of an
+ * all-AWAITING-PROMPT card.
+ */
+export function computeCanPush(
+  rollup: Pick<RepoRollup, 'baseAheadOfOrigin'>,
+  repoPanes: ReadonlyArray<Pick<ReadyPaneEntry, 'paneStatus'>>
+): boolean {
+  const baseAhead = rollup.baseAheadOfOrigin ?? 0
+  if (baseAhead <= 0) return false
+  return repoPanes.some((p) => p.paneStatus !== 'awaiting-prompt')
+}
 
 interface KanbanRepoRailProps {
   workspaceId: string | undefined
@@ -48,6 +70,7 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
   const t = useStrings()
   const { summary } = useInspector(workspaceId ?? null)
   const [editingRepo, setEditingRepo] = useState<{ repoPath: string; repoLabel: string } | null>(null)
+  const [reportingRepo, setReportingRepo] = useState<{ repoPath: string; repoLabel: string } | null>(null)
 
   // Per-repo bulk actions (Phase 6). Each invokes its IPC handler; the UI
   // updates via INSPECTOR_SUMMARY broadcasts (rollup readyCount + diff stats)
@@ -225,11 +248,13 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
           const repoPanes = summary.panes.filter((p) => p.repoPath === rollup.repoPath)
           // Enable predicates per concept doc:
           //   Merge        — readyCount > 0
-          //   Push         — baseAheadOfOrigin > 0
+          //   Push         — baseAheadOfOrigin > 0 AND ≥1 pane past awaiting-prompt
           //   Merge + push — readyCount > 0 (after merge there's something to push)
-          const baseAhead = rollup.baseAheadOfOrigin ?? 0
+          // Push's second clause keeps the button dim in a freshly-spawned
+          // workspace where main happens to be ahead of origin from prior
+          // unrelated work. See computeCanPush above for the rationale.
           const canMerge = rollup.readyCount > 0
-          const canPush = baseAhead > 0
+          const canPush = computeCanPush(rollup, repoPanes)
           const canMergeAndPush = canMerge // post-merge there will be commits to push
           return (
             <KanbanRepoCard
@@ -248,6 +273,9 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
               onApprovePlansInSequence={() => triggerApprovePlansInSequence(rollup.repoPath)}
               onStopPlanSequence={() => triggerStopPlanSequence(rollup.repoPath)}
               onRetryFailedMerges={() => triggerRetryFailedMerges(rollup.repoPath)}
+              onShowChangeReport={() =>
+                setReportingRepo({ repoPath: rollup.repoPath, repoLabel: rollup.repoLabel })
+              }
             />
           )
         })}
@@ -259,6 +287,14 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
           repoPath={editingRepo.repoPath}
           repoLabel={editingRepo.repoLabel}
           onClose={() => setEditingRepo(null)}
+        />
+      )}
+      {reportingRepo && workspaceId && (
+        <ChangeReportModal
+          workspaceId={workspaceId}
+          repoPath={reportingRepo.repoPath}
+          repoLabel={reportingRepo.repoLabel}
+          onClose={() => setReportingRepo(null)}
         />
       )}
     </>

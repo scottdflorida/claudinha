@@ -1087,3 +1087,28 @@ Two decision rules, one per mistake:
 
 Related: L-009 (external hook events ≠ semantic status — same shape: a heuristic correct for one context misfiring in another). L-013 (the lesson that motivated the bridge in the first place — preserved as guidance; only the bridge's implementation needed updating).
 
+---
+
+## L-054: Bulk-action affordances on the same surface should share a context gate, not just per-action eligibility signals
+
+**Date:** 2026-04-27
+**Source:** User feedback — "I have not interacted with any of these agents yet and the 'push' button is active." 11 freshly-spawned worktrees, all in AWAITING-PROMPT, Push lit up; the other three bulk-action buttons (Merge / Merge + push / Create PR) correctly stayed disabled.
+**Category:** UI design pattern
+
+**What happened:**
+The Kanban repo rail's per-repo card carries four bulk actions: Merge, Push, Merge + push, Create PR. Three of them are gated on `readyCount > 0` (a per-pane signal — "at least one agent in this repo has produced a non-empty diff vs base"). Push was the lone outlier — gated on `baseAheadOfOrigin > 0`, a pure-git signal that has nothing to do with workspace activity. So when the user happened to have any unpushed commit on local main from a prior session or out-of-band work, Push lit up the moment Claudinha launched a new workspace, while the user perceived "I haven't done anything yet, why is Push active?" — three buttons agreed with that perception, one didn't.
+
+**Why the agent got it wrong:**
+The original concept doc named each button's eligibility one-by-one ("Merge — readyCount > 0", "Push — baseAheadOfOrigin > 0", "Merge + push — readyCount > 0", "Create PR — readyCount > 0"), and the implementer faithfully transcribed each predicate. Treated as isolated affordances, every gate was *correct in itself*: Merge can't merge with no ready trees; Push genuinely can't push if main equals origin/main. The implementer never asked the question one level up: *"What's the activation philosophy of this surface as a whole, and does each button satisfy it?"* If they had, they'd have noticed three of four buttons require workspace activity (`readyCount` is a workspace-derived count) and one (Push) requires only ambient git state. The asymmetry isn't visible from any single button's predicate — it only shows up when you read the four together as a row, and even then only matters when an external state (prior unpushed commits on main) makes the asymmetric gate fire in a workspace with zero activity. That combination wasn't tested because the concept doc was written for the case where the user had just merged something, where both signals coincidentally aligned.
+
+The deeper trap: **per-button "most direct eligibility signal" looks like good design** — each button's gate is true iff that button's specific action would have effect — but on a surface that groups multiple actions, it can produce activation patterns that contradict the user's mental model of the surface. The user reads the surface holistically ("I haven't engaged this workspace") and expects the four buttons to share a baseline gate ("this workspace has been engaged"). One button bypassing that baseline because its specific signal is independently satisfiable feels like a glitch even when each button's gate is technically correct.
+
+**How to avoid this in the future:**
+Two decision rules:
+
+*When designing or auditing a row of bulk-action affordances on a single surface (a card, a header bar, a context menu):* identify the activation philosophy *the row* implies — typically "this surface has [some kind of] activity" — and apply it as a hard prerequisite to **every** action's enable gate, then layer the action's specific eligibility on top. Don't let any action bypass the row gate just because its specific signal could be satisfied by external state. The mental model is `enabled = surfaceHasActivity && actionSpecificSignal`, never just `actionSpecificSignal` even when that's individually correct.
+
+*When transcribing per-button eligibility from a concept doc:* before shipping, read the buttons together as a row and ask "is there any combination of inputs where one button activates while its siblings don't, and would that surprise the user reading the surface holistically?" If yes, the activation philosophy is inconsistent — push back on the concept doc or extract the shared gate yourself. Self-check: *"What's the highest-level statement that's true when all of these buttons should be active? Does each button check it?"*
+
+Related: L-024 (permanent UI fixtures must show placeholders, not disappear, when data is pending — same root family: surface-level vs. element-level reasoning). L-044 (a mode-gated component hides every affordance it contains — audit each affordance — symmetric inverse: there, the gate was too coarse; here, the gate was too fine, leaving one affordance ungated).
+
