@@ -53,7 +53,10 @@ export function isClaudinhaInfrastructurePath(file: string): boolean {
  */
 export async function getGitStatus(worktreePath: string): Promise<GitStatus | null> {
   try {
-    // Run all three queries concurrently
+    // Run the cheap queries concurrently. Base-branch-ahead is a follow-up
+    // probe against the main repo path; it's nullable on its own and isn't
+    // required for the rest of the struct, so we run it after with its own
+    // tolerance for missing remotes / unavailable repo root.
     const [statusResult, branchResult, aheadResult] = await Promise.all([
       execFileAsync('git', ['status', '--porcelain'], { cwd: worktreePath, timeout: GIT_TIMEOUT })
         .catch(() => null),
@@ -66,10 +69,26 @@ export async function getGitStatus(worktreePath: string): Promise<GitStatus | nu
 
     const userChangedFiles = countUserChangedFiles(statusResult.stdout)
 
+    // Base-branch ahead-of-remote drives the "↑N to push" pill after a local
+    // merge has advanced the base branch. We resolve from the worktree to the
+    // main repo (where the base branch actually lives) and ask the existing
+    // helper. Either step can fail benignly; null reads as "unknown."
+    let baseBranchAheadOfRemote: number | null = null
+    try {
+      const repoRoot = await getMainRepoPath(worktreePath)
+      const base = repoRoot ? await detectMainBranch(repoRoot) : null
+      if (repoRoot && base) {
+        baseBranchAheadOfRemote = await getBaseBranchAhead(repoRoot, base)
+      }
+    } catch {
+      baseBranchAheadOfRemote = null
+    }
+
     return {
       hasUncommittedChanges: userChangedFiles > 0,
       changedFileCount: userChangedFiles,
       commitsAhead: aheadResult,
+      baseBranchAheadOfRemote,
       branchName: branchResult?.stdout.trim() || null
     }
   } catch {
@@ -638,7 +657,7 @@ export async function getPaneCommitLog(worktreePath: string): Promise<{
   const branch = await getCurrentBranch(worktreePath)
   if (!branch) return { commits: [], error: null }
 
-  // Upstream ref (if any).
+  // Upstream ref (if any). Used to tag each commit's `pushed` state below.
   let upstream: string | null = null
   try {
     const r = await execFileAsync(
@@ -650,13 +669,16 @@ export async function getPaneCommitLog(worktreePath: string): Promise<{
     upstream = null
   }
 
-  // Resolve a range. Use upstream when available, else base branch.
+  // Range: always <base>..HEAD so pushed-but-not-merged commits stay in the
+  // list (they're how the modal renders the "Pushed to branch" round). With
+  // <upstream>..HEAD the pushed flag was unreachable by construction. Falling
+  // back to upstream only when no base can be detected (rare).
+  const base = await detectMainBranch(worktreePath)
   let range: string | null = null
-  if (upstream) {
+  if (base) {
+    range = `${base}..HEAD`
+  } else if (upstream) {
     range = `${upstream}..HEAD`
-  } else {
-    const base = await detectMainBranch(worktreePath)
-    if (base) range = `${base}..HEAD`
   }
   if (!range) return { commits: [], error: null }
 

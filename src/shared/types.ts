@@ -43,6 +43,10 @@ export interface GitStatus {
   changedFileCount: number
   /** Number of commits ahead of main/master */
   commitsAhead: number
+  /** Number of commits the local base branch (main/master) has ahead of
+   *  origin/<base>. Drives the "↑N to push" pill on changes-ready tiles
+   *  after a local merge. Null when no remote tracking ref exists. */
+  baseBranchAheadOfRemote: number | null
   /** Current branch name */
   branchName: string | null
 }

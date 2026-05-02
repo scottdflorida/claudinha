@@ -39,12 +39,11 @@ function activityFor(pane: RendererPane, t: Strings): string | null {
 
 /**
  * Single "next step" pill rendered on changes-ready tiles. Precedence:
- *   1. uncommitted edits   → `+N/-M to commit`
- *   2. unmerged-vs-base    → `N to merge`
- *   3. unpushed-to-remote  → `↑N to push`
- *   4. open PR             → `PR #N open`  (PR # not currently tracked,
- *                          shown as `PR open` until plumbing arrives)
- *   5. otherwise           → null (tile shouldn't be in this column).
+ *   1. uncommitted edits           → `+N/-M to commit`
+ *   2. branch commits not on base  → `N to merge`
+ *   3. base ahead of origin/<base> → `↑N to push` (post local-merge)
+ *   4. open PR                     → `PR #N open` (deferred — needs gh probe)
+ *   5. otherwise                   → null (tile shouldn't be in this column).
  *
  * Renders nothing on tiles outside `changes-ready`.
  */
@@ -56,14 +55,13 @@ function nextStepPill(pane: RendererPane, t: Strings): { label: string; tone: 'g
   if (gs?.hasUncommittedChanges) {
     return { label: t.kanban.nextStepCommit(linesAdded, linesRemoved), tone: 'warn' }
   }
-  // Without a dedicated "unmerged-vs-base" probe, fall back to commitsAhead
-  // for both merge and push pills. The plan's precedence (commit → merge →
-  // push → PR) collapses here because the renderer doesn't currently
-  // distinguish merged-but-unpushed from unmerged.
   if (gs && gs.commitsAhead > 0) {
     return { label: t.kanban.nextStepMerge(gs.commitsAhead), tone: 'neutral' }
   }
-  // Open PR display would require a per-tile PR number; not wired yet.
+  if (gs && (gs.baseBranchAheadOfRemote ?? 0) > 0) {
+    return { label: t.kanban.nextStepPush(gs.baseBranchAheadOfRemote ?? 0), tone: 'neutral' }
+  }
+  // PR # display deferred — requires the gh PR-association probe.
   return null
 }
 

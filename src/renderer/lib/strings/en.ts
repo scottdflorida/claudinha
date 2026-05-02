@@ -829,7 +829,9 @@ export const en = {
     pendingMessagePlaceholder: 'Commit message',
     pendingCommitTooltip: 'Edit commit message',
     commitListLoadError: 'Failed to load commits.',
-    commitNowAria: 'Commit pending changes'
+    commitNowAria: 'Commit pending changes',
+    roundPushed: 'Pushed to branch',
+    revealWorktree: 'Show in folder'
   },
 
   conflictModal: {

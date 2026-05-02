@@ -210,6 +210,7 @@ describe('getGitStatus', () => {
       hasUncommittedChanges: true,
       changedFileCount: 3,
       commitsAhead: 3,
+      baseBranchAheadOfRemote: null,
       branchName: 'feature-branch'
     })
   })
@@ -282,6 +283,7 @@ describe('getGitStatus', () => {
       hasUncommittedChanges: false,
       changedFileCount: 0,
       commitsAhead: 0,
+      baseBranchAheadOfRemote: null,
       branchName: 'main'
     })
   })

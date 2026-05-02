@@ -846,7 +846,9 @@ export const ptBR: Strings = {
     pendingMessagePlaceholder: 'Mensagem do commit',
     pendingCommitTooltip: 'Editar mensagem do commit',
     commitListLoadError: 'Falha ao carregar commits.',
-    commitNowAria: 'Fazer commit das mudanças pendentes'
+    commitNowAria: 'Fazer commit das mudanças pendentes',
+    roundPushed: 'Enviado para o branch',
+    revealWorktree: 'Abrir no gerenciador'
   },
 
   conflictModal: {

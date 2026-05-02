@@ -38,6 +38,10 @@ interface ChangesReadyModalProps {
   paneId: string
   paneName: string
   workspaceId: string | null
+  /** When the modal is opened via Cmd+Shift+G or Cmd+Shift+R, pre-focus the
+   *  matching action button so the keyboard user can hit Enter immediately.
+   *  Cold opens (CTA / pill click) pass null. */
+  initialFocus?: 'merge' | 'pr' | null
   onClose: () => void
 }
 
@@ -55,6 +59,7 @@ export function ChangesReadyModal({
   paneId,
   paneName,
   workspaceId,
+  initialFocus = null,
   onClose
 }: ChangesReadyModalProps): React.JSX.Element {
   const t = useStrings()
@@ -213,6 +218,16 @@ export function ChangesReadyModal({
   const pushToBranch: ButtonSpec = useMemo(() => mapCompletionToPushBranchButton(completion, hasUncommitted, t), [completion, hasUncommitted, t])
   const createPr: ButtonSpec = useMemo(() => mapCompletionToCreatePrButton(completion, ghAvailable, t), [completion, ghAvailable, t])
 
+  // initialFocus: when set, focus the matching action button after first paint
+  // so a Cmd+Shift+G / Cmd+Shift+R user can hit Enter immediately. The refs
+  // resolve once the buttons mount; useEffect below runs after that.
+  const mergeBtnRef = useRef<HTMLButtonElement | null>(null)
+  const createPrBtnRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (initialFocus === 'merge') mergeBtnRef.current?.focus()
+    else if (initialFocus === 'pr') createPrBtnRef.current?.focus()
+  }, [initialFocus])
+
   // ---------------------------------------------------------------------------
   // Click handlers
   // ---------------------------------------------------------------------------
@@ -259,6 +274,11 @@ export function ChangesReadyModal({
   const handleAbort = useCallback(() => {
     void ipcInvoke(IPC.COMPLETION_ABORT, { paneId })
   }, [paneId])
+
+  const handleRevealWorktree = useCallback(() => {
+    if (!pane) return
+    void ipcInvoke(IPC.WORKSPACE_REVEAL_PATH, { path: pane.worktreePath })
+  }, [pane])
 
   const handleClearError = useCallback(() => {
     ipcSend(IPC.COMPLETION_CLEAR_STATE, { paneId })
@@ -380,6 +400,13 @@ export function ChangesReadyModal({
               </button>
               <button
                 type="button"
+                onClick={handleRevealWorktree}
+                className="text-xs underline shrink-0"
+              >
+                {t.changesReadyModal.revealWorktree}
+              </button>
+              <button
+                type="button"
                 onClick={handleAbort}
                 className="text-xs underline shrink-0"
               >
@@ -454,7 +481,14 @@ export function ChangesReadyModal({
                 </li>
               )}
 
-              {commits.map((c) => {
+              {commits.map((c, i) => {
+                // Round boundary: emit a "Pushed to branch" header at the row
+                // where pushed flips false → true. Commits arrive newest-first,
+                // so this divides the implicit "current round" (above) from
+                // the pushed round (below). Merged-to-main / PR # rounds are
+                // deferred until the gh probe lands.
+                const prev = i > 0 ? commits[i - 1] : null
+                const showPushedHeader = c.pushed && (!prev || !prev.pushed)
                 const isEditing = editingSha === c.sha
                 const editBlocked = c.pushed
                   ? t.changesReadyModal.rewordPushedTooltip
@@ -462,8 +496,13 @@ export function ChangesReadyModal({
                     ? t.changesReadyModal.rewordDirtyTooltip
                     : null
                 return (
+                  <React.Fragment key={c.sha}>
+                    {showPushedHeader && (
+                      <li className="px-2 pt-2 pb-0.5 text-[11px] uppercase tracking-wider text-fg-muted select-none">
+                        {t.changesReadyModal.roundPushed}
+                      </li>
+                    )}
                   <li
-                    key={c.sha}
                     className="flex items-start gap-2 px-2 py-1 rounded hover:bg-overlay group/commit"
                   >
                     <span
@@ -555,6 +594,7 @@ export function ChangesReadyModal({
                       <X size={12} className="shrink-0 mt-1 text-danger-fg" />
                     )}
                   </li>
+                  </React.Fragment>
                 )
               })}
             </ul>
@@ -568,6 +608,7 @@ export function ChangesReadyModal({
                 <ActionButton spec={commit} disabled />
                 <Connector />
                 <ActionButton
+                  ref={mergeBtnRef}
                   spec={merge}
                   onClick={handleMerge}
                   disabled={merge.state === 'in-progress' || merge.state === 'queued'}
@@ -598,6 +639,7 @@ export function ChangesReadyModal({
                 />
                 <Connector />
                 <ActionButton
+                  ref={createPrBtnRef}
                   spec={createPr}
                   onClick={handleCreatePr}
                   disabled={
@@ -649,19 +691,15 @@ const STATE_CLASSES: Record<ButtonState, string> = {
   blocked: 'border-[var(--color-border-subtle)] text-fg-muted'
 }
 
-function ActionButton({
-  spec,
-  onClick,
-  disabled,
-  tooltip
-}: {
+const ActionButton = React.forwardRef<HTMLButtonElement, {
   spec: ButtonSpec
   onClick?: () => void
   disabled?: boolean
   tooltip?: string
-}): React.JSX.Element {
+}>(function ActionButton({ spec, onClick, disabled, tooltip }, ref) {
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onClick}
       disabled={disabled || !onClick}
@@ -676,7 +714,7 @@ function ActionButton({
       {spec.label}
     </button>
   )
-}
+})
 
 function Connector(): React.JSX.Element {
   return <span aria-hidden="true" className="text-fg-subtle">→</span>
