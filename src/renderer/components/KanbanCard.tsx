@@ -167,12 +167,16 @@ export function KanbanCard({
       aria-label={`Select ${agentName}`}
       className={`
         group/card w-full text-left rounded-md ${baseBg}
-        flex flex-col gap-1.5 px-3 py-2 cursor-pointer
+        flex flex-col gap-1.5 cursor-pointer
+        ${isAwaitingOrders ? 'px-2 py-1.5' : 'px-3 py-2'}
         transition-colors duration-[80ms]
         hover:bg-overlay focus:outline-none focus-visible:outline-accent
       `}
       style={{
-        borderLeft: `2px solid ${pane.terminated ? '#DB4D3F' : statusColor}`,
+        // Red left-border when the pane is in any error condition: PTY
+        // terminated OR a transient action failure (mirrors PaneBorder's
+        // hasError treatment in Wall mode).
+        borderLeft: `2px solid ${(pane.terminated || completionState === 'error') ? '#DB4D3F' : statusColor}`,
         outline: isActive ? '1px solid var(--color-fg-muted)' : 'none',
         outlineOffset: isActive ? 2 : 0
       }}

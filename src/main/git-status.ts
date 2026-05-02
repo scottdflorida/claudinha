@@ -605,3 +605,276 @@ export async function ghCliAvailable(): Promise<boolean> {
     return false
   }
 }
+
+// ---------------------------------------------------------------------------
+// ChangesReadyModal commit-message tooling
+// ---------------------------------------------------------------------------
+
+/** Maximum number of commits to surface to the modal. */
+const MAX_COMMIT_LOG = 50
+
+export interface PaneCommitInfo {
+  sha: string
+  shortSha: string
+  subject: string
+  body: string
+  pushed: boolean
+}
+
+/**
+ * List the commits between the worktree branch's upstream / base and HEAD.
+ *
+ * - Range: prefer `<upstream>..HEAD`. If no upstream is configured, fall back
+ *   to `<base>..HEAD` so a freshly created worktree branch still produces a
+ *   meaningful list. If neither exists, returns an empty array (no error).
+ * - `pushed`: a commit is reachable from the configured upstream ref. Used by
+ *   the reword path to refuse force-push territory.
+ * - Capped at MAX_COMMIT_LOG (50) — older history is paginated/folded by the UI.
+ */
+export async function getPaneCommitLog(worktreePath: string): Promise<{
+  commits: PaneCommitInfo[]
+  error: string | null
+}> {
+  const branch = await getCurrentBranch(worktreePath)
+  if (!branch) return { commits: [], error: null }
+
+  // Upstream ref (if any).
+  let upstream: string | null = null
+  try {
+    const r = await execFileAsync(
+      'git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+      { cwd: worktreePath, timeout: GIT_TIMEOUT }
+    )
+    upstream = r.stdout.trim() || null
+  } catch {
+    upstream = null
+  }
+
+  // Resolve a range. Use upstream when available, else base branch.
+  let range: string | null = null
+  if (upstream) {
+    range = `${upstream}..HEAD`
+  } else {
+    const base = await detectMainBranch(worktreePath)
+    if (base) range = `${base}..HEAD`
+  }
+  if (!range) return { commits: [], error: null }
+
+  // git log with NUL-delimited fields so subjects/bodies with commas / newlines
+  // round-trip cleanly. Format: <sha>%x00<subject>%x00<body>%x00 — terminated
+  // by an extra NUL between commits.
+  let stdout = ''
+  try {
+    const r = await execFileAsync(
+      'git',
+      ['log', `--max-count=${MAX_COMMIT_LOG}`, '--pretty=format:%H%x00%s%x00%b%x00', range],
+      { cwd: worktreePath, timeout: GIT_TIMEOUT, maxBuffer: 4 * 1024 * 1024 }
+    )
+    stdout = r.stdout
+  } catch (err) {
+    return { commits: [], error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // Split on the trailing-NUL record terminator. Each record is exactly
+  // `<sha>\0<subject>\0<body>` (no trailing NUL inside).
+  const records = stdout.split(' \n').filter((r) => r.trim().length > 0)
+  // The last record may not have a trailing newline; allow plain NUL split too.
+  const flat = records.length > 0 ? records : stdout.split(' ').filter((r) => r.length > 0)
+
+  const commits: PaneCommitInfo[] = []
+  for (const rec of flat) {
+    const parts = rec.split(' ')
+    if (parts.length < 2) continue
+    const [sha, subject, body = ''] = parts
+    if (!sha) continue
+    commits.push({
+      sha: sha.trim(),
+      shortSha: sha.trim().slice(0, 7),
+      subject: subject ?? '',
+      body: (body ?? '').replace(/\n+$/, ''),
+      pushed: false // filled in below
+    })
+  }
+
+  // Mark each commit pushed if it's reachable from upstream.
+  if (upstream && commits.length > 0) {
+    for (const c of commits) {
+      try {
+        await execFileAsync(
+          'git', ['merge-base', '--is-ancestor', c.sha, upstream],
+          { cwd: worktreePath, timeout: GIT_TIMEOUT }
+        )
+        c.pushed = true
+      } catch {
+        c.pushed = false
+      }
+    }
+  }
+
+  return { commits, error: null }
+}
+
+/**
+ * Reword a single commit's message in the pane's worktree.
+ *
+ * Refuses if:
+ *   - the worktree has unstaged/staged changes (rebase / amend would conflict)
+ *   - the commit is reachable from the branch's upstream (already pushed —
+ *     rewriting would require a force-push)
+ *
+ * Strategy:
+ *   - Tip commit:  `git commit --amend -m <message>`
+ *   - Older commit: non-interactive rebase. We rewrite the matching `pick`
+ *     line in the rebase todo to `reword`, and supply the new message via
+ *     GIT_EDITOR. Both editors are tiny inline node scripts that read $1.
+ *
+ * Returns null on success, error string otherwise.
+ */
+export async function gitRewordCommit(
+  worktreePath: string,
+  sha: string,
+  message: string
+): Promise<string | null> {
+  if (!/^[0-9a-fA-F]{4,40}$/.test(sha)) return 'Invalid commit sha.'
+  if (!message || !message.trim()) return 'Commit message cannot be empty.'
+
+  // Refuse on dirty tree.
+  try {
+    const r = await execFileAsync(
+      'git', ['status', '--porcelain'],
+      { cwd: worktreePath, timeout: GIT_TIMEOUT }
+    )
+    if (r.stdout.trim().length > 0) {
+      return 'Reword refused: worktree has uncommitted changes. Commit or stash first.'
+    }
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err)
+  }
+
+  // Refuse if the commit is already pushed.
+  let upstream: string | null = null
+  try {
+    const r = await execFileAsync(
+      'git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+      { cwd: worktreePath, timeout: GIT_TIMEOUT }
+    )
+    upstream = r.stdout.trim() || null
+  } catch {
+    upstream = null
+  }
+  if (upstream) {
+    try {
+      await execFileAsync(
+        'git', ['merge-base', '--is-ancestor', sha, upstream],
+        { cwd: worktreePath, timeout: GIT_TIMEOUT }
+      )
+      return 'Reword refused: commit is already pushed. Force-push is not supported here.'
+    } catch {
+      // not an ancestor — safe to proceed
+    }
+  }
+
+  // Tip vs older?
+  let head = ''
+  try {
+    const r = await execFileAsync(
+      'git', ['rev-parse', 'HEAD'],
+      { cwd: worktreePath, timeout: GIT_TIMEOUT }
+    )
+    head = r.stdout.trim()
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err)
+  }
+
+  const isTip = head.startsWith(sha) || sha.startsWith(head)
+
+  if (isTip) {
+    try {
+      await execFileAsync(
+        'git', ['commit', '--amend', '-m', message],
+        { cwd: worktreePath, timeout: GIT_TIMEOUT }
+      )
+      return null
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  // Older commit — non-interactive rebase. Resolve the full sha so we can
+  // match it in the rebase todo file (which uses short shas by default).
+  let fullSha = sha
+  try {
+    const r = await execFileAsync(
+      'git', ['rev-parse', sha],
+      { cwd: worktreePath, timeout: GIT_TIMEOUT }
+    )
+    fullSha = r.stdout.trim()
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err)
+  }
+  const shortSha = fullSha.slice(0, 7)
+
+  // Two helper scripts (sequence editor + commit-message editor) live in a
+  // throwaway temp dir for the duration of the rebase.
+  const os = await import('os')
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'claudinha-reword-'))
+  const seqEditor = path.join(tmpDir, 'seq-editor.js')
+  const msgEditor = path.join(tmpDir, 'msg-editor.js')
+  const messageFile = path.join(tmpDir, 'message.txt')
+  await fs.promises.writeFile(messageFile, message, 'utf8')
+
+  // Sequence editor: rewrite the line whose second token starts with our short
+  // sha from `pick` to `reword`. Read $1 (the rebase-todo path), rewrite, save.
+  const seqScript = `
+const fs = require('fs')
+const file = process.argv[2]
+const sha = ${JSON.stringify(shortSha)}
+const lines = fs.readFileSync(file, 'utf8').split('\\n')
+let rewrote = false
+for (let i = 0; i < lines.length; i++) {
+  const m = lines[i].match(/^(pick|p)\\s+([0-9a-f]+)(.*)$/)
+  if (m && (m[2].startsWith(sha) || sha.startsWith(m[2]))) {
+    lines[i] = 'reword ' + m[2] + m[3]
+    rewrote = true
+    break
+  }
+}
+if (!rewrote) process.exit(2)
+fs.writeFileSync(file, lines.join('\\n'))
+`
+  // Commit-message editor: overwrite $1 with the contents of messageFile.
+  const msgScript = `
+const fs = require('fs')
+const target = process.argv[2]
+const src = ${JSON.stringify(messageFile)}
+fs.writeFileSync(target, fs.readFileSync(src))
+`
+  await fs.promises.writeFile(seqEditor, seqScript, 'utf8')
+  await fs.promises.writeFile(msgEditor, msgScript, 'utf8')
+
+  const env = {
+    ...process.env,
+    GIT_SEQUENCE_EDITOR: `${process.execPath} ${seqEditor}`,
+    GIT_EDITOR: `${process.execPath} ${msgEditor}`
+  }
+
+  let rebaseError: string | null = null
+  try {
+    await execFileAsync(
+      'git', ['rebase', '-i', `${fullSha}~1`],
+      { cwd: worktreePath, timeout: GIT_MERGE_TIMEOUT, env }
+    )
+  } catch (err) {
+    rebaseError = err instanceof Error ? err.message : String(err)
+    // Best-effort abort to leave the worktree clean.
+    try {
+      await execFileAsync('git', ['rebase', '--abort'], { cwd: worktreePath, timeout: GIT_TIMEOUT })
+    } catch {
+      // ignore
+    }
+  } finally {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {})
+  }
+
+  return rebaseError
+}

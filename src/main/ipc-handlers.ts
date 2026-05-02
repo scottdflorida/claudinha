@@ -109,6 +109,12 @@ import type {
   GitStashDirtyMainResult,
   GitDiscardDirtyMainPayload,
   GitDiscardDirtyMainResult,
+  GitCommitAllPayload,
+  GitCommitAllResult,
+  GitPaneCommitLogPayload,
+  GitPaneCommitLogResult,
+  GitRewordCommitPayload,
+  GitRewordCommitResult,
   PaneSetUserNamePayload,
   AppConfigSetPayload,
   AppConfigChangedPayload,
@@ -135,7 +141,7 @@ import type { GitStatusPoller } from './git-status-poller'
 import type { CompletionExecutor } from './completion-executor'
 import type { InspectorService } from './inspector'
 import type { PlanApprovalSequencer } from './plan-approval-sequencer'
-import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff } from './git-status'
+import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff, gitCommitAll, getPaneCommitLog, gitRewordCommit } from './git-status'
 import {
   commitDirtyMain,
   stashDirtyMain,
@@ -2296,6 +2302,58 @@ export function registerIpcHandlers(
       const err = await discardDirtyMain(repoPath, files ?? [])
       if (err) return { error: err }
       onDirtyMainResolved(repoPath)
+      return { error: null }
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // ChangesReadyModal commit-message tooling
+  //
+  // git:commit-all       — stage + commit a pane's worktree with a caller-
+  //                        supplied message. Wraps gitCommitAll.
+  // git:pane-commit-log  — list of commits between upstream/base and HEAD,
+  //                        with each commit's pushed-state. Drives the modal's
+  //                        commit list.
+  // git:reword-commit    — rewrite a single unpushed commit's message.
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(
+    IPC.GIT_COMMIT_ALL,
+    async (_event, payload: GitCommitAllPayload): Promise<GitCommitAllResult> => {
+      const { paneId, message } = payload
+      const pane = sessionRegistry.getPane(paneId)
+      if (!pane) return { error: `Unknown pane: ${paneId}` }
+      const trimmed = (message ?? '').trim()
+      if (!trimmed) return { error: 'Commit message cannot be empty.' }
+      const err = await gitCommitAll(pane.worktreePath, trimmed)
+      if (err) return { error: err }
+      // Refresh git status so the modal's UI updates without waiting for the
+      // next 30s poller tick.
+      gitStatusPoller.triggerCheck(paneId)
+      return { error: null }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.GIT_PANE_COMMIT_LOG,
+    async (_event, payload: GitPaneCommitLogPayload): Promise<GitPaneCommitLogResult> => {
+      const { paneId } = payload
+      const pane = sessionRegistry.getPane(paneId)
+      if (!pane) return { error: `Unknown pane: ${paneId}`, commits: [] }
+      const result = await getPaneCommitLog(pane.worktreePath)
+      return { error: result.error, commits: result.commits }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.GIT_REWORD_COMMIT,
+    async (_event, payload: GitRewordCommitPayload): Promise<GitRewordCommitResult> => {
+      const { paneId, sha, message } = payload
+      const pane = sessionRegistry.getPane(paneId)
+      if (!pane) return { error: `Unknown pane: ${paneId}` }
+      const err = await gitRewordCommit(pane.worktreePath, sha, message)
+      if (err) return { error: err }
+      gitStatusPoller.triggerCheck(paneId)
       return { error: null }
     }
   )

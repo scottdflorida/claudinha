@@ -836,7 +836,17 @@ export const ptBR: Strings = {
     ghMissingTooltip: 'Instale o CLI gh para criar PRs',
     errorBannerTitle: 'Ação falhou',
     errorBannerRetry: 'Tentar novamente',
-    errorBannerDismiss: 'Dispensar'
+    errorBannerDismiss: 'Dispensar',
+    rewordTitle: 'Editar mensagem do commit',
+    rewordSave: 'Salvar',
+    rewordCancel: 'Cancelar',
+    rewordSaveHint: 'Enter salva, Esc cancela.',
+    rewordPushedTooltip: 'Este commit já foi enviado — editar exigiria force-push.',
+    rewordDirtyTooltip: 'Faça commit das mudanças pendentes antes de editar mensagens anteriores.',
+    pendingMessagePlaceholder: 'Mensagem do commit',
+    pendingCommitTooltip: 'Editar mensagem do commit',
+    commitListLoadError: 'Falha ao carregar commits.',
+    commitNowAria: 'Fazer commit das mudanças pendentes'
   },
 
   conflictModal: {

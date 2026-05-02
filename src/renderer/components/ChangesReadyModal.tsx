@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, FileDiff, Trash2 } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, Check, FileDiff, Pencil, Trash2, X } from 'lucide-react'
 import { IPC } from '../../shared/ipc-channels'
-import type { GhCliCheckResult } from '../../shared/ipc-channels'
+import type { CommitInfo, GhCliCheckResult, GitCommitAllResult, GitPaneCommitLogResult, GitRewordCommitResult } from '../../shared/ipc-channels'
 import type { CompletionActionStatus, MergeStrategy, PaneCloseAction } from '../../shared/types'
 import { ipcInvoke, ipcSend } from '../hooks/useIpc'
 import { usePaneState } from '../hooks/usePaneState'
@@ -75,6 +75,121 @@ export function ChangesReadyModal({
       .then((result) => setGhAvailable((result as GhCliCheckResult).available))
       .catch(() => setGhAvailable(false))
   }, [])
+
+  // ---------------------------------------------------------------------------
+  // Commit list — fetched on open and refreshed on Commit / Reword / Merge.
+  //
+  // A commit list refresh follows: the modal reads gitStatus (pulse-driven by
+  // the workspace poller) plus an explicit fetch each time a structural git
+  // op succeeds inside the modal. Refetch is also triggered when the pane's
+  // commitsAhead changes — that catches external commits made via PTY.
+  // ---------------------------------------------------------------------------
+  const [commits, setCommits] = useState<CommitInfo[]>([])
+  const [commitsError, setCommitsError] = useState<string | null>(null)
+  const refreshCommits = useCallback((): void => {
+    ipcInvoke(IPC.GIT_PANE_COMMIT_LOG, { paneId })
+      .then((res) => {
+        const r = res as GitPaneCommitLogResult
+        setCommitsError(r.error)
+        setCommits(r.commits ?? [])
+      })
+      .catch((err) => {
+        setCommitsError(err instanceof Error ? err.message : String(err))
+        setCommits([])
+      })
+  }, [paneId])
+  useEffect(() => { refreshCommits() }, [refreshCommits])
+  const seenAhead = useRef<number | null>(null)
+  useEffect(() => {
+    const ahead = pane?.gitStatus?.commitsAhead ?? 0
+    if (seenAhead.current !== null && seenAhead.current !== ahead) {
+      refreshCommits()
+    }
+    seenAhead.current = ahead
+  }, [pane?.gitStatus?.commitsAhead, refreshCommits])
+
+  // ---------------------------------------------------------------------------
+  // Pending commit message — the synthesized default is editable inline. The
+  // value is held locally until the user clicks the Commit-now glyph; on
+  // success, we refetch the commit list (the new commit appears at the top)
+  // and reset the draft to a fresh default for the next round.
+  // ---------------------------------------------------------------------------
+  const linesAddedRaw = pane?.metrics.linesAdded ?? 0
+  const linesRemovedRaw = pane?.metrics.linesRemoved ?? 0
+  const changedFiles = pane?.gitStatus?.changedFileCount ?? 0
+  const defaultPendingMessage = useMemo(() => {
+    if (changedFiles === 0) return ''
+    const fileWord = changedFiles === 1 ? 'file' : 'files'
+    return `Update ${changedFiles} ${fileWord} (+${linesAddedRaw}/-${linesRemovedRaw})`
+  }, [changedFiles, linesAddedRaw, linesRemovedRaw])
+  const [pendingMessage, setPendingMessage] = useState(defaultPendingMessage)
+  const userEditedPending = useRef(false)
+  useEffect(() => {
+    // Re-sync to a freshly synthesized default when the user hasn't typed
+    // anything yet; otherwise preserve their draft across re-renders.
+    if (!userEditedPending.current) setPendingMessage(defaultPendingMessage)
+  }, [defaultPendingMessage])
+
+  const [committing, setCommitting] = useState(false)
+  const [commitError, setCommitError] = useState<string | null>(null)
+  const handleCommitNow = useCallback((): void => {
+    const msg = pendingMessage.trim()
+    if (!msg || committing) return
+    setCommitting(true)
+    setCommitError(null)
+    ipcInvoke(IPC.GIT_COMMIT_ALL, { paneId, message: msg })
+      .then((res) => {
+        const r = res as GitCommitAllResult
+        if (r.error) {
+          setCommitError(r.error)
+          return
+        }
+        userEditedPending.current = false
+        setPendingMessage(defaultPendingMessage)
+        refreshCommits()
+      })
+      .catch((err) => setCommitError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setCommitting(false))
+  }, [paneId, pendingMessage, committing, defaultPendingMessage, refreshCommits])
+
+  // Reword state — exactly one row in edit mode at a time.
+  const [editingSha, setEditingSha] = useState<string | null>(null)
+  const [editingDraft, setEditingDraft] = useState('')
+  const [rewording, setRewording] = useState(false)
+  const [rewordError, setRewordError] = useState<string | null>(null)
+  const startReword = useCallback((c: CommitInfo) => {
+    setEditingSha(c.sha)
+    setEditingDraft(c.body ? `${c.subject}\n\n${c.body}` : c.subject)
+    setRewordError(null)
+  }, [])
+  const cancelReword = useCallback(() => {
+    setEditingSha(null)
+    setEditingDraft('')
+    setRewordError(null)
+  }, [])
+  const saveReword = useCallback((): void => {
+    if (!editingSha || rewording) return
+    const msg = editingDraft.trim()
+    if (!msg) {
+      setRewordError('Commit message cannot be empty.')
+      return
+    }
+    setRewording(true)
+    setRewordError(null)
+    ipcInvoke(IPC.GIT_REWORD_COMMIT, { paneId, sha: editingSha, message: msg })
+      .then((res) => {
+        const r = res as GitRewordCommitResult
+        if (r.error) {
+          setRewordError(r.error)
+          return
+        }
+        setEditingSha(null)
+        setEditingDraft('')
+        refreshCommits()
+      })
+      .catch((err) => setRewordError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setRewording(false))
+  }, [editingSha, editingDraft, paneId, rewording, refreshCommits])
 
   // ---------------------------------------------------------------------------
   // Per-button state derivation
@@ -171,11 +286,8 @@ export function ChangesReadyModal({
         onClose()
         return
       }
-      if (action === 'merge-close') {
-        // Suppressed in this flow — modal filters it out, but defensive guard.
-        setDiscardError('Merge & close is not available from the Discard flow.')
-        return
-      }
+      // `merge-close` is filtered out of the close-options menu via the
+      // `suppressMergeClose` prop, so it's unreachable here.
       ipcInvoke(IPC.PANE_CLOSE_WORKTREE, { paneId, action })
         .then(() => {
           setShowDiscard(false)
@@ -199,9 +311,8 @@ export function ChangesReadyModal({
     )
   }
 
-  const linesAdded = pane.metrics.linesAdded ?? 0
-  const linesRemoved = pane.metrics.linesRemoved ?? 0
-  const changedFiles = gitStatus?.changedFileCount ?? 0
+  const linesAdded = linesAddedRaw
+  const linesRemoved = linesRemovedRaw
   const hasError = completion?.state === 'error'
   const hasConflict = completion?.state === 'conflict'
 
@@ -277,31 +388,175 @@ export function ChangesReadyModal({
             </div>
           )}
 
-          {/* Commit list (skeleton — full round grouping deferred). */}
+          {/* Commit list. Pending row at top is editable; existing commits are
+              read-only unless the row's pencil is clicked. Pencil is hidden
+              on pushed rows (force-push territory) and disabled on all rows
+              while the worktree is dirty (rebase requires a clean tree). */}
           <section>
             <h3 className="text-xs uppercase tracking-wider text-fg-muted mb-2">
               {t.changesReadyModal.commitsHeader}
             </h3>
             <ul className="text-sm text-fg-primary flex flex-col gap-1">
               {hasUncommitted && (
-                <li className="flex items-center gap-2 px-2 py-1 rounded bg-raised">
-                  <span className="text-warning-fg shrink-0">●</span>
-                  <span className="flex-1 truncate">{t.changesReadyModal.pendingChanges}</span>
-                  <span className="text-xs text-fg-muted tabular-nums shrink-0">
-                    {t.changesReadyModal.pendingChangesFmt(linesAdded, linesRemoved, changedFiles)}
-                  </span>
+                <li className="flex items-start gap-2 px-2 py-1 rounded bg-raised">
+                  <span className="text-warning-fg shrink-0 mt-1.5" aria-hidden="true">●</span>
+                  <div className="flex-1 min-w-0 flex flex-col gap-1">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <span className="truncate text-xs text-fg-muted">
+                        {t.changesReadyModal.pendingChanges}
+                      </span>
+                      <span className="text-xs text-fg-muted tabular-nums shrink-0 ml-auto">
+                        {t.changesReadyModal.pendingChangesFmt(linesAdded, linesRemoved, changedFiles)}
+                      </span>
+                    </div>
+                    <textarea
+                      value={pendingMessage}
+                      onChange={(e) => {
+                        userEditedPending.current = true
+                        setPendingMessage(e.target.value)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault()
+                          handleCommitNow()
+                        }
+                      }}
+                      placeholder={t.changesReadyModal.pendingMessagePlaceholder}
+                      rows={1}
+                      className="w-full text-sm bg-canvas border border-[var(--color-border-subtle)] rounded px-2 py-1 outline-none focus:ring-1 focus:ring-accent resize-y min-h-[28px]"
+                    />
+                    {commitError && (
+                      <span className="text-xs text-danger-fg break-words">{commitError}</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCommitNow}
+                    disabled={committing || !pendingMessage.trim()}
+                    aria-label={t.changesReadyModal.commitNowAria}
+                    title={t.changesReadyModal.actionCommit}
+                    className="shrink-0 mt-1 text-fg-muted hover:text-success-fg disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Check size={14} />
+                  </button>
                 </li>
               )}
-              {commitsAhead === 0 && !hasUncommitted && (
+
+              {commitsError && (
+                <li className="text-xs text-danger-fg italic px-2 py-1">
+                  {t.changesReadyModal.commitListLoadError}
+                </li>
+              )}
+
+              {!commitsError && commits.length === 0 && !hasUncommitted && (
                 <li className="text-xs text-fg-muted italic px-2 py-1">
                   {t.changesReadyModal.noCommits}
                 </li>
               )}
-              {commitsAhead > 0 && (
-                <li className="text-xs text-fg-muted px-2 py-1">
-                  {t.kanban.nextStepMerge(commitsAhead)}
-                </li>
-              )}
+
+              {commits.map((c) => {
+                const isEditing = editingSha === c.sha
+                const editBlocked = c.pushed
+                  ? t.changesReadyModal.rewordPushedTooltip
+                  : hasUncommitted
+                    ? t.changesReadyModal.rewordDirtyTooltip
+                    : null
+                return (
+                  <li
+                    key={c.sha}
+                    className="flex items-start gap-2 px-2 py-1 rounded hover:bg-overlay group/commit"
+                  >
+                    <span
+                      className={`shrink-0 mt-1.5 text-xs tabular-nums font-mono ${c.pushed ? 'text-fg-subtle' : 'text-fg-muted'}`}
+                      title={c.sha}
+                    >
+                      {c.shortSha}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      {isEditing ? (
+                        <div className="flex flex-col gap-1">
+                          <textarea
+                            autoFocus
+                            value={editingDraft}
+                            onChange={(e) => setEditingDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') {
+                                e.preventDefault()
+                                cancelReword()
+                              } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                e.preventDefault()
+                                saveReword()
+                              }
+                            }}
+                            rows={Math.min(8, Math.max(2, editingDraft.split('\n').length))}
+                            className="w-full text-sm bg-canvas border border-[var(--color-border-subtle)] rounded px-2 py-1 outline-none focus:ring-1 focus:ring-accent resize-y"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={saveReword}
+                              disabled={rewording || !editingDraft.trim()}
+                              className="text-xs text-success-fg hover:underline disabled:opacity-40"
+                            >
+                              {t.changesReadyModal.rewordSave}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelReword}
+                              disabled={rewording}
+                              className="text-xs text-fg-muted hover:underline disabled:opacity-40"
+                            >
+                              {t.changesReadyModal.rewordCancel}
+                            </button>
+                            <span className="text-xs text-fg-subtle">
+                              {t.changesReadyModal.rewordSaveHint}
+                            </span>
+                            {rewordError && (
+                              <span className="text-xs text-danger-fg ml-auto break-words">
+                                {rewordError}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className={`truncate ${c.pushed ? 'text-fg-secondary' : 'text-fg-primary'}`} title={c.subject}>
+                            {c.subject || <span className="italic text-fg-subtle">(no subject)</span>}
+                          </div>
+                          {c.body && (
+                            <div className="text-xs text-fg-muted whitespace-pre-wrap mt-0.5 line-clamp-3">
+                              {c.body}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {!isEditing && !editBlocked && (
+                      <button
+                        type="button"
+                        onClick={() => startReword(c)}
+                        aria-label={t.changesReadyModal.rewordTitle}
+                        title={t.changesReadyModal.rewordTitle}
+                        className="shrink-0 mt-1 text-fg-muted hover:text-fg-primary opacity-0 group-hover/commit:opacity-100 transition-opacity"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    )}
+                    {!isEditing && editBlocked && (
+                      <span
+                        title={editBlocked}
+                        aria-label={editBlocked}
+                        className="shrink-0 mt-1 text-fg-subtle"
+                      >
+                        <Pencil size={12} />
+                      </span>
+                    )}
+                    {isEditing && rewordError && !rewordError.length && (
+                      <X size={12} className="shrink-0 mt-1 text-danger-fg" />
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </section>
 

@@ -66,11 +66,6 @@ export const NEUTRAL_TEXT_COLOR = '#848D82'  // = fg-muted
 export const GIT_UNCOMMITTED_COLOR     = '#D6A240'  // status-done hue for "dirty"
 export const GIT_AHEAD_COLOR           = '#79C991'  // success-fg
 
-export const COMPLETION_MERGE_COLOR    = '#79C991'  // success-fg
-export const COMPLETION_PR_COLOR       = '#9FBFD8'  // info-fg (distinct from accent + status-needs-input)
-export const COMPLETION_ERROR_COLOR    = '#D9816E'  // danger-fg
-export const COMPLETION_CONFLICT_COLOR = '#D9B37A'  // warning-fg
-
 // ---------------------------------------------------------------------------
 // Animation
 // ---------------------------------------------------------------------------

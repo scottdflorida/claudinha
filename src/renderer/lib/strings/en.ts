@@ -819,7 +819,17 @@ export const en = {
     ghMissingTooltip: 'Install gh CLI to create PRs',
     errorBannerTitle: 'Action failed',
     errorBannerRetry: 'Retry',
-    errorBannerDismiss: 'Dismiss'
+    errorBannerDismiss: 'Dismiss',
+    rewordTitle: 'Edit commit message',
+    rewordSave: 'Save',
+    rewordCancel: 'Cancel',
+    rewordSaveHint: 'Enter saves, Esc cancels.',
+    rewordPushedTooltip: 'This commit has been pushed — editing would require a force-push.',
+    rewordDirtyTooltip: 'Commit pending changes before editing earlier messages.',
+    pendingMessagePlaceholder: 'Commit message',
+    pendingCommitTooltip: 'Edit commit message',
+    commitListLoadError: 'Failed to load commits.',
+    commitNowAria: 'Commit pending changes'
   },
 
   conflictModal: {
