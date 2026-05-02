@@ -127,7 +127,7 @@ describe('ADD_PANE_MOVED', () => {
       type: 'ADD_PANE_MOVED',
       payload: {
         paneId: 'moved', repoName: 'r', worktreeName: 'w', worktreePath: '/w',
-        isApiBilling: false, effort: 'high', model: 'opus', status: 'done', activeToolName: null,
+        isApiBilling: false, effort: 'high', model: 'opus', status: 'changes-ready', activeToolName: null,
         metrics: emptyMetrics
       }
     })
@@ -187,7 +187,7 @@ describe('UPDATE_STATUS', () => {
     })
     const result = paneReducer(state, {
       type: 'UPDATE_STATUS',
-      payload: { paneId: 'bg', status: 'done', activeToolName: null, source: 'hook' }
+      payload: { paneId: 'bg', status: 'changes-ready', activeToolName: null, source: 'hook' }
     })
     expect(result.panes[1].hasUnseenStatusChange).toBe(true)
   })
@@ -203,7 +203,7 @@ describe('UPDATE_STATUS', () => {
 
   it('clears completionStatus on status transition', () => {
     const state = makeState({
-      panes: [makePane({ id: 'p1', status: 'done', completionStatus: { state: 'idle' } as any })],
+      panes: [makePane({ id: 'p1', status: 'changes-ready', completionStatus: { state: 'idle' } as any })],
       focusedPaneId: 'p1'
     })
     const result = paneReducer(state, {
@@ -216,12 +216,12 @@ describe('UPDATE_STATUS', () => {
   it('preserves completionStatus when status does not change', () => {
     const cs = { state: 'idle' } as any
     const state = makeState({
-      panes: [makePane({ id: 'p1', status: 'done', completionStatus: cs })],
+      panes: [makePane({ id: 'p1', status: 'changes-ready', completionStatus: cs })],
       focusedPaneId: 'p1'
     })
     const result = paneReducer(state, {
       type: 'UPDATE_STATUS',
-      payload: { paneId: 'p1', status: 'done', activeToolName: 'Read', source: 'hook' }
+      payload: { paneId: 'p1', status: 'changes-ready', activeToolName: 'Read', source: 'hook' }
     })
     expect(result.panes[0].completionStatus).toBe(cs)
   })
@@ -280,7 +280,7 @@ describe('PANE_TERMINATED', () => {
 describe('PANE_RESPAWNED', () => {
   it('clears terminated and resets status/metrics', () => {
     const state = makeState({
-      panes: [makePane({ id: 'p1', terminated: true, status: 'error', metrics: { ...emptyMetrics, totalTokens: 100 } })]
+      panes: [makePane({ id: 'p1', terminated: true, status: 'needs-input', metrics: { ...emptyMetrics, totalTokens: 100 } })]
     })
     const result = paneReducer(state, { type: 'PANE_RESPAWNED', payload: { paneId: 'p1' } })
     expect(result.panes[0].terminated).toBe(false)

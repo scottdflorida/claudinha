@@ -76,10 +76,10 @@ describe('useIpcListener', () => {
     // Simulate main process sending a message
     const stable = mockApi.on.mock.calls[0][1]
     act(() => {
-      stable({ paneId: 'p1', status: 'done' })
+      stable({ paneId: 'p1', status: 'changes-ready' })
     })
 
-    expect(listener).toHaveBeenCalledWith({ paneId: 'p1', status: 'done' })
+    expect(listener).toHaveBeenCalledWith({ paneId: 'p1', status: 'changes-ready' })
   })
 
   it('does not re-register when inline listener changes', () => {

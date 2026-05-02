@@ -233,7 +233,7 @@ describe('SessionRegistry', () => {
 
       registry.updatePaneStatus('p1', 'working', 'hook')
       unsubscribe()
-      registry.updatePaneStatus('p1', 'done', 'hook')
+      registry.updatePaneStatus('p1', 'changes-ready', 'hook')
 
       expect(listener).toHaveBeenCalledTimes(1)
     })

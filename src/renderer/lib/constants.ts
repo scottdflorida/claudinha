@@ -43,10 +43,11 @@ export const HEADER_BG   = '#1A1F1C'  // = bg-surface-dark
 
 export const STATUS_COLORS: Record<PaneStatus, string> = {
   'awaiting-prompt': '#848D82',  // fg-muted
-  'working':         '#E9EDE6',  // high-contrast neutral
+  'planning':        '#9FBFD8',  // info-fg — Claude is mid-plan
+  'plan-ready':      '#47978c',  // teal — plan awaiting user approval
   'needs-input':     '#b0b9f9',  // soft lavender
-  'done':            '#D6A240',  // buttery amber (same value in dark + light)
-  'error':           '#DB4D3F',  // warm red (= status-lost)
+  'working':         '#E9EDE6',  // high-contrast neutral
+  'changes-ready':   '#D6A240',  // buttery amber (replaces old 'done')
 }
 
 /** Border color for a crashed/terminated PTY */

@@ -39,6 +39,10 @@ export interface PaneCloseConfirmModalProps {
   sequenceControls?: {
     cancelLabel: string
   }
+  /** When true, suppress the `merge-close` button. Used by the
+   *  ChangesReadyModal's Discard flow — discarding work and merging it are
+   *  contradictory intents. */
+  suppressMergeClose?: boolean
 }
 
 export function PaneCloseConfirmModal({
@@ -50,14 +54,30 @@ export function PaneCloseConfirmModal({
   mergeError,
   pending,
   topBanner,
-  sequenceControls
+  sequenceControls,
+  suppressMergeClose
 }: PaneCloseConfirmModalProps): React.JSX.Element {
   const t = useStrings()
   const resolution = buildPaneCloseOptions(descriptor)
+  // Discard flow suppresses merge-close; if the only primary was merge-close,
+  // promote the destructive prune-close to primary so the user still has a
+  // headline button to land on.
+  const buttons = suppressMergeClose
+    ? (() => {
+        const filtered = resolution.buttons.filter((b) => b.action !== 'merge-close')
+        const hasPrimary = filtered.some((b) => b.variant === 'primary')
+        if (!hasPrimary) {
+          return filtered.map((b) =>
+            b.action === 'prune-close' ? { ...b, variant: 'primary' as const } : b
+          )
+        }
+        return filtered
+      })()
+    : resolution.buttons
 
   // Split buttons — primary goes to the right, everything else left-adjacent to Cancel.
-  const primary = resolution.buttons.find((b) => b.variant === 'primary')
-  const others = resolution.buttons.filter((b) => b.variant !== 'primary')
+  const primary = buttons.find((b) => b.variant === 'primary')
+  const others = buttons.filter((b) => b.variant !== 'primary')
 
   const cancelLabel = sequenceControls?.cancelLabel ?? t.paneCloseConfirm.cancelKeepOpen
   // Widen the dialog when a close sequence is active so the banner has room
@@ -120,28 +140,26 @@ export function PaneCloseConfirmModal({
           <div className="flex items-start gap-2 text-sm text-warning-fg">
             <AlertTriangle size={14} className="flex-shrink-0 mt-px" />
             <span>
-              {descriptor.status === 'working'
+              {descriptor.status === 'working' || descriptor.status === 'planning'
                 ? t.paneCloseConfirm.warnWorking
-                : descriptor.status === 'needs-input'
-                  ? t.paneCloseConfirm.warnNeedsInput
-                  : t.paneCloseConfirm.warnError}
+                : t.paneCloseConfirm.warnNeedsInput}
             </span>
           </div>
         )}
 
         {/* Prune-with-uncommitted warning — inline destructive notice. */}
-        {resolution.buttons.some((b) => b.action === 'prune-close' && b.warning) && (
+        {buttons.some((b) => b.action === 'prune-close' && b.warning) && (
           <div className="flex items-start gap-2 text-sm text-danger-fg">
             <AlertTriangle size={14} className="flex-shrink-0 mt-px" />
             <span>
-              {resolution.buttons.find((b) => b.action === 'prune-close')?.warning}
+              {buttons.find((b) => b.action === 'prune-close')?.warning}
             </span>
           </div>
         )}
 
         {/* Resume-from-Management hint — shown for non-merge close paths on
             worktree panes so the user knows the session isn't lost. */}
-        {descriptor.isWorktree && resolution.buttons.some((b) => b.action === 'keep-close') && (
+        {descriptor.isWorktree && buttons.some((b) => b.action === 'keep-close') && (
           <p className="text-xs text-fg-muted">
             {t.paneCloseConfirm.resumableHint}
           </p>
@@ -186,11 +204,5 @@ function ActionButton({ opt, onClick, disabled, title }: { opt: PaneCloseOption;
 }
 
 function isBusyState(status: PaneCloseDescriptor['status']): boolean {
-  return status === 'working' || status === 'needs-input' || status === 'error'
-}
-
-function busyWarningCopy(status: PaneCloseDescriptor['status']): string {
-  if (status === 'working') return 'The agent is still running. Closing will interrupt it.'
-  if (status === 'needs-input') return 'The agent is waiting for your input. Closing will discard the prompt.'
-  return 'The terminal is in an error state. Closing will not attempt recovery.'
+  return status === 'working' || status === 'needs-input' || status === 'planning'
 }

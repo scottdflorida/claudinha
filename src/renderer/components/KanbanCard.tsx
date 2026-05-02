@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { FileDiff, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import type { RendererPane } from '../hooks/usePaneState'
 import { usePaneState } from '../hooks/usePaneState'
 import { resolvePaneDisplayName } from '../../shared/pane-display'
@@ -14,8 +14,10 @@ interface KanbanCardProps {
   /** Whether this card is the currently focused active terminal in Kanban view. */
   isActive: boolean
   onClick: () => void
-  /** Click on the diff chip — opens the diff viewer modal. */
-  onDiffClick?: () => void
+  /** Click on the next-step pill (changes-ready tiles only) — opens
+   *  the ChangesReadyModal. The diff chip is gone in the new design;
+   *  the pill is the single CTA. */
+  onPillClick?: () => void
   /** Click on the X — routes to the shared close-pane flow. */
   onClose?: () => void
   /** Click on the "Main dirty" chip — opens the resolution modal. */
@@ -25,9 +27,9 @@ interface KanbanCardProps {
 }
 
 /**
- * Activity text. Per feedback item 6, status text is redundant with the column
- * header — only render an activity row while Claude is actively working, and
- * only to expose the current tool (if one is in-flight).
+ * Activity text shown on the working column tile. Per the redesign, only
+ * working tiles show a verb; other columns are explained by their column
+ * header.
  */
 function activityFor(pane: RendererPane, t: Strings): string | null {
   if (pane.terminated) return 'PTY exited'
@@ -36,49 +38,63 @@ function activityFor(pane: RendererPane, t: Strings): string | null {
 }
 
 /**
- * Compose the right-side completion/sync indicator. Uncommitted is NOT shown
- * here — it's rendered inline with the diff chip instead (see feedback item 8).
+ * Single "next step" pill rendered on changes-ready tiles. Precedence:
+ *   1. uncommitted edits   → `+N/-M to commit`
+ *   2. unmerged-vs-base    → `N to merge`
+ *   3. unpushed-to-remote  → `↑N to push`
+ *   4. open PR             → `PR #N open`  (PR # not currently tracked,
+ *                          shown as `PR open` until plumbing arrives)
+ *   5. otherwise           → null (tile shouldn't be in this column).
+ *
+ * Renders nothing on tiles outside `changes-ready`.
  */
-function syncIndicator(pane: RendererPane, t: Strings): { label: string; tone: 'neutral' | 'good' | 'warn' | 'bad' } | null {
-  const cs = pane.completionStatus
-  if (cs) {
-    switch (cs.state) {
-      case 'queued':     return { label: t.completionBar.queued(cs.queuePosition ?? 0), tone: 'neutral' }
-      case 'rebasing':   return { label: t.kanban.actionRebasing, tone: 'neutral' }
-      case 'merging':    return { label: t.kanban.actionMerging, tone: 'neutral' }
-      case 'pushing':    return { label: t.kanban.actionPushing, tone: 'neutral' }
-      case 'merged':     return { label: t.kanban.actionMerged, tone: 'good' }
-      case 'pr-created': return { label: 'PR', tone: 'good' }
-      case 'conflict':   return { label: t.kanban.actionConflict, tone: 'warn' }
-      case 'dirty-main': return { label: t.kanban.actionMainDirty, tone: 'warn' }
-      case 'error':      return { label: t.kanban.actionFailed, tone: 'bad' }
-      default: break
-    }
-  }
+function nextStepPill(pane: RendererPane, t: Strings): { label: string; tone: 'good' | 'neutral' | 'warn' } | null {
+  if (pane.status !== 'changes-ready') return null
+  const linesAdded = pane.metrics.linesAdded ?? 0
+  const linesRemoved = pane.metrics.linesRemoved ?? 0
   const gs = pane.gitStatus
-  if (!gs) return null
-  if (gs.commitsAhead > 0) return { label: `${gs.commitsAhead} ahead`, tone: 'neutral' }
+  if (gs?.hasUncommittedChanges) {
+    return { label: t.kanban.nextStepCommit(linesAdded, linesRemoved), tone: 'warn' }
+  }
+  // Without a dedicated "unmerged-vs-base" probe, fall back to commitsAhead
+  // for both merge and push pills. The plan's precedence (commit → merge →
+  // push → PR) collapses here because the renderer doesn't currently
+  // distinguish merged-but-unpushed from unmerged.
+  if (gs && gs.commitsAhead > 0) {
+    return { label: t.kanban.nextStepMerge(gs.commitsAhead), tone: 'neutral' }
+  }
+  // Open PR display would require a per-tile PR number; not wired yet.
   return null
 }
 
-const TONE_CLASSES: Record<'neutral' | 'good' | 'warn' | 'bad', string> = {
-  neutral: 'text-fg-muted',
-  good: 'text-success-fg',
-  warn: 'text-warning-fg',
-  bad: 'text-danger-fg'
+const PILL_TONE_CLASSES: Record<'good' | 'neutral' | 'warn', string> = {
+  good: 'text-success-fg border-success-fg/60 hover:bg-success-fg/10',
+  neutral: 'text-fg-primary border-[var(--color-border-strong)] hover:bg-overlay',
+  warn: 'text-warning-fg border-warning-fg/60 hover:bg-warning-fg/10'
 }
 
-export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, onClose, onResolveDirtyMain, onResolveConflict }: KanbanCardProps): React.JSX.Element {
+export function KanbanCard({
+  pane,
+  statusColor,
+  isActive,
+  onClick,
+  onPillClick,
+  onClose,
+  onResolveDirtyMain,
+  onResolveConflict
+}: KanbanCardProps): React.JSX.Element {
   const t = useStrings()
   const agentName = resolvePaneDisplayName(pane)
   const activity = activityFor(pane, t)
-  const sync = syncIndicator(pane, t)
-  const linesAdded = pane.metrics.linesAdded ?? 0
-  const linesRemoved = pane.metrics.linesRemoved ?? 0
-  const showDiffChip = linesAdded > 0 || linesRemoved > 0
-  const hasUncommitted = pane.gitStatus?.hasUncommittedChanges === true
-  const showPlanBadge = pane.permissionMode === 'plan'
-  const isAwaitingPlanApproval = pane.activeToolName === 'ExitPlanMode'
+  const pill = nextStepPill(pane, t)
+  // Surface action-state errors / conflicts / dirty-main on the tile so the
+  // user can route them without opening the changes-ready modal.
+  const completionState = pane.completionStatus?.state
+  const showActionWarn =
+    completionState === 'conflict' ||
+    completionState === 'dirty-main' ||
+    completionState === 'error'
+
   const { setUserName } = usePaneState()
 
   // Inline rename — double-click name OR click pencil → edit. Enter saves,
@@ -115,22 +131,24 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, 
     onClick()
   }, [isEditingName, onClick])
 
-  const handleDiffClick = useCallback((e: React.MouseEvent) => {
+  const handlePillClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    onDiffClick?.()
-  }, [onDiffClick])
+    onPillClick?.()
+  }, [onPillClick])
 
   const handleCloseClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     onClose?.()
   }, [onClose])
 
-  // Focus indicator (feedback item 11):
-  // - `bg-overlay` on focused to lift the background
-  // - `outline` (outside the box, doesn't cover the left status bar) at the
-  //   fg-muted color with a small offset
-  // - DO NOT use `ring-*` — that's box-shadow based and overlays the box,
-  //   which was covering the left borderLeft color bar.
+  const handleActionWarnClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (completionState === 'conflict') onResolveConflict?.()
+    else if (completionState === 'dirty-main') onResolveDirtyMain?.()
+    else onPillClick?.()
+  }, [completionState, onResolveConflict, onResolveDirtyMain, onPillClick])
+
+  const isAwaitingOrders = pane.status === 'awaiting-prompt'
   const baseBg = isActive ? 'bg-overlay' : 'bg-raised'
 
   return (
@@ -148,30 +166,29 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, 
       aria-pressed={isActive}
       aria-label={`Select ${agentName}`}
       className={`
-        w-full text-left rounded-md ${baseBg}
+        group/card w-full text-left rounded-md ${baseBg}
         flex flex-col gap-1.5 px-3 py-2 cursor-pointer
         transition-colors duration-[80ms]
         hover:bg-overlay focus:outline-none focus-visible:outline-accent
       `}
       style={{
-        // Status-color bar on the left (matches Wall's pane border).
-        borderLeft: `2px solid ${statusColor}`,
-        // Focus outline OUTSIDE the box so it doesn't cover the left color bar.
+        borderLeft: `2px solid ${pane.terminated ? '#DB4D3F' : statusColor}`,
         outline: isActive ? '1px solid var(--color-fg-muted)' : 'none',
         outlineOffset: isActive ? 2 : 0
       }}
     >
-      {/* Top row: repo · agent name (truncated) · pencil · plan badge.
-          The pencil sits immediately after the last character of the name
-          so it's visually unambiguous which thing it will rename. A flex-1
-          spacer after the pencil pushes the PLAN badge to the right edge. */}
+      {/* Top row: repo · agent name (truncated) · spacer · pill · X.
+          Close X and rename pencil are HOVER-ONLY across every column —
+          one consistent rule, no per-column variant. */}
       <div className="flex items-baseline min-w-0 gap-2">
-        <span
-          className="text-[11px] text-fg-muted shrink-0 truncate max-w-[40%]"
-          title={pane.repoName}
-        >
-          {pane.repoName}
-        </span>
+        {!isAwaitingOrders && (
+          <span
+            className="text-[11px] text-fg-muted shrink-0 truncate max-w-[40%]"
+            title={pane.repoName}
+          >
+            {pane.repoName}
+          </span>
+        )}
         {isEditingName ? (
           <input
             ref={nameInputRef}
@@ -196,117 +213,80 @@ export function KanbanCard({ pane, statusColor, isActive, onClick, onDiffClick, 
               title={`${agentName} — click pencil to rename`}
               onDoubleClick={startEdit}
             >
-              {agentName}
+              {isAwaitingOrders ? pane.repoName : agentName}
             </span>
             <button
               type="button"
               onClick={startEdit}
               aria-label={t.kanban.renameAgent}
               title={t.kanban.renameAgent}
-              className="text-[11px] text-fg-muted hover:text-white shrink-0 -ml-1"
+              className="text-[11px] text-fg-muted hover:text-white shrink-0 -ml-1 opacity-0 group-hover/card:opacity-100 transition-opacity"
             >
               ✎
             </button>
-            {/* Spacer: pushes the PLAN badge to the right so the pencil stays
-                adjacent to the name rather than floating away from it. */}
             <span className="flex-1" aria-hidden="true" />
           </>
         )}
-        {showPlanBadge && (
-          <span
-            className="shrink-0 text-[9px] font-[600] uppercase tracking-wider px-1 py-0 rounded-sm border"
-            style={{ color: '#47978c', borderColor: '#47978c' }}
-            title={isAwaitingPlanApproval ? t.kanban.planReady : t.kanban.planMode}
+        {/* Action-state warn glyph (conflict / dirty-main / failed) — clickable
+            shortcut to the matching resolver. */}
+        {showActionWarn && (
+          <button
+            type="button"
+            onClick={handleActionWarnClick}
+            className="shrink-0 text-[11px] text-warning-fg hover:underline"
+            title={
+              completionState === 'conflict'
+                ? t.kanban.actionConflictResolve
+                : completionState === 'dirty-main'
+                  ? t.kanban.actionMainDirtyResolve
+                  : t.kanban.actionFailed
+            }
           >
-            {isAwaitingPlanApproval ? 'PLAN READY' : 'PLANNING'}
-          </span>
+            {completionState === 'conflict'
+              ? t.kanban.actionConflict
+              : completionState === 'dirty-main'
+                ? t.kanban.actionMainDirty
+                : t.kanban.actionFailed}
+          </button>
         )}
-        {sync && (() => {
-          const state = pane.completionStatus?.state
-          const handler = state === 'dirty-main'
-            ? onResolveDirtyMain
-            : state === 'conflict'
-              ? onResolveConflict
-              : null
-          const tooltip = state === 'dirty-main'
-            ? t.kanban.actionMainDirtyResolve
-            : state === 'conflict'
-              ? t.kanban.actionConflictResolve
-              : sync.label
-          return handler ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                handler()
-              }}
-              className={`shrink-0 text-[11px] ${TONE_CLASSES[sync.tone]} underline-offset-2 hover:underline focus:outline-none focus-visible:underline`}
-              title={tooltip}
-            >
-              {sync.label}
-            </button>
-          ) : (
-            <span
-              className={`shrink-0 text-[11px] ${TONE_CLASSES[sync.tone]}`}
-              title={sync.label}
-            >
-              {sync.label}
-            </span>
-          )
-        })()}
         {onClose && (
           <button
             type="button"
             onClick={handleCloseClick}
             aria-label={t.paneHeader.closePane}
             title={t.paneHeader.clearPane}
-            className="shrink-0 text-fg-muted hover:text-danger-fg transition-colors duration-[80ms] -mr-1"
+            className="shrink-0 text-fg-muted hover:text-danger-fg transition-colors duration-[80ms] -mr-1 opacity-0 group-hover/card:opacity-100"
           >
             <X size={12} />
           </button>
         )}
       </div>
 
-      {/* Activity row — only when working (concept feedback item 6) */}
+      {/* Activity row — only on working tiles */}
       {activity && (
         <div className="text-[11px] text-fg-secondary truncate" title={activity}>
           {activity}
         </div>
       )}
 
-      {/* Footer: diff chip + uncommitted pill, left-aligned. The sync badge
-          (Merged / PR open / Conflict / Action failed / Queued N / etc.)
-          lives in the title row above so cards without diff/uncommitted
-          content stay a single row tall. The "Uncommitted" pill sits
-          adjacent to +N/-M per feedback item 8 so users read "these changes
-          are uncommitted" as one thought. */}
-      {(showDiffChip || hasUncommitted) && (
-        <div className="flex items-center gap-2 text-[11px] tabular-nums min-w-0">
-          {showDiffChip && (
-            <button
-              type="button"
-              onClick={handleDiffClick}
-              disabled={!onDiffClick}
-              aria-label={t.kanban.viewDiff}
-              title={onDiffClick ? t.kanban.viewDiffVsBase : undefined}
-              className="inline-flex items-center gap-1 text-fg-muted hover:text-fg-primary disabled:cursor-default disabled:hover:text-fg-muted group"
-            >
-              <FileDiff size={11} className="shrink-0 opacity-70 group-hover:opacity-100" />
-              <span>
-                <span className="text-success-fg">+{linesAdded}</span>
-                <span className="text-fg-muted"> </span>
-                <span className="text-danger-fg">−{linesRemoved}</span>
-              </span>
-            </button>
-          )}
-          {hasUncommitted && (
-            <span
-              className="shrink-0 text-warning-fg"
-              title={t.kanban.uncommittedTooltip}
-            >
-              Uncommitted
-            </span>
-          )}
+      {/* Next-step pill — only on changes-ready tiles. The pill is the
+          modal-opening CTA; the old separate diff chip + sync glyph are
+          collapsed into this one slot. */}
+      {pill && (
+        <div className="flex items-center min-w-0">
+          <button
+            type="button"
+            onClick={handlePillClick}
+            disabled={!onPillClick}
+            className={`
+              inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] tabular-nums
+              transition-colors duration-[80ms]
+              disabled:cursor-default
+              ${PILL_TONE_CLASSES[pill.tone]}
+            `}
+          >
+            {pill.label}
+          </button>
         </div>
       )}
     </div>

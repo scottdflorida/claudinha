@@ -175,7 +175,7 @@ export class CompletionExecutor {
     }
 
     // Lazily clear the "already evaluated" flag when the pane leaves 'done'.
-    if (pane.status !== 'done') {
+    if (pane.status !== 'changes-ready') {
       this.evaluatedPanes.delete(paneId)
       return
     }
@@ -257,7 +257,7 @@ export class CompletionExecutor {
   ): Promise<{ error: string | null }> {
     const pane = this.sessionRegistry.getPane(paneId)
     if (!pane) return { error: 'Pane not found.' }
-    if (pane.status !== 'done') return { error: 'Pane is not in done state.' }
+    if (pane.status !== 'changes-ready') return { error: 'Pane has no changes to merge.' }
     if (!pane.isWorktree) return { error: 'Pane is not a worktree.' }
     if (this.activeOperations.has(paneId)) return { error: 'Operation already in progress.' }
 
@@ -321,8 +321,8 @@ export class CompletionExecutor {
         this.mergeQueue.complete(paneId)
         return
       }
-      if (pane.status !== 'done') {
-        this.broadcastStatus(paneId, { state: 'error', errorMessage: 'Pane is no longer in done state.' })
+      if (pane.status !== 'changes-ready') {
+        this.broadcastStatus(paneId, { state: 'error', errorMessage: 'Pane no longer has changes to merge.' })
         this.mergeQueue.complete(paneId)
         return
       }
@@ -840,7 +840,10 @@ export class CompletionExecutor {
         const win = this.windowManager.getWindow(currentPane.windowId)
         const isCrash = exitCode !== 0 && !signal
         if (isCrash) {
-          this.sessionRegistry.updatePaneStatus(paneId, 'done', 'pty-fallback')
+          // PTY crashed during conflict resolution. Park the pane in
+          // `needs-input` (no diff probe possible here) and rely on
+          // `terminated` for the error highlight.
+          this.sessionRegistry.updatePaneStatus(paneId, 'needs-input', 'pty-fallback')
           currentPane.terminated = true
           if (win && !win.isDestroyed()) {
             win.webContents.send(IPC.PANE_TERMINATED, { paneId, exitCode })

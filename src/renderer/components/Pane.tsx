@@ -113,7 +113,7 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall' }: PaneProps)
     !completionDismissed &&
     (
       (
-        status === 'done' &&
+        status === 'changes-ready' &&
         isWorktreePane &&
         hasWorkToIntegrate &&
         !isOnMainBranch
@@ -121,10 +121,10 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall' }: PaneProps)
       hasActiveCompletionState
     )
 
-  // Reset dismissed state when pane leaves 'done' (e.g., conflict resolution restarts work)
+  // Reset dismissed state when pane re-enters changes-ready (e.g., conflict resolution restarts work)
   const prevStatusRef = useRef(status)
   useEffect(() => {
-    if (prevStatusRef.current !== 'done' && status === 'done') {
+    if (prevStatusRef.current !== 'changes-ready' && status === 'changes-ready') {
       setCompletionDismissed(false)
     }
     prevStatusRef.current = status

@@ -305,8 +305,13 @@ export class StatusDetector {
       if (pattern.test(clean)) return 'needs-input'
     }
 
+    // PTY fallback can't run a diff probe like the hook path does, so the
+    // safe collapse for "Claude finished a turn" is `needs-input`. If the
+    // poller later detects changes the tile gets the diff chip via
+    // gitStatus. Routing to `changes-ready` here would be wrong when the
+    // tree is clean.
     for (const pattern of CLAUDE_PATTERNS.done) {
-      if (pattern.test(clean)) return 'done'
+      if (pattern.test(clean)) return 'needs-input'
     }
 
     for (const pattern of CLAUDE_PATTERNS.awaitingPrompt) {

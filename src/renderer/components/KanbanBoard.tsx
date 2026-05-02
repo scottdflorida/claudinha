@@ -2,64 +2,74 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { PaneStatus } from '../../shared/types'
 import type { RendererPane } from '../hooks/usePaneState'
 import { KanbanColumn } from './KanbanColumn'
-import { DiffViewerModal } from './DiffViewerModal'
 import { DirtyMainModal } from './DirtyMainModal'
 import { ConflictResolveModal } from './ConflictResolveModal'
+import { ChangesReadyModal } from './ChangesReadyModal'
 import { useStrings } from '../lib/strings'
 
 interface KanbanBoardProps {
   panes: RendererPane[]
   activePaneId: string | null
+  /** Workspace owning these panes — passed to ChangesReadyModal so it can
+   *  invoke per-repo composite IPCs (Merge+Push). Null in workspace-less
+   *  contexts (legacy or transient). */
+  workspaceId?: string | null
   onCardClick: (paneId: string) => void
   /** Routes the card-level X through the shared close-pane flow. */
   onCloseCard?: (paneId: string) => void
 }
 
 /**
- * Column order follows a left-to-right lifecycle: idle → active → user-blocked
- * → finished → broken. Needs input sits dead center (position 3 of 5) so the
- * "a human is blocking something" column catches the eye on scan without the
- * warm red of Error dominating on first look.
+ * Column order follows the new lifecycle:
+ *   awaiting-orders → planning → plan-ready → needs-input → working → changes-ready
+ *
+ * Awaiting-orders is the leftmost narrow rail (idle, untouched terminals).
+ * Errors are no longer a column — they surface as a red border on whichever
+ * column the pane currently sits in (driven by `terminated` or
+ * `completionStatus.state === 'error'`).
  */
-const COLUMN_STATUSES: PaneStatus[] = ['awaiting-prompt', 'working', 'needs-input', 'done', 'error']
+const COLUMN_STATUSES: PaneStatus[] = [
+  'awaiting-prompt',
+  'planning',
+  'plan-ready',
+  'needs-input',
+  'working',
+  'changes-ready'
+]
 
-/**
- * Per Kanban concept doc, "Error column definition":
- *   - PaneStatus === 'error' → error column
- *   - terminated PTY → error column
- *   - completionActionStatus === 'error' alone (agent healthy) → stays in
- *     `done` with a conflict-state sync indicator. NOT moved here.
- */
 function bucketFor(pane: RendererPane): PaneStatus {
-  if (pane.status === 'error' || pane.terminated) return 'error'
   return pane.status
 }
 
-export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: KanbanBoardProps): React.JSX.Element {
+export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onCloseCard }: KanbanBoardProps): React.JSX.Element {
   const t = useStrings()
   const columnTitle: Record<PaneStatus, string> = {
-    'awaiting-prompt': t.kanban.columnAwaitingPrompt,
-    'working': t.kanban.columnWorking,
+    'awaiting-prompt': t.kanban.columnAwaitingOrders,
+    'planning': t.kanban.columnPlanning,
+    'plan-ready': t.kanban.columnPlanReady,
     'needs-input': t.kanban.columnNeedsInput,
-    'done': t.kanban.columnDone,
-    'error': t.kanban.columnError
+    'working': t.kanban.columnWorking,
+    'changes-ready': t.kanban.columnChangesReady
   }
   const grouped: Record<PaneStatus, RendererPane[]> = {
     'awaiting-prompt': [],
-    'working': [],
+    'planning': [],
+    'plan-ready': [],
     'needs-input': [],
-    'done': [],
-    'error': []
+    'working': [],
+    'changes-ready': []
   }
   for (const pane of panes) {
     grouped[bucketFor(pane)].push(pane)
   }
 
-  // Diff viewer state lives at the board level so the modal overlays the
-  // entire window regardless of which card opened it.
-  const [diffPane, setDiffPane] = useState<{ paneId: string; paneName: string } | null>(null)
-  const onDiffClick = useCallback((paneId: string, paneName: string) => {
-    setDiffPane({ paneId, paneName })
+  // ChangesReadyModal state lives at the board level so the modal overlays the
+  // entire window regardless of which card opened it. Replaces the old
+  // diff-chip-driven DiffViewerModal — the diff viewer is now a sub-modal
+  // inside ChangesReadyModal.
+  const [pillPane, setPillPane] = useState<{ paneId: string; paneName: string } | null>(null)
+  const onPillClick = useCallback((paneId: string, paneName: string) => {
+    setPillPane({ paneId, paneName })
   }, [])
 
   // Dirty-main resolution modal state. The board owns it (not each card) so
@@ -156,7 +166,10 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
       <div
         className="grid w-full h-full bg-surface"
         style={{
-          gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+          // Awaiting-orders is a narrow rail (~140px) — the others split the
+          // remaining width evenly. Reflects the plan's "compact awaiting rail"
+          // requirement.
+          gridTemplateColumns: '140px repeat(5, minmax(0, 1fr))',
           gap: 1,
           background: 'var(--color-border-strong)' // hairline column dividers via gap fill
         }}
@@ -169,18 +182,19 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
             panes={grouped[status]}
             activePaneId={activePaneId}
             onCardClick={onCardClick}
-            onDiffClick={onDiffClick}
+            onPillClick={onPillClick}
             onCloseCard={onCloseCard}
             onResolveDirtyMain={onResolveDirtyMain}
             onResolveConflict={onResolveConflict}
           />
         ))}
       </div>
-      {diffPane && (
-        <DiffViewerModal
-          paneId={diffPane.paneId}
-          paneName={diffPane.paneName}
-          onClose={() => setDiffPane(null)}
+      {pillPane && (
+        <ChangesReadyModal
+          paneId={pillPane.paneId}
+          paneName={pillPane.paneName}
+          workspaceId={workspaceId ?? null}
+          onClose={() => setPillPane(null)}
         />
       )}
       {dirtyMainPane && (

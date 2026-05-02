@@ -65,7 +65,7 @@ function makePane(overrides: Partial<RendererPane> = {}): RendererPane {
     isApiBilling: false,
     effort: 'high',
     model: 'opus',
-    status: 'done',
+    status: 'changes-ready',
     activeToolName: null,
     statusSource: 'hook',
     metrics: {
@@ -392,7 +392,7 @@ describe('KanbanBoard dirty-main integration', () => {
   })
 
   it('opens the modal when the "Main dirty" chip is clicked', () => {
-    const pane = makePane({ status: 'done', completionStatus: dirtyMainStatus() })
+    const pane = makePane({ status: 'changes-ready', completionStatus: dirtyMainStatus() })
     mockPanes = [pane]
     // The auto-open effect will fire for this pane because it's dirty on the
     // first render. Dismiss the modal first, then click the chip.

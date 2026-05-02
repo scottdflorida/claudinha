@@ -39,7 +39,7 @@ function preload(status: PaneStatus, url: string): void {
 }
 
 preload('needs-input', needsInputUrl)
-preload('done', doneUrl)
+preload('changes-ready', doneUrl)
 
 /**
  * Update the live sound configuration. Applies the new volume to every
@@ -66,7 +66,7 @@ export function applySoundConfig(config: AppConfig): void {
 export function playStatusSound(status: PaneStatus): void {
   if (!currentConfig.soundsEnabled) return
   if (status === 'needs-input' && !currentConfig.soundOnNeedsInput) return
-  if (status === 'done' && !currentConfig.soundOnDone) return
+  if (status === 'changes-ready' && !currentConfig.soundOnDone) return
   const audio = sounds[status]
   if (!audio) return
   // Reset to start so rapid repeated triggers still play

@@ -548,7 +548,9 @@ export function registerIpcHandlers(
           // Unexpected crash — keep pane in registry, mark terminated (B-052)
           // Set terminated flag in registry so close-interceptor sees correct state
           trackPtyCrashed(exitCode, pane.createdAt)
-          sessionRegistry.updatePaneStatus(paneId, 'done', 'pty-fallback')
+          // PTY crashed — `terminated` drives the error highlight; status
+          // collapses to `needs-input` since we can't probe the diff here.
+          sessionRegistry.updatePaneStatus(paneId, 'needs-input', 'pty-fallback')
           pane.terminated = true
 
           if (win && !win.isDestroyed()) {
@@ -839,7 +841,7 @@ export function registerIpcHandlers(
         const isCrash = exitCode !== 0 && !signal
 
         if (isCrash) {
-          sessionRegistry.updatePaneStatus(paneId, 'done', 'pty-fallback')
+          sessionRegistry.updatePaneStatus(paneId, 'needs-input', 'pty-fallback')
           currentPane.terminated = true
           if (win && !win.isDestroyed()) {
             const terminatedPayload: PaneTerminatedPayload = { paneId, exitCode }
@@ -1834,7 +1836,7 @@ export function registerIpcHandlers(
       ? all.filter((p) => p.workspaceId === workspaceId)
       : all
     return pool.filter((pane) => {
-      if (pane.status !== 'done') return false
+      if (pane.status !== 'changes-ready') return false
       if (!pane.isWorktree) return false
       if (pane.terminated) return false
       const git = pane.gitStatus
@@ -2625,7 +2627,7 @@ export function registerIpcHandlers(
 
               if (isCrash) {
                 trackPtyCrashed(exitCode, pane.createdAt)
-                sessionRegistry.updatePaneStatus(paneId, 'done', 'pty-fallback')
+                sessionRegistry.updatePaneStatus(paneId, 'needs-input', 'pty-fallback')
                 pane.terminated = true
                 if (win && !win.isDestroyed()) {
                   const terminatedPayload: PaneTerminatedPayload = { paneId, exitCode }

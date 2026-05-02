@@ -57,14 +57,18 @@ export function PaneBorder({
     hasUnseenStatusChange = false
   }
   const color = terminated ? STATUS_TERMINATED_COLOR : STATUS_COLORS[status]
-  const isError = status === 'error' || terminated
+  // 'error' is no longer a status — the red highlight is driven by `terminated`
+  // (PTY crashed / lost). Transient action-failure errors live on
+  // `completionStatus.state === 'error'`; the consumers wrapping this border
+  // can route those through `terminated` if needed.
+  const isError = terminated
 
   // Pulse when unfocused + unseen status change to needs-input / done / error
   const shouldPulse =
     !isFocused &&
     !terminated &&
     hasUnseenStatusChange &&
-    (status === 'needs-input' || status === 'done' || status === 'error')
+    (status === 'needs-input' || status === 'plan-ready' || status === 'changes-ready')
 
   // One-time error lift on transition into error/lost while unfocused
   const [isLifting, setIsLifting] = useState(false)

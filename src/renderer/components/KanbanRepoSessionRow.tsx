@@ -52,7 +52,7 @@ export function KanbanRepoSessionRow({
   onClick
 }: KanbanRepoSessionRowProps): React.JSX.Element {
   const dotColor =
-    completionState === 'error' ? STATUS_COLORS.error : STATUS_COLORS[status]
+    completionState === 'error' ? '#DB4D3F' : STATUS_COLORS[status]
   const showDiff = linesAdded > 0 || linesRemoved > 0
   const ageLabel = formatAge(now - lastActivityAt)
   return (

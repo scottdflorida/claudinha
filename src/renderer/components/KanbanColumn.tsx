@@ -11,10 +11,11 @@ import { KanbanCard } from './KanbanCard'
 // theme-appropriate shade (working = #2A2418 dark warm charcoal in light).
 const STATUS_TEXT_VAR: Record<PaneStatus, string> = {
   'awaiting-prompt': 'var(--color-status-awaiting)',
-  'working':         'var(--color-status-working)',
+  'planning':        'var(--color-status-needs-input)',
+  'plan-ready':      'var(--color-status-needs-input)',
   'needs-input':     'var(--color-status-needs-input)',
-  'done':            'var(--color-status-done)',
-  'error':           'var(--color-status-lost)',
+  'working':         'var(--color-status-working)',
+  'changes-ready':   'var(--color-status-done)',
 }
 
 interface KanbanColumnProps {
@@ -23,8 +24,8 @@ interface KanbanColumnProps {
   panes: RendererPane[]
   activePaneId: string | null
   onCardClick: (paneId: string) => void
-  /** Optional: forwarded to each KanbanCard for the diff-chip click. */
-  onDiffClick?: (paneId: string, paneName: string) => void
+  /** Optional: forwarded to each KanbanCard for the next-step pill click. */
+  onPillClick?: (paneId: string, paneName: string) => void
   /** Optional: forwarded to each KanbanCard's X button. */
   onCloseCard?: (paneId: string) => void
   /** Optional: forwarded to each KanbanCard for the "Main dirty" chip click. */
@@ -42,12 +43,12 @@ interface KanbanColumnProps {
  * fixtures must stay visible so users can tell "no agents in this state" from
  * "the column is broken."
  */
-export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onDiffClick, onCloseCard, onResolveDirtyMain, onResolveConflict }: KanbanColumnProps): React.JSX.Element {
+export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onPillClick, onCloseCard, onResolveDirtyMain, onResolveConflict }: KanbanColumnProps): React.JSX.Element {
   const color = STATUS_COLORS[status]
   const count = panes.length
-  // Error column gets a subtle red wash + thicker header underline when it has
-  // any cards, so stalled agents are impossible to miss on a casual scan.
-  const isPopulatedError = status === 'error' && count > 0
+  // Error column was removed in the new design — error highlight now lives on
+  // PaneBorder driven by `terminated`/`completionStatus.state === 'error'`.
+  const isPopulatedError = false
 
   return (
     <section
@@ -98,7 +99,7 @@ export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, 
               statusColor={color}
               isActive={pane.id === activePaneId}
               onClick={() => onCardClick(pane.id)}
-              onDiffClick={onDiffClick ? () => onDiffClick(pane.id, pane.userName || pane.metrics.sessionTitle || pane.worktreeName) : undefined}
+              onPillClick={onPillClick ? () => onPillClick(pane.id, pane.userName || pane.metrics.sessionTitle || pane.worktreeName) : undefined}
               onClose={onCloseCard ? () => onCloseCard(pane.id) : undefined}
               onResolveDirtyMain={onResolveDirtyMain ? () => onResolveDirtyMain(pane.id) : undefined}
               onResolveConflict={onResolveConflict ? () => onResolveConflict(pane.id) : undefined}

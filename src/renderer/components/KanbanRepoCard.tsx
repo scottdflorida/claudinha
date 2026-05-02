@@ -43,10 +43,11 @@ interface KanbanRepoCardProps {
 function statusBreakdown(panes: ReadyPaneEntry[]): Array<{ status: PaneStatus; count: number }> {
   const counts: Record<PaneStatus, number> = {
     'awaiting-prompt': 0,
+    'planning': 0,
+    'plan-ready': 0,
     'working': 0,
     'needs-input': 0,
-    'done': 0,
-    'error': 0
+    'changes-ready': 0
   }
   for (const p of panes) counts[p.paneStatus] = (counts[p.paneStatus] ?? 0) + 1
   return (Object.entries(counts) as [PaneStatus, number][])

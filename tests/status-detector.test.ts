@@ -234,14 +234,16 @@ describe('StatusDetector', () => {
       )
     })
 
-    it('emits inferred status after 500ms silence (classify: done pattern)', () => {
+    it('emits inferred status after 500ms silence (classify: done pattern → needs-input)', () => {
       detector.onData('pane-1', 'Total cost: $0.02')
 
       vi.advanceTimersByTime(500)
 
       const calls = vi.mocked(registry.updatePaneStatus).mock.calls
       expect(calls[0][1]).toBe('working') // immediate
-      expect(calls[1][1]).toBe('done') // after silence
+      // PTY fallback can't probe the worktree diff, so "Claude finished a
+      // turn" patterns collapse to needs-input rather than changes-ready.
+      expect(calls[1][1]).toBe('needs-input')
     })
 
     it('emits needs-input for permission prompt pattern after 500ms', () => {
@@ -254,9 +256,9 @@ describe('StatusDetector', () => {
     })
 
     it('emits awaiting-prompt for bare > prompt after 500ms', () => {
-      // Override initial status to 'done' so the 'awaiting-prompt' classify result
-      // is a real status change (dedup check: pane.status !== newStatus)
-      registry.getPane.mockReturnValue(makePaneState({ id: 'pane-1', status: 'done' }))
+      // Override initial status to 'changes-ready' so the 'awaiting-prompt'
+      // classify result is a real status change (dedup check: pane.status !== newStatus)
+      registry.getPane.mockReturnValue(makePaneState({ id: 'pane-1', status: 'changes-ready' }))
 
       detector.onData('pane-1', 'some output\n>')
 
@@ -294,7 +296,7 @@ describe('StatusDetector', () => {
       expect(callsAt500).toBeGreaterThan(callsAt499) // one more call (final status)
 
       const lastCall = vi.mocked(registry.updatePaneStatus).mock.calls.at(-1)
-      expect(lastCall?.[1]).toBe('done')
+      expect(lastCall?.[1]).toBe('needs-input')
     })
 
     it('strips ANSI codes before pattern matching', () => {
@@ -305,7 +307,7 @@ describe('StatusDetector', () => {
       vi.advanceTimersByTime(500)
 
       const calls = vi.mocked(registry.updatePaneStatus).mock.calls
-      expect(calls.at(-1)?.[1]).toBe('done')
+      expect(calls.at(-1)?.[1]).toBe('needs-input')
     })
 
     it('no-op when pane not registered', () => {

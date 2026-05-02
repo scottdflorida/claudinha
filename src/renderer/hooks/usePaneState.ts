@@ -221,7 +221,8 @@ export function paneReducer(state: PaneStoreState, action: PaneAction): PaneStor
               ? true
               : p.hasUnseenStatusChange
           // Clear stale completion status on any status transition so the
-          // completion bar always starts fresh when a pane re-enters 'done'.
+          // completion bar always starts fresh when a pane re-enters
+          // 'changes-ready'.
           const completionStatus = statusChanged ? null : p.completionStatus
           return { ...p, status, activeToolName, statusSource: source, hasUnseenStatusChange, completionStatus }
         })
