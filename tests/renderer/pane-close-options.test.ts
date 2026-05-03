@@ -36,22 +36,22 @@ describe('buildPaneCloseOptions — bypass paths', () => {
   })
 
   it('bypasses a done + clean worktree pane with prune-close', () => {
-    const r = buildPaneCloseOptions(desc({ status: 'done', isWorktree: true }))
+    const r = buildPaneCloseOptions(desc({ status: 'changes-ready', isWorktree: true }))
     expect(r.bypass).toBe('prune-close')
   })
 
   it('bypasses a done non-worktree pane with close-non-worktree', () => {
-    const r = buildPaneCloseOptions(desc({ status: 'done', isWorktree: false }))
+    const r = buildPaneCloseOptions(desc({ status: 'changes-ready', isWorktree: false }))
     expect(r.bypass).toBe('close-non-worktree')
   })
 
   it('does NOT bypass a done pane with uncommitted changes', () => {
-    const r = buildPaneCloseOptions(desc({ status: 'done', hasUncommittedChanges: true, changedFileCount: 2 }))
+    const r = buildPaneCloseOptions(desc({ status: 'changes-ready', hasUncommittedChanges: true, changedFileCount: 2 }))
     expect(r.bypass).toBeUndefined()
   })
 
   it('does NOT bypass a done pane with commits ahead of main', () => {
-    const r = buildPaneCloseOptions(desc({ status: 'done', commitsAhead: 3 }))
+    const r = buildPaneCloseOptions(desc({ status: 'changes-ready', commitsAhead: 3 }))
     expect(r.bypass).toBeUndefined()
   })
 })
@@ -62,32 +62,32 @@ describe('buildPaneCloseOptions — bypass paths', () => {
 
 describe('buildPaneCloseOptions — done + unmerged (worktree)', () => {
   it('offers keep, prune, and merge (primary) in that order', () => {
-    const r = buildPaneCloseOptions(desc({ status: 'done', commitsAhead: 2 }))
+    const r = buildPaneCloseOptions(desc({ status: 'changes-ready', commitsAhead: 2 }))
     expect(r.buttons.map((b) => b.action)).toEqual(['keep-close', 'prune-close', 'merge-close'])
     expect(r.buttons[2].variant).toBe('primary')
   })
 
   it('attaches a destructive warning to prune when uncommitted files exist', () => {
-    const r = buildPaneCloseOptions(desc({ status: 'done', hasUncommittedChanges: true, changedFileCount: 4, commitsAhead: 1 }))
+    const r = buildPaneCloseOptions(desc({ status: 'changes-ready', hasUncommittedChanges: true, changedFileCount: 4, commitsAhead: 1 }))
     const prune = r.buttons.find((b) => b.action === 'prune-close')!
     expect(prune.variant).toBe('destructive')
     expect(prune.warning).toBe('4 uncommitted files will be discarded')
   })
 
   it('omits the warning when prune is chosen on a commits-only branch (no uncommitted)', () => {
-    const r = buildPaneCloseOptions(desc({ status: 'done', commitsAhead: 2 }))
+    const r = buildPaneCloseOptions(desc({ status: 'changes-ready', commitsAhead: 2 }))
     const prune = r.buttons.find((b) => b.action === 'prune-close')!
     expect(prune.warning).toBeUndefined()
   })
 
   it('uses singular wording for a single uncommitted file', () => {
-    const r = buildPaneCloseOptions(desc({ status: 'done', hasUncommittedChanges: true, changedFileCount: 1, commitsAhead: 1 }))
+    const r = buildPaneCloseOptions(desc({ status: 'changes-ready', hasUncommittedChanges: true, changedFileCount: 1, commitsAhead: 1 }))
     const prune = r.buttons.find((b) => b.action === 'prune-close')!
     expect(prune.warning).toBe('1 uncommitted file will be discarded')
   })
 
   it('surfaces the unmerged callout with files and commits', () => {
-    const r = buildPaneCloseOptions(desc({ status: 'done', hasUncommittedChanges: true, changedFileCount: 3, commitsAhead: 2 }))
+    const r = buildPaneCloseOptions(desc({ status: 'changes-ready', hasUncommittedChanges: true, changedFileCount: 3, commitsAhead: 2 }))
     expect(r.unmergedCallout).toBe('3 files modified · 2 commits ahead of main')
   })
 })
@@ -97,7 +97,7 @@ describe('buildPaneCloseOptions — done + unmerged (worktree)', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildPaneCloseOptions — busy + worktree', () => {
-  const busyStates: PaneStatus[] = ['working', 'needs-input', 'error']
+  const busyStates: PaneStatus[] = ['working', 'needs-input', 'planning']
 
   for (const status of busyStates) {
     it(`offers only keep-close and prune-close for status ${status}`, () => {
@@ -137,7 +137,7 @@ describe('buildPaneCloseOptions — busy + worktree', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildPaneCloseOptions — non-worktree', () => {
-  const busyStates: PaneStatus[] = ['working', 'needs-input', 'error']
+  const busyStates: PaneStatus[] = ['working', 'needs-input', 'planning']
 
   for (const status of busyStates) {
     it(`offers one Close anyway button for ${status}`, () => {

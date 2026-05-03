@@ -109,6 +109,12 @@ import type {
   GitStashDirtyMainResult,
   GitDiscardDirtyMainPayload,
   GitDiscardDirtyMainResult,
+  GitCommitAllPayload,
+  GitCommitAllResult,
+  GitPaneCommitLogPayload,
+  GitPaneCommitLogResult,
+  GitRewordCommitPayload,
+  GitRewordCommitResult,
   PaneSetUserNamePayload,
   AppConfigSetPayload,
   AppConfigChangedPayload,
@@ -135,7 +141,7 @@ import type { GitStatusPoller } from './git-status-poller'
 import type { CompletionExecutor } from './completion-executor'
 import type { InspectorService } from './inspector'
 import type { PlanApprovalSequencer } from './plan-approval-sequencer'
-import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff } from './git-status'
+import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff, gitCommitAll, getPaneCommitLog, gitRewordCommit } from './git-status'
 import {
   commitDirtyMain,
   stashDirtyMain,
@@ -551,7 +557,9 @@ export function registerIpcHandlers(
           // Unexpected crash — keep pane in registry, mark terminated (B-052)
           // Set terminated flag in registry so close-interceptor sees correct state
           trackPtyCrashed(exitCode, pane.createdAt)
-          sessionRegistry.updatePaneStatus(paneId, 'done', 'pty-fallback')
+          // PTY crashed — `terminated` drives the error highlight; status
+          // collapses to `needs-input` since we can't probe the diff here.
+          sessionRegistry.updatePaneStatus(paneId, 'needs-input', 'pty-fallback')
           pane.terminated = true
 
           if (win && !win.isDestroyed()) {
@@ -843,7 +851,7 @@ export function registerIpcHandlers(
         const isCrash = exitCode !== 0 && !signal
 
         if (isCrash) {
-          sessionRegistry.updatePaneStatus(paneId, 'done', 'pty-fallback')
+          sessionRegistry.updatePaneStatus(paneId, 'needs-input', 'pty-fallback')
           currentPane.terminated = true
           if (win && !win.isDestroyed()) {
             const terminatedPayload: PaneTerminatedPayload = { paneId, exitCode }
@@ -1839,7 +1847,7 @@ export function registerIpcHandlers(
       ? all.filter((p) => p.workspaceId === workspaceId)
       : all
     return pool.filter((pane) => {
-      if (pane.status !== 'done') return false
+      if (pane.status !== 'changes-ready') return false
       if (!pane.isWorktree) return false
       if (pane.terminated) return false
       const git = pane.gitStatus
@@ -2304,6 +2312,58 @@ export function registerIpcHandlers(
   )
 
   // -------------------------------------------------------------------------
+  // ChangesReadyModal commit-message tooling
+  //
+  // git:commit-all       — stage + commit a pane's worktree with a caller-
+  //                        supplied message. Wraps gitCommitAll.
+  // git:pane-commit-log  — list of commits between upstream/base and HEAD,
+  //                        with each commit's pushed-state. Drives the modal's
+  //                        commit list.
+  // git:reword-commit    — rewrite a single unpushed commit's message.
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(
+    IPC.GIT_COMMIT_ALL,
+    async (_event, payload: GitCommitAllPayload): Promise<GitCommitAllResult> => {
+      const { paneId, message } = payload
+      const pane = sessionRegistry.getPane(paneId)
+      if (!pane) return { error: `Unknown pane: ${paneId}` }
+      const trimmed = (message ?? '').trim()
+      if (!trimmed) return { error: 'Commit message cannot be empty.' }
+      const err = await gitCommitAll(pane.worktreePath, trimmed)
+      if (err) return { error: err }
+      // Refresh git status so the modal's UI updates without waiting for the
+      // next 30s poller tick.
+      gitStatusPoller.triggerCheck(paneId)
+      return { error: null }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.GIT_PANE_COMMIT_LOG,
+    async (_event, payload: GitPaneCommitLogPayload): Promise<GitPaneCommitLogResult> => {
+      const { paneId } = payload
+      const pane = sessionRegistry.getPane(paneId)
+      if (!pane) return { error: `Unknown pane: ${paneId}`, commits: [] }
+      const result = await getPaneCommitLog(pane.worktreePath)
+      return { error: result.error, commits: result.commits }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.GIT_REWORD_COMMIT,
+    async (_event, payload: GitRewordCommitPayload): Promise<GitRewordCommitResult> => {
+      const { paneId, sha, message } = payload
+      const pane = sessionRegistry.getPane(paneId)
+      if (!pane) return { error: `Unknown pane: ${paneId}` }
+      const err = await gitRewordCommit(pane.worktreePath, sha, message)
+      if (err) return { error: err }
+      gitStatusPoller.triggerCheck(paneId)
+      return { error: null }
+    }
+  )
+
+  // -------------------------------------------------------------------------
   // workspace:resume-last — resume the most recently closed workspace
   // -------------------------------------------------------------------------
 
@@ -2459,34 +2519,250 @@ export function registerIpcHandlers(
         newWin.webContents.send(IPC.WORKSPACE_INITIAL_SPAWN_BEGIN, beginPayload)
       }
 
-      const { lastSpawnedPaneId } = spawnTerminalsIntoWorkspace(
-        {
-          workspaceId: workspace.id,
-          windowId: winId,
-          win: newWin,
-          treeRepoPaths,
-          terminalCount,
-          worktreeMode: effectiveWorktreeMode,
-          namingMode,
-          manualNames,
-          effortLevel,
-          model: droneModel,
-          perTree
-        },
-        {
-          windowManager,
-          sessionRegistry,
-          ptyPool,
-          hookListener,
-          permissionsManager,
-          statusDetector,
-          metricsCollector,
-          transitionBuffer,
-          gitStatusPoller,
-          paneSpawnBuffer,
-          workspaceManager,
-          planApprovalSequencer,
-          writeGlobalEffortLevel
+      // Track the last successfully spawned pane so we can hand it back to
+      // the renderer as the active pane when the loop completes — guarantees
+      // the bottom Kanban region lands on the most recent terminal regardless
+      // of any per-event ordering races on the renderer side.
+      let lastSpawnedPaneId: string | null = null
+
+      // For 'shared' mode, create one worktree and reuse its path
+      let sharedWorktreePath: string | null = null
+
+      for (let i = 0; i < terminalCount; i++) {
+        try {
+          // Strip a trailing `.worktrees` off the caller's repo path so
+          // drone worktrees don't nest and their panes don't carry
+          // `.worktrees` as the display repo name (L-042 follow-up).
+          const droneRepoPath = normaliseRepoPath(treeRepoPaths[i])
+          // 6 hex chars — matches single-spawn path (line 336) for consistency.
+          const droneSuffix = Math.random().toString(16).slice(2, 8)
+          const autoName = `wt-${droneSuffix}`
+          let spawnPayload: PaneSpawnPayload
+
+          const sanitizeName = (raw: string, fallback: string): string =>
+            raw
+              .replace(/[^\w./-]/g, '-')
+              .replace(/\.{2,}/g, '-')
+              .replace(/-{2,}/g, '-')
+              .replace(/^[-.]|[-.]$/g, '')
+              || fallback
+
+          if (effectiveWorktreeMode === 'shared') {
+            if (perTree) {
+              // Shared + per-repo: each terminal creates its OWN worktree in its
+              // own repo, all sharing the same (manual or auto) branch name.
+              // Path-sharing isn't possible across different repos, so the
+              // "shared" semantic reduces to "shared branch name" here.
+              const rawName = (namingMode === 'manual' && manualNames?.[0]?.trim())
+                || `wt-${droneSuffix}`
+              const wtName = sanitizeName(rawName, `wt-${droneSuffix}`)
+              spawnPayload = {
+                mode: 'new-worktree',
+                repoPath: droneRepoPath,
+                worktreeName: wtName,
+                effort: effortLevel,
+                workspaceId: workspace.id
+              }
+            } else if (i === 0) {
+              // Same repo + shared: first terminal creates the shared worktree
+              const rawName = (namingMode === 'manual' && manualNames?.[0]?.trim())
+                || `wt-${droneSuffix}`
+              const wtName = sanitizeName(rawName, `wt-${droneSuffix}`)
+              spawnPayload = {
+                mode: 'new-worktree',
+                repoPath: droneRepoPath,
+                worktreeName: wtName,
+                effort: effortLevel,
+                workspaceId: workspace.id
+              }
+            } else {
+              // Same repo + shared: subsequent terminals reuse the shared worktree path
+              spawnPayload = {
+                mode: 'existing-worktree',
+                repoPath: droneRepoPath,
+                worktreePath: sharedWorktreePath!,
+                effort: effortLevel,
+                workspaceId: workspace.id
+              }
+            }
+          } else {
+            // each-own mode: each terminal gets its own worktree
+            const rawName = (namingMode === 'manual' && manualNames?.[i]?.trim())
+              || autoName
+            const wtName = sanitizeName(rawName, autoName)
+            spawnPayload = {
+              mode: 'new-worktree',
+              repoPath: droneRepoPath,
+              worktreeName: wtName,
+              effort: effortLevel,
+              workspaceId: workspace.id
+            }
+          }
+
+          // Resolve working directory (mirrors pane:spawn logic)
+          let resolvedWorktreePath: string
+          let repoName: string
+          let worktreeName: string
+
+          if (spawnPayload.mode === 'new-worktree') {
+            const wtName = spawnPayload.worktreeName!
+            fs.mkdirSync(path.join(droneRepoPath, '.worktrees'), { recursive: true })
+            const wtPath = path.join(droneRepoPath, '.worktrees', wtName)
+            execFileSync('git', ['worktree', 'add', wtPath, '-b', wtName], {
+              cwd: droneRepoPath,
+              timeout: 15_000,
+              stdio: 'pipe'
+            })
+            resolvedWorktreePath = wtPath
+            repoName = repoNameFromWorktreePath(wtPath)
+            worktreeName = wtName
+
+            // Record shared path for subsequent terminals
+            if (effectiveWorktreeMode === 'shared' && i === 0) {
+              sharedWorktreePath = wtPath
+            }
+          } else {
+            resolvedWorktreePath = spawnPayload.worktreePath!
+            repoName = repoNameFromWorktreePath(resolvedWorktreePath)
+            worktreeName = path.basename(resolvedWorktreePath)
+          }
+
+          // Spawn the PTY
+          const paneId = sessionRegistry.generatePaneId()
+          recordPtySpawnStart(paneId)
+          permissionsManager.writeSettings(resolvedWorktreePath)
+          // Pre-accept the folder trust dialog (see PermissionsManager).
+          permissionsManager.markFolderTrusted(resolvedWorktreePath)
+          statusDetector.registerPane(paneId, hookListener.socketFailed)
+          metricsCollector.watchPane(paneId)
+          writeGlobalEffortLevel(effortLevel)
+
+          // Gate output until the XTermView mounts its pane:data listener.
+          // This is the critical fix for the "first pane in a new workspace
+          // renders incompletely" race — see pane-spawn-buffer.ts.
+          paneSpawnBuffer.open(paneId, () => {
+            console.warn('[ipc] pane:ready timeout — flushing without listener ack', paneId)
+            const buffered = paneSpawnBuffer.flush(paneId)
+            if (!buffered) return
+            const pane = sessionRegistry.getPane(paneId)
+            if (!pane) return
+            const win = windowManager.getWindow(pane.windowId)
+            if (!win || win.isDestroyed()) return
+            win.webContents.send(IPC.PANE_DATA, { paneId, data: buffered } as PaneDataPayload)
+          })
+
+          // Defer the actual `pty.spawn()` until the renderer reports
+          // xterm's real cols/rows (see PtyPool.prepareSpawn).
+          const { ptyId, isApiBilling } = ptyPool.prepareSpawn({
+            paneId,
+            workingDirectory: resolvedWorktreePath,
+            args: [],
+            model: droneModel,
+            extraEnv: {
+              CLAUDINHA_PANE_ID: paneId,
+              CLAUDINHA_SOCKET_PATH: hookListener.getSocketPath()
+            },
+            onData: (data: string) => {
+              recordPtyFirstData(paneId)
+              transitionBuffer.write(paneId, data)
+              statusDetector.onData(paneId, data)
+              if (paneSpawnBuffer.capture(paneId, data)) return
+              const pane = sessionRegistry.getPane(paneId)
+              if (!pane) return
+              const win = windowManager.getWindow(pane.windowId)
+              if (!win || win.isDestroyed()) return
+              const dataPayload: PaneDataPayload = { paneId, data }
+              win.webContents.send(IPC.PANE_DATA, dataPayload)
+            },
+            onExit: (exitCode: number, signal?: number) => {
+              clearPtySpawnTracking(paneId)
+              transitionBuffer.clear(paneId)
+              paneSpawnBuffer.clear(paneId)
+              gitStatusPoller.unwatchPane(paneId)
+              statusDetector.deregisterPane(paneId)
+              metricsCollector.unwatchPane(paneId)
+
+              const pane = sessionRegistry.getPane(paneId)
+              if (!pane) return
+
+              const win = windowManager.getWindow(pane.windowId)
+              const isCrash = exitCode !== 0 && !signal
+
+              if (isCrash) {
+                trackPtyCrashed(exitCode, pane.createdAt)
+                sessionRegistry.updatePaneStatus(paneId, 'needs-input', 'pty-fallback')
+                pane.terminated = true
+                if (win && !win.isDestroyed()) {
+                  const terminatedPayload: PaneTerminatedPayload = { paneId, exitCode }
+                  win.webContents.send(IPC.PANE_TERMINATED, terminatedPayload)
+                }
+              } else {
+                if (pane.sessionId) {
+                  addSessionHistoryEntry({
+                    sessionId: pane.sessionId,
+                    worktreePath: pane.worktreePath,
+                    repoName: pane.repoName,
+                    worktreeName: pane.worktreeName,
+                    sessionTitle: pane.metrics.sessionTitle,
+                    completedAt: Date.now()
+                  })
+                }
+                workspaceManager.removeDroneFromHive(pane.workspaceId, pane)
+                planApprovalSequencer.onPaneClosed(paneId)
+                sessionRegistry.removePane(paneId)
+                if (win && !win.isDestroyed()) {
+                  const closedPayload: PaneClosedPayload = { paneId }
+                  win.webContents.send(IPC.PANE_CLOSED, closedPayload)
+                }
+              }
+            }
+          })
+
+          const initialMetrics = {
+            totalTokens: null, contextPercent: null, toolsUsed: null,
+            totalCostUsd: null, durationMs: null, modelDisplayName: null,
+            linesAdded: null, linesRemoved: null, sessionTitle: null
+          }
+
+          const paneState: PaneState = {
+            id: paneId, windowId: winId, workspaceId: workspace.id, ptyId,
+            sessionId: null, transcriptPath: null, contextWindowSize: null,
+            repoName, worktreeName, worktreePath: resolvedWorktreePath,
+            status: 'awaiting-prompt', activeToolName: null,
+            statusChangedAt: Date.now(), statusSource: 'pty-fallback',
+            isFocused: false, hasUnseenStatusChange: false, isApiBilling,
+            effort: effortLevel, model: droneModel, metrics: initialMetrics,
+            createdAt: Date.now(),
+            gitStatus: null, isWorktree: spawnPayload.mode === 'new-worktree',
+            completionActionStatus: null
+          }
+
+          sessionRegistry.registerPane(paneState)
+          gitStatusPoller.watchPane(paneId)
+          workspaceManager.addDroneToHive(workspace.id, paneId)
+          registerPaneSpawnMode(paneId, spawnPayload.mode)
+          trackPaneSpawned(spawnPayload.mode, sessionRegistry.getPanesForWindow(winId).length)
+
+          // Send pane:spawned to the new window — by the time spawnDrones()
+          // runs, the renderer's PaneStateProvider has subscribed.
+          const spawnedPayload: PaneSpawnedPayload = {
+            paneId, repoName, worktreeName, worktreePath: resolvedWorktreePath,
+            isApiBilling, effort: effortLevel, model: droneModel,
+            isWorktree: spawnPayload.mode === 'new-worktree'
+          }
+          if (!newWin.isDestroyed()) {
+            newWin.webContents.send(IPC.PANE_SPAWNED, spawnedPayload)
+          }
+          lastSpawnedPaneId = paneId
+
+        } catch (err) {
+          // Loud failure log so missing terminals aren't a silent mystery. The
+          // user has no in-window error UI for batch spawn yet — see the
+          // launch flow notes for context.
+          console.error(
+            `[workspace:create-with-terminals] Terminal ${i + 1}/${terminalCount} failed to spawn:`,
+            err
+          )
         }
       )
 

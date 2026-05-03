@@ -3,6 +3,7 @@ import type { EffortLevel, Model } from '../../shared/types'
 import { IPC } from '../../shared/ipc-channels'
 import { ipcSend } from '../hooks/useIpc'
 import { usePaneState } from '../hooks/usePaneState'
+import { resolvePaneDisplayName } from '../../shared/pane-display'
 import { useAppConfig } from '../hooks/useAppConfig'
 import { HEADER_ROW2_HEIGHT_PX, COMPLETION_BAR_HEIGHT_PX } from '../lib/constants'
 import { PaneBorder } from './PaneBorder'
@@ -11,7 +12,7 @@ import { MetricsOverlay } from './MetricsOverlay'
 import { StatusOverlay } from './StatusOverlay'
 import { ToolUsageRow } from './ToolUsageRow'
 import { WindowPicker } from './WindowPicker'
-import { CompletionActionBar } from './CompletionActionBar'
+import { ChangesReadyModal } from './ChangesReadyModal'
 import { PolicyPopover } from './PolicyPopover'
 import { ModelPopover } from './ModelPopover'
 import { XTermView } from './XTermView'
@@ -107,6 +108,24 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
   const hasWorkToIntegrate =
     (gitStatus?.commitsAhead ?? 0) > 0 || (gitStatus?.hasUncommittedChanges ?? false)
   const [completionDismissed, setCompletionDismissed] = useState(false)
+  // ChangesReadyModal visibility — opened by the in-strip CTA above and by the
+  // global Cmd+Shift+G / Cmd+Shift+R shortcuts (WindowShell dispatches a
+  // CustomEvent the focused pane listens for).
+  const [isChangesReadyOpen, setIsChangesReadyOpen] = useState(false)
+  // Optional initial-focus hint for the modal — set when the user opened it
+  // via Cmd+Shift+G ('merge') or Cmd+Shift+R ('pr'). Cleared on close so the
+  // next CTA-click open doesn't carry stale focus.
+  const [changesReadyFocus, setChangesReadyFocus] = useState<'merge' | 'pr' | null>(null)
+  useEffect(() => {
+    const handler = (e: Event): void => {
+      const detail = (e as CustomEvent).detail as { paneId?: string; menu?: 'merge' | 'pr' } | undefined
+      if (detail?.paneId !== paneId) return
+      setChangesReadyFocus(detail?.menu === 'merge' || detail?.menu === 'pr' ? detail.menu : null)
+      setIsChangesReadyOpen(true)
+    }
+    document.addEventListener('claudinha:open-completion-menu', handler)
+    return () => document.removeEventListener('claudinha:open-completion-menu', handler)
+  }, [paneId])
   // The bar must also stay visible while a completion action is mid-flight or
   // in a terminal result state (merged / pr-created / error / etc). Otherwise
   // a successful merge consumes hasWorkToIntegrate the moment it lands and
@@ -119,7 +138,7 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
     !completionDismissed &&
     (
       (
-        status === 'done' &&
+        status === 'changes-ready' &&
         isWorktreePane &&
         hasWorkToIntegrate &&
         !isOnMainBranch
@@ -127,10 +146,10 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
       hasActiveCompletionState
     )
 
-  // Reset dismissed state when pane leaves 'done' (e.g., conflict resolution restarts work)
+  // Reset dismissed state when pane re-enters changes-ready (e.g., conflict resolution restarts work)
   const prevStatusRef = useRef(status)
   useEffect(() => {
-    if (prevStatusRef.current !== 'done' && status === 'done') {
+    if (prevStatusRef.current !== 'changes-ready' && status === 'changes-ready') {
       setCompletionDismissed(false)
     }
     prevStatusRef.current = status
@@ -228,6 +247,7 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
       <PaneBorder
         status={status}
         terminated={terminated}
+        hasError={completionStatus?.state === 'error'}
         isFocused={isFocused}
         hasUnseenStatusChange={hasUnseenStatusChange}
         chromeMode={chromeMode}
@@ -326,25 +346,34 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
             )}
           </div>
         </div>
-        {/* Completion action bar — sibling of the inner div (not a child) so its
-            full-width gold accent can break out past PaneBorder's chrome via
-            negative margins. Inside the inner div, overflow-hidden was clipping
-            the strip, leaving a visible gap on unfocused panes (where the
-            chrome isn't filled by the focused gold border).
+        {/* "Changes ready" CTA — replaces the old per-pane completion bar.
+            Opens the same ChangesReadyModal the Kanban tile uses, so the merge /
+            push / PR flow is identical across both chrome modes.
 
-            Suppressed in Kanban chrome: the repo rail's per-repo card owns the
-            bulk Merge / Push / Merge+push / Create PR affordances there, so
-            the per-pane bar would only duplicate them. */}
+            Suppressed in Kanban chrome: the kanban tile's pill is the entry
+            point there. */}
         {chromeMode === 'wall' && showCompletionBar && (
-          <CompletionActionBar
-            paneId={paneId}
-            completionStatus={completionStatus}
-            onDismiss={() => setCompletionDismissed(true)}
-            onAction={() => xTermRef.current?.focus()}
-            workspaceId={windowHiveId}
-          />
+          <button
+            type="button"
+            onClick={() => { setChangesReadyFocus(null); setIsChangesReadyOpen(true) }}
+            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-[600] bg-[var(--color-status-done)] text-canvas hover:brightness-110 transition-[filter] duration-[80ms]"
+            style={{ height: COMPLETION_BAR_HEIGHT_PX }}
+            title="Open changes-ready menu"
+          >
+            <span>Changes ready</span>
+            <span aria-hidden="true">▸</span>
+          </button>
         )}
       </PaneBorder>
+      {isChangesReadyOpen && pane && (
+        <ChangesReadyModal
+          paneId={paneId}
+          paneName={resolvePaneDisplayName(pane)}
+          workspaceId={windowHiveId ?? null}
+          initialFocus={changesReadyFocus}
+          onClose={() => { setIsChangesReadyOpen(false); setChangesReadyFocus(null) }}
+        />
+      )}
 
       {/* Status label centered on top border (PRD F5 Layer 2).
           Suppressed in Kanban — the header renders an inline status chip

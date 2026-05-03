@@ -275,7 +275,7 @@ export class InspectorService {
     // L-023: this must match the per-pane Merge button's eligibility in
     // completion-executor.evaluateCompletion.
     const isReadyToMerge =
-      pane.status === 'done' &&
+      pane.status === 'changes-ready' &&
       pane.isWorktree &&
       !onBaseBranch &&
       cache.filesTouched > 0 &&

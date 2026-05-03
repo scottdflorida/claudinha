@@ -11,25 +11,28 @@ import type { MetricsCollector } from './metrics-collector'
 import type { StatusDetector } from './status-detector'
 import type { GitStatusPoller } from './git-status-poller'
 import type { InspectorService } from './inspector'
-import type { WorkspaceManager } from './workspace-manager'
-import { CLAUDE_PATTERNS, classifyStopOutput } from './claude-patterns'
+import { CLAUDE_PATTERNS } from './claude-patterns'
+import { getGitStatus } from './git-status'
 import { trackHookFailure } from './analytics/error-instrumentation'
 
 // ---------------------------------------------------------------------------
 // Hook event → status mapping (PRD F6)
 // ---------------------------------------------------------------------------
 
+/**
+ * Hook events that map directly to a status. Stop / StopFailure are NOT in
+ * this map — they're routed by the synchronous diff probe below (changes
+ * present → 'changes-ready', clean → 'needs-input').
+ */
 const HOOK_STATUS_MAP: Partial<Record<string, PaneStatus>> = {
   SessionStart: 'awaiting-prompt',
   // UserPromptSubmit fires the moment the user submits a prompt, before Claude
   // has called any tool. This is the earliest reliable signal that Claude is
-  // about to think — without it, the pane stays on its previous status (often
-  // 'done') until the first PreToolUse arrives, which can be many seconds.
+  // about to think — without it, the pane stays on its previous status until
+  // the first PreToolUse arrives, which can be many seconds.
   UserPromptSubmit: 'working',
   PreToolUse: 'working',
-  PostToolUse: 'working',
-  Stop: 'done',
-  StopFailure: 'error'
+  PostToolUse: 'working'
 }
 // Notification is intentionally absent from HOOK_STATUS_MAP — it fires for
 // both permission prompts (needs-input) AND task-completion alerts (not
@@ -232,7 +235,7 @@ export class HookListener {
       for (const line of lines) {
         const trimmed = line.trim()
         if (trimmed) {
-          this.handleMessage(trimmed)
+          void this.handleMessage(trimmed)
         }
       }
     })
@@ -242,7 +245,7 @@ export class HookListener {
     })
   }
 
-  private handleMessage(raw: string): void {
+  private async handleMessage(raw: string): Promise<void> {
     let payload: HookPayload
     try {
       payload = JSON.parse(raw) as HookPayload
@@ -325,26 +328,20 @@ export class HookListener {
       }
     }
 
+    // Stop / StopFailure: route based on plan-mode + worktree diff state.
+    //   1. permissionMode=plan + activeToolName=ExitPlanMode  → plan-ready
+    //   2. permissionMode=plan                                → planning
+    //   3. uncommitted edits OR commits ahead of base         → changes-ready
+    //   4. otherwise                                          → needs-input
+    if (hookEventName === 'Stop' || hookEventName === 'StopFailure') {
+      newStatus = await this.routeStopStatus(pane.worktreePath, pane.permissionMode, pane.activeToolName)
+      // Eagerly trigger an immediate poll so the renderer's gitStatus reflects
+      // the same state we just used to route. Otherwise the kanban tile's
+      // next-step pill could lag behind the column placement.
+      this.gitStatusPoller?.triggerCheck(paneId)
+    }
+
     if (!newStatus) return // Unknown event — ignore
-
-    // Refine Stop → needs-input when Claude's last output looks like a question.
-    // Claude often asks "Should I go ahead? Those are the next steps." — a
-    // last-line check would miss the `?` because it's followed by a clarifier.
-    // The classifier scans a tail window for question patterns; tweakable in
-    // claude-patterns.ts.
-    if (hookEventName === 'Stop' && newStatus === 'done' && this.statusDetector) {
-      const lastOutput = this.statusDetector.getLastOutput(paneId)
-      newStatus = classifyStopOutput(lastOutput)
-    }
-
-    // Plan-mode override: Claude Code's plan mode always ends by asking the
-    // user whether to proceed, so a "done" there is really "needs input."
-    // The ? refinement above catches some cases, but plan prompts often use
-    // formats like "Let me know and I'll proceed." (no question mark) — this
-    // is the reliable signal.
-    if (hookEventName === 'Stop' && newStatus === 'done' && pane.permissionMode === 'plan') {
-      newStatus = 'needs-input'
-    }
 
     // activeToolName is only set during the PreToolUse → PostToolUse window
     // for a single tool call. Every other hook event — including PostToolUse —
@@ -435,7 +432,7 @@ export class HookListener {
     }
 
     // Trigger immediate git status check when terminal becomes idle
-    if (newStatus === 'done' || newStatus === 'awaiting-prompt') {
+    if (newStatus === 'changes-ready' || newStatus === 'awaiting-prompt') {
       this.gitStatusPoller?.triggerCheck(paneId)
     }
 
@@ -449,6 +446,36 @@ export class HookListener {
     if (flippedIntoPlanApproval || flippedOutOfPlanApproval) {
       this.inspectorService?.broadcastSummary(pane.workspaceId)
     }
+  }
+
+  /**
+   * Compute the post-Stop status for a pane.
+   *
+   * Plan-mode panes split into `'plan-ready'` (Claude has called
+   * `ExitPlanMode` and is awaiting approval) vs `'planning'` (mid-plan, no
+   * picker yet). Otherwise we run a quick diff probe against the worktree —
+   * any uncommitted edits or commits ahead of base land the pane in
+   * `'changes-ready'`. A clean tree falls through to `'needs-input'`.
+   */
+  private async routeStopStatus(
+    worktreePath: string,
+    permissionMode: 'normal' | 'plan' | undefined,
+    activeToolName: string | null
+  ): Promise<PaneStatus> {
+    if (permissionMode === 'plan') {
+      return activeToolName === 'ExitPlanMode' ? 'plan-ready' : 'planning'
+    }
+    try {
+      const gs = await getGitStatus(worktreePath)
+      if (gs && (gs.hasUncommittedChanges || gs.commitsAhead > 0)) {
+        return 'changes-ready'
+      }
+    } catch (err) {
+      console.warn('[hook-listener] diff probe failed for', worktreePath, err)
+      // Fall through to needs-input — safer than misrouting on a transient
+      // git error.
+    }
+    return 'needs-input'
   }
 
   /**

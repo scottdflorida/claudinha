@@ -964,6 +964,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
                   <KanbanBoard
                     panes={panes}
                     activePaneId={activePaneId}
+                    workspaceId={workspaceId ?? null}
                     onCardClick={selectActivePane}
                     onCloseCard={requestClosePane}
                   />

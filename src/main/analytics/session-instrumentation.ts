@@ -95,7 +95,9 @@ export function trackSessionCompleted(pane: PaneState): void {
       token_bucket: bucketTokens(metrics.totalTokens),
       cost_bucket: pane.isApiBilling ? bucketCost(metrics.totalCostUsd) : 'n/a',
       tool_count: countTools(metrics.toolsUsed),
-      exit_reason: pane.status === 'done' ? 'done' : 'terminated',
+      exit_reason: pane.terminated
+        ? 'terminated'
+        : (pane.status === 'changes-ready' || pane.status === 'needs-input' ? 'done' : 'terminated'),
       duration_bucket: bucketDuration(durationMs),
       final_status: pane.status,
       spawn_mode: spawnMode,

@@ -257,6 +257,16 @@ export const IPC = {
   GIT_STASH_DIRTY_MAIN: 'git:stash-dirty-main',
   GIT_DISCARD_DIRTY_MAIN: 'git:discard-dirty-main',
 
+  // renderer → main (invoke/reply) — ChangesReadyModal commit-message tooling.
+  // GIT_COMMIT_ALL stages + commits the worktree with a caller-supplied
+  // message. GIT_PANE_COMMIT_LOG returns the commit-list shown in the modal
+  // (commits ahead of upstream/base, plus pushed-state per row).
+  // GIT_REWORD_COMMIT rewrites a single unpushed commit's message via amend
+  // (tip) or non-interactive rebase (older); refuses if pushed or worktree dirty.
+  GIT_COMMIT_ALL: 'git:commit-all',
+  GIT_PANE_COMMIT_LOG: 'git:pane-commit-log',
+  GIT_REWORD_COMMIT: 'git:reword-commit',
+
   // renderer → main (fire-and-forget) — set per-pane user name override (Kanban inline rename)
   PANE_SET_USER_NAME: 'pane:set-user-name',
 
@@ -1458,5 +1468,67 @@ export interface GitDiscardDirtyMainPayload {
 }
 
 export interface GitDiscardDirtyMainResult {
+  error: string | null
+}
+
+// ---------------------------------------------------------------------------
+// ChangesReadyModal commit-message tooling
+// ---------------------------------------------------------------------------
+
+/**
+ * git:commit-all — stage every change in the pane's worktree and commit with
+ * the supplied message. Empty trees succeed silently (the existing
+ * gitCommitAll swallows "nothing to commit").
+ */
+export interface GitCommitAllPayload {
+  paneId: string
+  message: string
+}
+
+export interface GitCommitAllResult {
+  error: string | null
+}
+
+/**
+ * git:pane-commit-log — list of commits between upstream (or base) and HEAD
+ * for the given pane. Used by ChangesReadyModal's commit list. Capped at
+ * MAX_COMMITS in the handler to keep rendering bounded.
+ *
+ * `pushed` is true when the commit is reachable from `origin/<branch>` —
+ * editing it would require a force-push and is therefore disallowed by the
+ * reword handler.
+ */
+export interface GitPaneCommitLogPayload {
+  paneId: string
+}
+
+export interface CommitInfo {
+  sha: string
+  shortSha: string
+  subject: string
+  body: string
+  pushed: boolean
+}
+
+export interface GitPaneCommitLogResult {
+  error: string | null
+  commits: CommitInfo[]
+}
+
+/**
+ * git:reword-commit — rewrite a single commit's message. Refuses if:
+ *   - the commit is already reachable from the branch's upstream (would
+ *     require force-push)
+ *   - the worktree is dirty (rebase/amend would conflict with pending changes)
+ * For the tip commit uses `git commit --amend -m`; for older commits uses a
+ * non-interactive rebase via GIT_SEQUENCE_EDITOR + GIT_EDITOR.
+ */
+export interface GitRewordCommitPayload {
+  paneId: string
+  sha: string
+  message: string
+}
+
+export interface GitRewordCommitResult {
   error: string | null
 }

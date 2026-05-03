@@ -116,7 +116,14 @@ describe('KanbanBoard', () => {
     )
     // First text node in each header is the column title (count is the second).
     const titles = headers.filter((t) => t && !/^\d+$/.test(t!))
-    expect(titles).toEqual(['Awaiting prompt', 'Working', 'Needs input', 'Done', 'Error'])
+    expect(titles).toEqual([
+      'Awaiting orders',
+      'Planning',
+      'Plan ready',
+      'Needs input',
+      'Working',
+      'Changes ready'
+    ])
   })
 
   it('groups panes into columns by status', () => {
@@ -124,39 +131,42 @@ describe('KanbanBoard', () => {
       makePane({ id: 'p1', status: 'needs-input' }),
       makePane({ id: 'p2', status: 'working' }),
       makePane({ id: 'p3', status: 'working' }),
-      makePane({ id: 'p4', status: 'done' }),
-      makePane({ id: 'p5', status: 'awaiting-prompt' })
+      makePane({ id: 'p4', status: 'changes-ready' }),
+      makePane({ id: 'p5', status: 'awaiting-prompt' }),
+      makePane({ id: 'p6', status: 'planning' }),
+      makePane({ id: 'p7', status: 'plan-ready' })
     ]
     const { container } = render(
       <KanbanBoard panes={panes} activePaneId={null} onCardClick={() => {}} />
     )
     expect(cardCount(columnFor(container, 'Needs input'))).toBe(1)
     expect(cardCount(columnFor(container, 'Working'))).toBe(2)
-    expect(cardCount(columnFor(container, 'Done'))).toBe(1)
-    expect(cardCount(columnFor(container, 'Awaiting prompt'))).toBe(1)
-    expect(cardCount(columnFor(container, 'Error'))).toBe(0)
+    expect(cardCount(columnFor(container, 'Changes ready'))).toBe(1)
+    expect(cardCount(columnFor(container, 'Awaiting orders'))).toBe(1)
+    expect(cardCount(columnFor(container, 'Planning'))).toBe(1)
+    expect(cardCount(columnFor(container, 'Plan ready'))).toBe(1)
   })
 
-  it('sends terminated panes to the error column even if status is not "error"', () => {
+  it('keeps terminated panes in their status column with a red border', () => {
+    // Errors are no longer their own column — `terminated` drives the red
+    // PaneBorder highlight while the pane stays where its status puts it.
     const panes: RendererPane[] = [
       makePane({ id: 'crashed', status: 'working', terminated: true })
     ]
     const { container } = render(
       <KanbanBoard panes={panes} activePaneId={null} onCardClick={() => {}} />
     )
-    expect(cardCount(columnFor(container, 'Error'))).toBe(1)
-    expect(cardCount(columnFor(container, 'Working'))).toBe(0)
+    expect(cardCount(columnFor(container, 'Working'))).toBe(1)
   })
 
-  it('keeps a "done" pane in the Done column when only the post-done automation errored', () => {
-    // Per concept doc "Error column definition": agent-broken vs.
-    // automation-broken are kept distinct. A pane with PaneStatus === 'done'
-    // but completionStatus.state === 'error' belongs in Done with a sync
-    // indicator, NOT in the Error column.
+  it('keeps a changes-ready pane in Changes ready when only the post-stop automation errored', () => {
+    // A pane with PaneStatus === 'changes-ready' but
+    // completionStatus.state === 'error' belongs in Changes ready with the
+    // tile's action-warn glyph, not in a separate Error column.
     const panes: RendererPane[] = [
       makePane({
         id: 'merge-failed',
-        status: 'done',
+        status: 'changes-ready',
         terminated: false,
         completionStatus: { state: 'error', errorMessage: 'merge conflict' }
       })
@@ -164,8 +174,7 @@ describe('KanbanBoard', () => {
     const { container } = render(
       <KanbanBoard panes={panes} activePaneId={null} onCardClick={() => {}} />
     )
-    expect(cardCount(columnFor(container, 'Done'))).toBe(1)
-    expect(cardCount(columnFor(container, 'Error'))).toBe(0)
+    expect(cardCount(columnFor(container, 'Changes ready'))).toBe(1)
   })
 
   it('renders a placeholder dash in empty columns (L-024 — fixtures stay visible)', () => {
@@ -176,9 +185,7 @@ describe('KanbanBoard', () => {
         onCardClick={() => {}}
       />
     )
-    // The Needs input / Awaiting prompt / Done / Error columns are empty and
-    // should each render an em-dash placeholder rather than collapsing.
-    for (const title of ['Needs input', 'Awaiting prompt', 'Done', 'Error']) {
+    for (const title of ['Needs input', 'Awaiting orders', 'Changes ready', 'Planning', 'Plan ready']) {
       const col = columnFor(container, title)
       const placeholder = within(col).queryByText('—')
       expect(placeholder).not.toBeNull()
@@ -244,17 +251,19 @@ describe('KanbanBoard — status colors match Wall', () => {
     // (the existing semantic name in globals.css).
     const expectedVarByStatus: Partial<Record<PaneStatus, string>> = {
       'awaiting-prompt': 'var(--color-status-awaiting)',
+      'planning':        'var(--color-status-needs-input)',
+      'plan-ready':      'var(--color-status-needs-input)',
       'working':         'var(--color-status-working)',
       'needs-input':     'var(--color-status-needs-input)',
-      'done':            'var(--color-status-done)',
-      'error':           'var(--color-status-lost)',
+      'changes-ready':   'var(--color-status-done)'
     }
     const titlesByStatus: Partial<Record<PaneStatus, string>> = {
-      'awaiting-prompt': 'Awaiting prompt',
+      'awaiting-prompt': 'Awaiting orders',
+      'planning': 'Planning',
+      'plan-ready': 'Plan ready',
       'working': 'Working',
       'needs-input': 'Needs input',
-      'done': 'Done',
-      'error': 'Error'
+      'changes-ready': 'Changes ready'
     }
     const { container } = render(
       <KanbanBoard panes={[]} activePaneId={null} onCardClick={() => {}} />

@@ -290,13 +290,11 @@ function PaneRow({ pane }: { pane: ReadyPaneEntry }): React.JSX.Element {
   const t = useStrings()
   const statusDot = pane.isReadyToMerge
     ? 'bg-accent'
-    : pane.paneStatus === 'working'
+    : pane.paneStatus === 'working' || pane.paneStatus === 'planning'
       ? 'bg-yellow-400'
-      : pane.paneStatus === 'needs-input'
+      : pane.paneStatus === 'needs-input' || pane.paneStatus === 'plan-ready'
         ? 'bg-orange-400'
-        : pane.paneStatus === 'error'
-          ? 'bg-red-500'
-          : 'bg-zinc-500'
+        : 'bg-zinc-500'
   return (
     <li className="flex items-start gap-2 text-xs">
       <span className={`inline-block w-2 h-2 rounded-full mt-1.5 shrink-0 ${statusDot}`} />

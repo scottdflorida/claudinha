@@ -30,10 +30,11 @@ interface StatusOverlayProps {
 
 const STATUS_LABELS: Record<PaneStatus, string> = {
   'awaiting-prompt': 'Awaiting orders',
-  working: 'Working',
+  planning: 'Planning',
+  'plan-ready': 'Plan ready',
   'needs-input': 'Needs input',
-  done: 'Done',
-  error: 'Error'
+  working: 'Working',
+  'changes-ready': 'Changes ready'
 }
 
 /**
@@ -50,10 +51,11 @@ export function formatStatusLabel(
   const labels: Record<PaneStatus, string> = localized
     ? {
         'awaiting-prompt': localized.statusOverlay.labelAwaitingOrders,
+        planning: 'Planning',
+        'plan-ready': 'Plan ready',
         working: localized.statusOverlay.labelWorking,
         'needs-input': localized.statusOverlay.labelNeedsInput,
-        done: localized.statusOverlay.labelDone,
-        error: localized.statusOverlay.labelError
+        'changes-ready': localized.statusOverlay.labelDone
       }
     : STATUS_LABELS
   const lostLabel = localized?.statusOverlay.labelLost ?? 'Lost'
@@ -91,12 +93,14 @@ type StatusIconProps = {
 
 function StatusIcon({ status, terminated, isResolvingConflict, color }: StatusIconProps): React.JSX.Element {
   const props = { size: 14, style: { color }, className: 'flex-shrink-0' }
-  if (terminated || status === 'error') return <AlertTriangle {...props} />
+  if (terminated) return <AlertTriangle {...props} />
   if (isResolvingConflict) return <GitMerge {...props} />
   if (status === 'awaiting-prompt') return <Circle {...props} />
   if (status === 'working') return <CircleDot {...props} />
   if (status === 'needs-input') return <ArrowDownToLine {...props} />
-  if (status === 'done') return <CircleCheck {...props} />
+  if (status === 'plan-ready') return <ArrowDownToLine {...props} />
+  if (status === 'planning') return <CircleDot {...props} />
+  if (status === 'changes-ready') return <CircleCheck {...props} />
   return <Circle {...props} />
 }
 
@@ -120,7 +124,7 @@ export function StatusOverlay({
   if (
     !terminated &&
     !isResolvingConflict &&
-    (status === 'done' || status === 'awaiting-prompt') &&
+    (status === 'changes-ready' || status === 'awaiting-prompt') &&
     gitStatus
   ) {
     const parts: string[] = []

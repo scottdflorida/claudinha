@@ -720,7 +720,7 @@ app.whenReady().then(() => {
   // Track window closures (B-080)
   windowManager.onWindowClose((windowId) => {
     const hasActive = sessionRegistry.getPanesForWindow(windowId).some(
-      (p) => p.status !== 'done' && !p.terminated
+      (p) => p.status !== 'awaiting-prompt' && !p.terminated
     )
     trackWindowClosed(hasActive, windowManager.count)
 
@@ -779,7 +779,7 @@ app.on('before-quit', () => {
   // PTYs will be killed per-window when the user confirms.
   for (const [id] of windowManager.getAllWindows()) {
     const panes = sessionRegistry.getPanesForWindow(id)
-    if (panes.some((p) => p.status !== 'done' && !p.terminated)) {
+    if (panes.some((p) => p.status !== 'awaiting-prompt' && !p.terminated)) {
       // Active sessions exist — defer PTY cleanup to confirmation flow
       return
     }

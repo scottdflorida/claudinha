@@ -9,6 +9,12 @@ import { STATUS_COLORS, STATUS_TERMINATED_COLOR } from '../lib/constants'
 interface PaneBorderProps {
   status: PaneStatus
   terminated: boolean
+  /**
+   * Transient action-failure (e.g. completion-action error). Treated as a
+   * red-border condition just like `terminated`, but drives no focus/halo
+   * geometry change beyond color. Status placement is unaffected.
+   */
+  hasError?: boolean
   isFocused: boolean
   hasUnseenStatusChange?: boolean
   /**
@@ -45,6 +51,7 @@ interface PaneBorderProps {
 export function PaneBorder({
   status,
   terminated,
+  hasError = false,
   isFocused,
   hasUnseenStatusChange = false,
   chromeMode = 'wall',
@@ -56,15 +63,18 @@ export function PaneBorder({
     isFocused = false
     hasUnseenStatusChange = false
   }
-  const color = terminated ? STATUS_TERMINATED_COLOR : STATUS_COLORS[status]
-  const isError = status === 'error' || terminated
+  // Red border whenever the pane is in an error condition: PTY terminated or
+  // a transient action failure (completionStatus.state === 'error'). Either
+  // path uses STATUS_TERMINATED_COLOR; status placement / column is unaffected.
+  const isError = terminated || hasError
+  const color = isError ? STATUS_TERMINATED_COLOR : STATUS_COLORS[status]
 
   // Pulse when unfocused + unseen status change to needs-input / done / error
   const shouldPulse =
     !isFocused &&
     !terminated &&
     hasUnseenStatusChange &&
-    (status === 'needs-input' || status === 'done' || status === 'error')
+    (status === 'needs-input' || status === 'plan-ready' || status === 'changes-ready')
 
   // One-time error lift on transition into error/lost while unfocused
   const [isLifting, setIsLifting] = useState(false)

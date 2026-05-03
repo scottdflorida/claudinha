@@ -43,6 +43,10 @@ export interface GitStatus {
   changedFileCount: number
   /** Number of commits ahead of main/master */
   commitsAhead: number
+  /** Number of commits the local base branch (main/master) has ahead of
+   *  origin/<base>. Drives the "↑N to push" pill on changes-ready tiles
+   *  after a local merge. Null when no remote tracking ref exists. */
+  baseBranchAheadOfRemote: number | null
   /** Current branch name */
   branchName: string | null
 }
@@ -199,7 +203,29 @@ export interface ActivePaneSummary {
 // PaneStatus
 // ---------------------------------------------------------------------------
 
-export type PaneStatus = 'awaiting-prompt' | 'working' | 'needs-input' | 'done' | 'error'
+/**
+ * PaneStatus — the lifecycle bucket a pane sits in on the Kanban board.
+ *
+ * `'changes-ready'` replaces the old `'done'` status: a pane lands here when
+ * its agent has stopped and the worktree has uncommitted edits or commits
+ * ahead of base. A stop with a clean tree routes to `'needs-input'` instead.
+ *
+ * `'planning'` and `'plan-ready'` are first-class statuses — `'planning'`
+ * while Claude is in plan mode but hasn't yet called `ExitPlanMode`,
+ * `'plan-ready'` once it has and the user is being asked to approve.
+ *
+ * Errors are no longer a status of their own. Crashed PTYs are signalled via
+ * `PaneState.terminated`; transient action errors live on
+ * `completionActionStatus.state === 'error'`. Both are rendered as a red
+ * border on whichever column the pane currently sits in.
+ */
+export type PaneStatus =
+  | 'awaiting-prompt'
+  | 'planning'
+  | 'plan-ready'
+  | 'needs-input'
+  | 'working'
+  | 'changes-ready'
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 

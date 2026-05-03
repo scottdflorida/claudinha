@@ -46,10 +46,11 @@ export interface PaneCloseResolution {
 
 const STATUS_COPY: Record<PaneStatus, string> = {
   'awaiting-prompt': 'Session is awaiting a prompt',
+  'planning': 'Terminal is planning',
+  'plan-ready': 'Terminal is awaiting plan approval',
   'working': 'Terminal is actively working',
   'needs-input': 'Terminal is waiting for input',
-  'done': 'Terminal has finished',
-  'error': 'Terminal is in an error state'
+  'changes-ready': 'Terminal has finished with changes ready'
 }
 
 /**
@@ -105,7 +106,7 @@ export function buildPaneCloseOptions(descriptor: PaneCloseDescriptor): PaneClos
       buttons: []
     }
   }
-  if (status === 'done' && !unmerged) {
+  if (status === 'changes-ready' && !unmerged) {
     return {
       bypass: isWorktree ? 'prune-close' : 'close-non-worktree',
       statusLine: STATUS_COPY[status],
@@ -126,7 +127,7 @@ export function buildPaneCloseOptions(descriptor: PaneCloseDescriptor): PaneClos
   }
 
   // -------- Worktree, done + unmerged: full 3-action set with merge as primary --------
-  if (status === 'done' && unmerged) {
+  if (status === 'changes-ready' && unmerged) {
     return {
       statusLine: STATUS_COPY[status],
       unmergedCallout,

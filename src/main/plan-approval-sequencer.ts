@@ -72,16 +72,12 @@ interface RepoSequenceContext {
 
 /**
  * Predicate: is a pane currently sitting on Claude Code's plan-approval
- * picker? The primary signal is the `ExitPlanMode` tool name set by the
- * `PreToolUse` hook. The `permissionMode === 'plan'` fallback catches the
- * case where hooks aren't firing for a pane (e.g., relay issues) but the
- * PTY-based mode detector has seen the plan-mode footer.
+ * picker? Now a direct status check — the new `'plan-ready'` status is set
+ * by the hook router whenever a Stop event arrives in plan mode with
+ * `activeToolName === 'ExitPlanMode'`.
  */
 export function isPaneAwaitingPlanApproval(pane: PaneState): boolean {
-  if (pane.status !== 'needs-input') return false
-  if (pane.activeToolName === 'ExitPlanMode') return true
-  if (pane.permissionMode === 'plan') return true
-  return false
+  return pane.status === 'plan-ready'
 }
 
 /**

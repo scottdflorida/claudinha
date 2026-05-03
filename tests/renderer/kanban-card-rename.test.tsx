@@ -255,8 +255,8 @@ describe('KanbanCard — activity row (only when working)', () => {
     expect(getByText(/Working/)).toBeTruthy()
   })
 
-  it('does NOT render an activity row for done / needs-input / awaiting-prompt', () => {
-    for (const status of ['done', 'needs-input', 'awaiting-prompt'] as const) {
+  it('does NOT render an activity row for changes-ready / needs-input / awaiting-prompt', () => {
+    for (const status of ['changes-ready', 'needs-input', 'awaiting-prompt'] as const) {
       const { queryByText, unmount } = render(
         <KanbanCard
           pane={makePane({ status })}
@@ -273,7 +273,9 @@ describe('KanbanCard — activity row (only when working)', () => {
   })
 })
 
-describe('KanbanCard — plan mode badge', () => {
+// Plan mode badges were removed in the kanban redesign — column placement
+// (Planning / Plan ready) carries the signal now.
+describe.skip('KanbanCard — plan mode badge', () => {
   it('renders a PLANNING badge when permissionMode is "plan" and the agent is still drafting', () => {
     const { getByText, queryByText } = render(
       <KanbanCard
@@ -359,7 +361,9 @@ describe('KanbanCard — focus indicator (feedback item 11)', () => {
   })
 })
 
-describe('KanbanCard — uncommitted indicator placement', () => {
+// Uncommitted indicator was rolled into the next-step pill on the
+// changes-ready tile — see ChangesReadyModal for the new contract.
+describe.skip('KanbanCard — uncommitted indicator placement', () => {
   it('renders "Uncommitted" adjacent to the diff chip (left side of footer)', () => {
     const { getByLabelText, getByText } = render(
       <KanbanCard
@@ -426,7 +430,9 @@ describe('KanbanCard — no effort indicator (feedback item 9)', () => {
   })
 })
 
-describe('KanbanCard — diff chip', () => {
+// Standalone diff chip was replaced by the next-step pill — opens the
+// ChangesReadyModal which embeds the diff viewer as a sub-modal.
+describe.skip('KanbanCard — diff chip', () => {
   it('clicking the diff chip invokes onDiffClick (not the card click)', () => {
     const onClick = vi.fn()
     const onDiffClick = vi.fn()
@@ -470,7 +476,9 @@ describe('KanbanCard — diff chip', () => {
   })
 })
 
-describe('KanbanCard — sync indicator placement', () => {
+// Sync indicator slot was removed — the next-step pill collapses sync state
+// into the same slot for changes-ready tiles, and other columns show no sync.
+describe.skip('KanbanCard — sync indicator placement', () => {
   // Regression: Done/merged cards used to render a near-empty footer row
   // just to hold the right-aligned "Merged" badge, which doubled the card
   // height. The badge must live in the title row so cards without diff or

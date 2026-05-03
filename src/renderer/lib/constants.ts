@@ -43,10 +43,11 @@ export const HEADER_BG   = '#1A1F1C'  // = bg-surface-dark
 
 export const STATUS_COLORS: Record<PaneStatus, string> = {
   'awaiting-prompt': '#848D82',  // fg-muted
-  'working':         '#E9EDE6',  // high-contrast neutral
+  'planning':        '#9FBFD8',  // info-fg — Claude is mid-plan
+  'plan-ready':      '#47978c',  // teal — plan awaiting user approval
   'needs-input':     '#b0b9f9',  // soft lavender
-  'done':            '#D6A240',  // buttery amber (same value in dark + light)
-  'error':           '#DB4D3F',  // warm red (= status-lost)
+  'working':         '#E9EDE6',  // high-contrast neutral
+  'changes-ready':   '#D6A240',  // buttery amber (replaces old 'done')
 }
 
 /** Border color for a crashed/terminated PTY */
@@ -64,11 +65,6 @@ export const NEUTRAL_TEXT_COLOR = '#848D82'  // = fg-muted
 
 export const GIT_UNCOMMITTED_COLOR     = '#D6A240'  // status-done hue for "dirty"
 export const GIT_AHEAD_COLOR           = '#79C991'  // success-fg
-
-export const COMPLETION_MERGE_COLOR    = '#79C991'  // success-fg
-export const COMPLETION_PR_COLOR       = '#9FBFD8'  // info-fg (distinct from accent + status-needs-input)
-export const COMPLETION_ERROR_COLOR    = '#D9816E'  // danger-fg
-export const COMPLETION_CONFLICT_COLOR = '#D9B37A'  // warning-fg
 
 // ---------------------------------------------------------------------------
 // Animation
