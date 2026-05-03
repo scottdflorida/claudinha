@@ -1135,3 +1135,28 @@ Decision rule when adding a new value to a state union that already drives mode-
 
 Related: L-044 (the parent lesson — same audit framing, narrower scope at the time). L-024 (permanent UI fixtures must stay visible) — same family: invisible failure modes only show up when the rare condition fires, so the audit must be exhaustive at definition time, not at observation time.
 
+---
+
+## L-057: When widening a state-union gate, distinguish *manual* call sites (user-driven) from *automatic* call sites (policy-driven) — they have different correctness criteria
+
+**Date:** 2026-04-27
+**Source:** User feedback — an agent finished its work, produced an unmerged diff, and ended its turn by asking the user a clarifying question. The pane correctly entered `'needs-input'`, but the Kanban Merge button stayed disabled because eligibility was gated on `pane.status === 'done'`.
+**Category:** state-machine design / scope discipline
+
+**What happened:**
+Three call sites guarded merge eligibility on `pane.status === 'done'`: (1) `inspector.ts` `buildTreeEntry` (governs the Merge button via `readyCount`), (2) `completion-executor.ts` `executeMerge` (governs the IPC-invoked manual merge), and (3) `completion-executor.ts` `processQueuedMerge` (re-checks when a queued merge reaches the front of the queue). All three needed to widen — the user wants merge available whenever a diff exists and the agent isn't actively writing more code. But a fourth call site, `evaluateCompletion`, *also* gated on `'done'`, and that one had to stay narrow: it's the auto-policy entry point that fires `auto-merge` / `auto-pr` / `auto-draft-pr` when an agent reaches `'done'`. Auto-firing while the agent is in `'needs-input'` would steal focus from a question the agent is actively asking the user.
+
+**Why the agent got it wrong:**
+The natural impulse when widening a state-union gate is to grep for every `=== 'done'` and apply the same widening uniformly — "consistency is good, drift is bad" (L-023). That impulse is correct for call sites with the *same* correctness criterion, and wrong for call sites with *different* ones. The four call sites looked identical at the syntactic level (`pane.status === 'done'`) but lived on different sides of an invisible split: three of them were "may the user choose to do this?" (manual gates — widen freely whenever the work product is settled) and one was "should the system act on the user's behalf without asking?" (auto-policy gate — keep narrow because auto-action during `'needs-input'` is hostile, not helpful). The shared *expression* hid the unshared *intent*.
+
+This is also why a single shared helper (`isPaneStatusMergeable`) is the right structural fix for the manual gates but explicitly the wrong abstraction for the auto-policy site. Calling the same helper everywhere would make a future agent quietly broaden the auto-policy gate during a refactor. The asymmetry has to be load-bearing in the code, not just in a comment.
+
+**How to avoid this in the future:**
+Before widening any state-union gate, classify each call site by *who is initiating the action*: a user pressing a button (manual — widen permissively, the user knows what they want), or the system reacting to a state change (automatic — stay narrow, only fire on signals that genuinely mean "this is the right moment"). Apply the same widening only within a single class. When call sites diverge, encode the divergence as separate predicates with names that describe *intent*, not *state shape*: `isPaneStatusMergeable` (manual) vs. inline `pane.status === 'done'` with a comment naming the asymmetry (auto). The comment at the narrow site must explicitly forbid future "consistency-fixes" that reach for the shared helper.
+
+Decision rule when grepping for `=== 'X'` to widen a gate: for each hit, ask *"if a user pressed a button to invoke this code path right now in state Y, would they be correct?"* If yes, widen. If the code path is invoked *for* the user by the system, ask the harder question: *"if the system fires this action right now in state Y without asking, will the user be glad it did?"* `'needs-input'` is the canonical state where the answer flips between those two questions — a user clicking Merge in `'needs-input'` is fine; the system auto-merging in `'needs-input'` is not.
+
+Self-check before any state-union widening: *"Of the call sites I'm widening, which are user-initiated and which are system-initiated? Do they all share the same correctness criterion, or am I about to flatten an asymmetry the codebase needed?"*
+
+Related: L-055 (re-audit when the state union grows — this is the audit; this lesson is the *follow-on* about not flattening call-site asymmetry during the audit). L-054 (shared context gate for related affordances — same theme of "consistency where it's load-bearing, divergence where it's load-bearing"). L-023 (the comment-based "these must agree" pattern — replaced here by a structural shared helper for the manual sites and a deliberate non-shared inline check for the auto site).
+
