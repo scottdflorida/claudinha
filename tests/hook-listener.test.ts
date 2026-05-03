@@ -497,6 +497,74 @@ describe('HookListener', () => {
   })
 
   // -------------------------------------------------------------------------
+  // PreToolUse override for input-blocking tools
+  // -------------------------------------------------------------------------
+
+  describe('PreToolUse override for input-blocking tools', () => {
+    it('routes ExitPlanMode to plan-ready (Stop never fires while waiting at plan picker)', async () => {
+      // Regression: ExitPlanMode used to land in 'needs-input' alongside
+      // AskUserQuestion. The Plan Ready column never filled because Stop
+      // doesn't fire while Claude waits at the picker — the PreToolUse
+      // override IS the load-bearing assignment.
+      const pane = makePaneState({ status: 'working', activeToolName: null })
+      registry.getPane.mockReturnValue(pane)
+
+      await sendPayload(socketPath, {
+        hookEventName: 'PreToolUse',
+        paneId: 'pane-1',
+        tool_name: 'ExitPlanMode'
+      })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'plan-ready',
+        'hook',
+        'ExitPlanMode'
+      )
+    })
+
+    it('routes AskUserQuestion to needs-input (override stays scoped)', async () => {
+      // Confirms the ExitPlanMode special case didn't accidentally regress
+      // the other input-blocking tool's routing.
+      const pane = makePaneState({ status: 'working', activeToolName: null })
+      registry.getPane.mockReturnValue(pane)
+
+      await sendPayload(socketPath, {
+        hookEventName: 'PreToolUse',
+        paneId: 'pane-1',
+        tool_name: 'AskUserQuestion'
+      })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'needs-input',
+        'hook',
+        'AskUserQuestion'
+      )
+    })
+
+    it('routes a non-input-blocking tool to working (override does not fire)', async () => {
+      // Sanity check: tools outside the override set still get the generic
+      // 'working' label from HOOK_STATUS_MAP.
+      const pane = makePaneState({ status: 'awaiting-prompt', activeToolName: null })
+      registry.getPane.mockReturnValue(pane)
+
+      await sendPayload(socketPath, {
+        hookEventName: 'PreToolUse',
+        paneId: 'pane-1',
+        tool_name: 'Read'
+      })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'working',
+        'hook',
+        'Read'
+      )
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // PostCompact
   // -------------------------------------------------------------------------
 

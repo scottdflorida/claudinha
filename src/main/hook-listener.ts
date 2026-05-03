@@ -354,9 +354,17 @@ export class HookListener {
         ? String(payload.tool_name)
         : null
 
-    // Tools that block on user input should be 'needs-input', not 'working'.
-    if (hookEventName === 'PreToolUse' && activeToolName && NEEDS_INPUT_TOOLS.has(activeToolName)) {
-      newStatus = 'needs-input'
+    // Tools that block on user input get a more specific status than 'working'.
+    // ExitPlanMode lands the pane in 'plan-ready' — Claude is mid-tool-call
+    // (Stop won't fire until the user picks an option and Claude resumes), so
+    // this PreToolUse override is the load-bearing assignment for the Plan
+    // Ready column. Other input-blocking tools fall through to 'needs-input'.
+    if (hookEventName === 'PreToolUse' && activeToolName) {
+      if (activeToolName === 'ExitPlanMode') {
+        newStatus = 'plan-ready'
+      } else if (NEEDS_INPUT_TOOLS.has(activeToolName)) {
+        newStatus = 'needs-input'
+      }
     }
 
     // Only emit pane:status IPC when status or activeToolName actually changes
@@ -451,6 +459,13 @@ export class HookListener {
 
   /**
    * Compute the post-Stop status for a pane.
+   *
+   * Note on plan-ready: in normal operation, plan-ready is set by the
+   * PreToolUse override above (`activeToolName === 'ExitPlanMode'`) — Stop
+   * doesn't fire while Claude is waiting at the plan picker because the
+   * tool hasn't returned. This branch is a safety net for unusual paths
+   * where Stop somehow fires after ExitPlanMode (e.g. a malformed hook
+   * sequence or a forced stop).
    *
    * Order matters and is intentional:
    *   1. `activeToolName === 'ExitPlanMode'` → `'plan-ready'`. ExitPlanMode is
