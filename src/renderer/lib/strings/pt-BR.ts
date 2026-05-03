@@ -709,32 +709,7 @@ export const ptBR: Strings = {
     approveInSequenceTooltip: 'Aprova cada plano com auto-accept edits, iniciando o próximo quando o atual termina.',
     retryFailedMerges: 'Repetir merges com falha',
     retryFailedMergesTooltip: 'Repete cada árvore neste repositório cujo último merge falhou. Usa rebase-ff.',
-    noActiveAgents: 'Nenhum agente ativo.',
-    changeReport: {
-      button: (pending: number): string =>
-        pending === 0 ? 'Relatório de mudanças' : `Relatório de mudanças (${pending} para verificar)`,
-      tooltip: 'Abrir a lista gerada automaticamente das mudanças mescladas neste repositório.',
-      modalTitle: (repoLabel: string): string => `Relatório de mudanças — ${repoLabel}`,
-      pendingHeader: 'Mudanças a verificar',
-      verifiedHeader: 'Mudanças verificadas',
-      pendingEmpty: 'Nenhuma mudança aguardando verificação.',
-      verifiedEmpty: 'Nenhuma mudança verificada ainda.',
-      filesChanged: 'Arquivos alterados',
-      filesMore: (n: number): string => `+ ${n} a mais`,
-      llmFailedNote: 'Falha ao gerar o resumo automático; verifique o diff manualmente.',
-      llmPendingNote: 'Gerando resumo automático…',
-      clearVerified: 'Limpar verificadas',
-      clearVerifiedConfirm: (n: number): string =>
-        n === 1 ? 'Remover 1 entrada verificada?' : `Remover ${n} entradas verificadas?`,
-      clearVerifiedCancel: 'Cancelar',
-      clearVerifiedDisabled: 'Nada verificado para limpar.',
-      subProgress: (done: number, total: number): string => `${done} de ${total} verificados`,
-      mergedAt: (when: string): string => `Mesclado ${when}`,
-      agentLabel: 'Agente',
-      strategyLabel: (strategy: string): string => `Estratégia: ${strategy}`,
-      branchLabel: (branch: string): string => `Para ${branch}`,
-      closeButton: 'Fechar'
-    }
+    noActiveAgents: 'Nenhum agente ativo.'
   },
 
   completionBar: {

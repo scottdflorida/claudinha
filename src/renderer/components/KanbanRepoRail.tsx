@@ -21,7 +21,6 @@ import { ipcInvoke } from '../hooks/useIpc'
 import { useInspector } from '../hooks/useInspector'
 import { KanbanRepoCard } from './KanbanRepoCard'
 import { ClaudeMdEditorModal } from './ClaudeMdEditorModal'
-import { ChangeReportModal } from './ChangeReportModal'
 import { Button } from './ui/Button'
 import { useStrings } from '../lib/strings'
 
@@ -70,7 +69,6 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
   const t = useStrings()
   const { summary } = useInspector(workspaceId ?? null)
   const [editingRepo, setEditingRepo] = useState<{ repoPath: string; repoLabel: string } | null>(null)
-  const [reportingRepo, setReportingRepo] = useState<{ repoPath: string; repoLabel: string } | null>(null)
 
   // Per-repo bulk actions (Phase 6). Each invokes its IPC handler; the UI
   // updates via INSPECTOR_SUMMARY broadcasts (rollup readyCount + diff stats)
@@ -273,9 +271,6 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
               onApprovePlansInSequence={() => triggerApprovePlansInSequence(rollup.repoPath)}
               onStopPlanSequence={() => triggerStopPlanSequence(rollup.repoPath)}
               onRetryFailedMerges={() => triggerRetryFailedMerges(rollup.repoPath)}
-              onShowChangeReport={() =>
-                setReportingRepo({ repoPath: rollup.repoPath, repoLabel: rollup.repoLabel })
-              }
             />
           )
         })}
@@ -287,14 +282,6 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
           repoPath={editingRepo.repoPath}
           repoLabel={editingRepo.repoLabel}
           onClose={() => setEditingRepo(null)}
-        />
-      )}
-      {reportingRepo && workspaceId && (
-        <ChangeReportModal
-          workspaceId={workspaceId}
-          repoPath={reportingRepo.repoPath}
-          repoLabel={reportingRepo.repoLabel}
-          onClose={() => setReportingRepo(null)}
         />
       )}
     </>
