@@ -452,19 +452,32 @@ export class HookListener {
   /**
    * Compute the post-Stop status for a pane.
    *
-   * Plan-mode panes split into `'plan-ready'` (Claude has called
-   * `ExitPlanMode` and is awaiting approval) vs `'planning'` (mid-plan, no
-   * picker yet). Otherwise we run a quick diff probe against the worktree —
-   * any uncommitted edits or commits ahead of base land the pane in
-   * `'changes-ready'`. A clean tree falls through to `'needs-input'`.
+   * Order matters and is intentional:
+   *   1. `activeToolName === 'ExitPlanMode'` → `'plan-ready'`. ExitPlanMode is
+   *      the canonical "plan presented, awaiting approval" signal — it comes
+   *      straight from Claude Code's hook payload and is synchronous and
+   *      lossless. We trust it without requiring `permissionMode === 'plan'`,
+   *      because that field is populated by an async PTY-output scanner
+   *      (`status-detector.ts`) that can lag or miss the mode footer. Gating
+   *      plan-ready on the lossy detector when a lossless signal is on hand
+   *      was the original bug.
+   *   2. `permissionMode === 'plan'` (without ExitPlanMode) → `'planning'`.
+   *      Mid-composition Stop in plan mode without a presented plan — rare,
+   *      and only fires when the detector did catch the footer.
+   *   3. Diff probe against the worktree → `'changes-ready'` if there are
+   *      uncommitted edits or commits ahead of base.
+   *   4. Otherwise → `'needs-input'`.
    */
   private async routeStopStatus(
     worktreePath: string,
     permissionMode: 'normal' | 'plan' | undefined,
     activeToolName: string | null
   ): Promise<PaneStatus> {
+    if (activeToolName === 'ExitPlanMode') {
+      return 'plan-ready'
+    }
     if (permissionMode === 'plan') {
-      return activeToolName === 'ExitPlanMode' ? 'plan-ready' : 'planning'
+      return 'planning'
     }
     try {
       const gs = await getGitStatus(worktreePath)

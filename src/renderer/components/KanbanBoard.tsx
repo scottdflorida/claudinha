@@ -42,6 +42,14 @@ const COLUMN_STATUSES: PaneStatus[] = [
 ]
 
 function bucketFor(pane: RendererPane): PaneStatus {
+  // Plan-mode tool work shows in Planning, not Working — composing a plan is
+  // a distinct activity from building code, even though both run tools.
+  // (Plan-ready is owned by hook-listener's routeStopStatus and arrives via
+  // pane.status === 'plan-ready' on Stop; this branch is only the
+  // mid-composition case.)
+  if (pane.status === 'working' && pane.permissionMode === 'plan') {
+    return 'planning'
+  }
   return pane.status
 }
 

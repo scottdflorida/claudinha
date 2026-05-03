@@ -32,7 +32,14 @@ vi.mock('../src/main/claude-patterns', async () => {
   }
 })
 
+vi.mock('../src/main/git-status', () => ({
+  getGitStatus: vi.fn()
+}))
+
 import { HookListener } from '../src/main/hook-listener'
+import { getGitStatus } from '../src/main/git-status'
+
+const mockGetGitStatus = vi.mocked(getGitStatus)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -325,6 +332,164 @@ describe('HookListener', () => {
       expect(registry.updatePaneStatus).toHaveBeenCalledWith(
         'pane-1',
         'done',
+        'hook',
+        null
+      )
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Stop routing (post-PR #1 contract): plan-ready / planning / changes-ready
+  // / needs-input
+  // -------------------------------------------------------------------------
+
+  describe('Stop routing (PR #1 PaneStatus union)', () => {
+    beforeEach(() => {
+      mockGetGitStatus.mockReset()
+    })
+
+    it('routes to plan-ready when activeToolName is ExitPlanMode, regardless of permissionMode', async () => {
+      // The regression case: a plan-mode pane where the async permissionMode
+      // detector hasn't populated the field yet still has to land in
+      // plan-ready, because the synchronous ExitPlanMode signal is
+      // load-bearing on its own.
+      const pane = makePaneState({
+        status: 'working',
+        activeToolName: 'ExitPlanMode',
+        permissionMode: undefined
+      })
+      registry.getPane.mockReturnValue(pane)
+      mockGetGitStatus.mockResolvedValue({
+        hasUncommittedChanges: false,
+        commitsAhead: 0
+      } as never)
+
+      await sendPayload(socketPath, { hookEventName: 'Stop', paneId: 'pane-1' })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'plan-ready',
+        'hook',
+        null
+      )
+    })
+
+    it('routes to plan-ready when ExitPlanMode is active AND permissionMode is plan', async () => {
+      const pane = makePaneState({
+        status: 'working',
+        activeToolName: 'ExitPlanMode',
+        permissionMode: 'plan'
+      })
+      registry.getPane.mockReturnValue(pane)
+
+      await sendPayload(socketPath, { hookEventName: 'Stop', paneId: 'pane-1' })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'plan-ready',
+        'hook',
+        null
+      )
+    })
+
+    it('routes to planning when permissionMode is plan but no ExitPlanMode (mid-composition pause)', async () => {
+      const pane = makePaneState({
+        status: 'working',
+        activeToolName: null,
+        permissionMode: 'plan'
+      })
+      registry.getPane.mockReturnValue(pane)
+
+      await sendPayload(socketPath, { hookEventName: 'Stop', paneId: 'pane-1' })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'planning',
+        'hook',
+        null
+      )
+    })
+
+    it('routes to changes-ready when not in plan mode and the worktree has uncommitted changes', async () => {
+      const pane = makePaneState({
+        status: 'working',
+        activeToolName: null,
+        permissionMode: undefined
+      })
+      registry.getPane.mockReturnValue(pane)
+      mockGetGitStatus.mockResolvedValue({
+        hasUncommittedChanges: true,
+        commitsAhead: 0
+      } as never)
+
+      await sendPayload(socketPath, { hookEventName: 'Stop', paneId: 'pane-1' })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'changes-ready',
+        'hook',
+        null
+      )
+    })
+
+    it('routes to changes-ready when commitsAhead > 0', async () => {
+      const pane = makePaneState({
+        status: 'working',
+        activeToolName: null,
+        permissionMode: undefined
+      })
+      registry.getPane.mockReturnValue(pane)
+      mockGetGitStatus.mockResolvedValue({
+        hasUncommittedChanges: false,
+        commitsAhead: 3
+      } as never)
+
+      await sendPayload(socketPath, { hookEventName: 'Stop', paneId: 'pane-1' })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'changes-ready',
+        'hook',
+        null
+      )
+    })
+
+    it('routes to needs-input when not in plan mode and the worktree is clean', async () => {
+      const pane = makePaneState({
+        status: 'working',
+        activeToolName: null,
+        permissionMode: undefined
+      })
+      registry.getPane.mockReturnValue(pane)
+      mockGetGitStatus.mockResolvedValue({
+        hasUncommittedChanges: false,
+        commitsAhead: 0
+      } as never)
+
+      await sendPayload(socketPath, { hookEventName: 'Stop', paneId: 'pane-1' })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'needs-input',
+        'hook',
+        null
+      )
+    })
+
+    it('falls back to needs-input when the diff probe throws', async () => {
+      const pane = makePaneState({
+        status: 'working',
+        activeToolName: null,
+        permissionMode: undefined
+      })
+      registry.getPane.mockReturnValue(pane)
+      mockGetGitStatus.mockRejectedValue(new Error('git not a repo'))
+
+      await sendPayload(socketPath, { hookEventName: 'Stop', paneId: 'pane-1' })
+
+      expect(registry.updatePaneStatus).toHaveBeenCalledWith(
+        'pane-1',
+        'needs-input',
         'hook',
         null
       )

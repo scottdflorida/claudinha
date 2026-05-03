@@ -34,9 +34,12 @@ import { prefersReducedMotion } from '../lib/reducedMotion'
 
 /** Column membership rule mirrored from KanbanBoard.bucketFor. */
 function bucketFor(pane: RendererPane): PaneStatus {
-  // PR #1 dropped the 'error' column — error state surfaces as a red border on
-  // the pane's current status column rather than relocating the card. Card
-  // membership now follows pane.status verbatim.
+  // Must stay in lockstep with KanbanBoard.bucketFor — if these disagree, a
+  // card-move animation would aim at one column while the card actually lands
+  // in another, producing a visible glitch.
+  if (pane.status === 'working' && pane.permissionMode === 'plan') {
+    return 'planning'
+  }
   return pane.status
 }
 

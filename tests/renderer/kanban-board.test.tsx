@@ -147,6 +147,25 @@ describe('KanbanBoard', () => {
     expect(cardCount(columnFor(container, 'Plan ready'))).toBe(1)
   })
 
+  it('buckets a working pane in plan mode into Planning, not Working', () => {
+    // The renderer-side bucketing covers the case where Claude is composing a
+    // plan (calling Read/Grep/Bash) — those tool cycles produce
+    // status='working', but the user expects to see them in Planning. The
+    // hook-listener can't help here because there's no Stop event during
+    // active tool work. Mirrors useKanbanCardMoves.bucketFor — they MUST
+    // agree or the card-move animation aims at a different column than the
+    // card lands in.
+    const panes: RendererPane[] = [
+      makePane({ id: 'planner', status: 'working', permissionMode: 'plan' }),
+      makePane({ id: 'coder', status: 'working', permissionMode: 'normal' })
+    ]
+    const { container } = render(
+      <KanbanBoard panes={panes} activePaneId={null} onCardClick={() => {}} />
+    )
+    expect(cardCount(columnFor(container, 'Planning'))).toBe(1)
+    expect(cardCount(columnFor(container, 'Working'))).toBe(1)
+  })
+
   it('keeps terminated panes in their status column with a red border', () => {
     // Errors are no longer their own column — `terminated` drives the red
     // PaneBorder highlight while the pane stays where its status puts it.

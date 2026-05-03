@@ -1160,3 +1160,31 @@ Self-check before any state-union widening: *"Of the call sites I'm widening, wh
 
 Related: L-055 (re-audit when the state union grows — this is the audit; this lesson is the *follow-on* about not flattening call-site asymmetry during the audit). L-054 (shared context gate for related affordances — same theme of "consistency where it's load-bearing, divergence where it's load-bearing"). L-023 (the comment-based "these must agree" pattern — replaced here by a structural shared helper for the manual sites and a deliberate non-shared inline check for the auto site).
 
+---
+
+## L-058: When a transition has both a synchronous load-bearing signal and an async parsed signal for the same fact, gate on the synchronous one
+
+**Date:** 2026-05-03
+**Source:** User feedback — Two terminals in plan mode, asked each to plan. Both stayed in Working through plan composition (expected) but landed in Needs Input when the plan was presented (broken — should have been Plan Ready). The Planning and Plan Ready columns stayed empty.
+**Category:** state-machine signal selection / async vs sync inputs
+
+**What happened:**
+The Stop-hook router decided plan-mode panes by checking `pane.permissionMode === 'plan'`, then if true, splitting on `activeToolName === 'ExitPlanMode'`. `permissionMode` is populated by an async PTY-output scanner in `status-detector.ts` that watches the rolling buffer for Claude Code's mode footer (`<word> [<word>] on (shift+tab to cycle)`). That scanner is best-effort: it can lag behind hook events, miss the footer if rendering hasn't completed, or fail entirely on certain terminal configurations. When it missed, the routing fell through to the diff probe — and plan-mode agents have no diffs (they can't write files in plan mode) — so the pane landed in `'needs-input'`. The Plan Ready branch was effectively unreachable for many users.
+
+The fix wasn't to make the detector more reliable. The fix was to **stop requiring the detector at all** for the load-bearing transition. The hook payload already carries `tool_name` synchronously and losslessly: `tool_name === 'ExitPlanMode'` is itself a perfect signal that the agent is presenting a plan and awaiting approval, regardless of whether the PTY scanner has caught up. Reordering the routing to check ExitPlanMode first decouples plan-ready from the lossy detector entirely.
+
+**Why the agent got it wrong:**
+The original author thought of `permissionMode` as the canonical "is this pane in plan mode?" answer because it's the field on the pane state object that says so. The hook event's `tool_name` was treated as a *refinement* — "given that we know the pane is in plan mode, which kind of plan-mode Stop is this?" — when in reality it was the *primary* signal and `permissionMode` was just a lossy reconstruction of the same fact.
+
+The reasoning trap is that named state fields *feel* authoritative because they're part of the pane's persisted state and survive across events. But "this field is set" only means "the detector has populated it" — and a detector that runs on parsed output can fail in ways the underlying hook payload never can. The hook payload IS the source of truth; everything downstream of the hook (state fields, parsed text, derived flags) is at best a faithful echo and at worst a stale or missing one. When you have access to the source-of-truth signal at the same call site, prefer it over the echo.
+
+A second contributor: when a system has both a "rich" parsed state (`permissionMode`) and a "raw" event payload (`tool_name`), the rich one feels like the abstraction you should program against because it normalizes across producers. But that's only true when the rich state is *strictly more informed* than the raw payload at the relevant moment. Here it was *less* informed — the parsed footer can lag the tool-call event by hundreds of milliseconds or never arrive — so programming against it actively lost information.
+
+**How to avoid this in the future:**
+Before gating a transition on a parsed/derived state field, ask: *"Is there a synchronous signal for this same fact already on the call path?"* If yes, gate on the synchronous one and let the parsed field be a secondary refinement (or a stale-state debug aid). Specifically when wiring hook-driven transitions: every field on the hook payload is by definition synchronous and lossless at the moment the handler runs — prefer those over fields populated by parallel scanners watching the same underlying event source.
+
+Decision rule for hook-event handlers: list every fact the handler needs to make its decision, then for each fact ask "is this fact in the hook payload, in pane state populated by an earlier hook event, or derived asynchronously from PTY/transcript output?" The first two are reliable; the third is best-effort. If a third-category signal is gating a transition that the user perceives as a primary feature (a column that's supposed to fill, a button that's supposed to enable), the design is inverted — find a first/second-category signal for the same fact.
+
+Self-check before adding a `field === value` check inside a hook handler: *"What writes this field, and does it run synchronously with this handler? If it's a separate parser of separate output, am I about to gate a load-bearing transition on a detector that can be wrong?"*
+
+Related: L-024 (permanent UI fixtures must stay visible) — adjacent in spirit (the empty Planning/Plan Ready columns were a visible fixture that exposed the broken routing the moment the user looked, which is exactly L-024 paying off in practice). L-031 (filter with one named exception — same family of "name the input intentionally" rather than letting a default pick it up).
