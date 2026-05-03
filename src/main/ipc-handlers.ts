@@ -2721,7 +2721,8 @@ export function registerIpcHandlers(
           const initialMetrics = {
             totalTokens: null, contextPercent: null, toolsUsed: null,
             totalCostUsd: null, durationMs: null, modelDisplayName: null,
-            linesAdded: null, linesRemoved: null, sessionTitle: null
+            linesAdded: null, linesRemoved: null, sessionTitle: null,
+            initialPrompt: null
           }
 
           const paneState: PaneState = {
@@ -2764,7 +2765,7 @@ export function registerIpcHandlers(
             err
           )
         }
-      )
+      }
 
       // All terminals spawned — reflect their repos in the window title.
       workspaceManager.applyWindowTitle(winId)

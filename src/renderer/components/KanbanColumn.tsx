@@ -32,8 +32,6 @@ interface KanbanColumnProps {
   onResolveDirtyMain?: (paneId: string) => void
   /** Optional: forwarded to each KanbanCard for the "Conflict" chip click. */
   onResolveConflict?: (paneId: string) => void
-  /** Optional: forwarded to each KanbanCard for the "Action failed" chip click. */
-  onShowError?: (paneId: string) => void
 }
 
 /**
@@ -105,7 +103,6 @@ export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, 
               onClose={onCloseCard ? () => onCloseCard(pane.id) : undefined}
               onResolveDirtyMain={onResolveDirtyMain ? () => onResolveDirtyMain(pane.id) : undefined}
               onResolveConflict={onResolveConflict ? () => onResolveConflict(pane.id) : undefined}
-              onShowError={onShowError ? () => onShowError(pane.id) : undefined}
             />
           ))
         )}

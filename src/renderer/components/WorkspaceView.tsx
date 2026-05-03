@@ -32,9 +32,10 @@ function activePaneDisplayName(p: ActivePaneSummary): string {
 function statusDotColor(status: PaneStatus): string {
   switch (status) {
     case 'working': return 'var(--color-accent)'
-    case 'done': return 'var(--color-success-fg, #4ade80)'
+    case 'changes-ready': return 'var(--color-success-fg, #4ade80)'
+    case 'plan-ready': return 'var(--color-success-fg, #4ade80)'
+    case 'planning': return 'var(--color-accent)'
     case 'needs-input': return 'var(--color-warning-fg, #f59e0b)'
-    case 'error': return 'var(--color-danger-fg, #ef4444)'
     case 'awaiting-prompt':
     default: return 'var(--color-fg-muted)'
   }

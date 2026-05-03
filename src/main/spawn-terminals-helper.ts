@@ -308,7 +308,7 @@ export function spawnTerminalsIntoWorkspace(
 
           if (isCrash) {
             trackPtyCrashed(exitCode, pane.createdAt)
-            sessionRegistry.updatePaneStatus(paneId, 'done', 'pty-fallback')
+            sessionRegistry.updatePaneStatus(paneId, 'needs-input', 'pty-fallback')
             pane.terminated = true
             if (w && !w.isDestroyed()) {
               const terminatedPayload: PaneTerminatedPayload = { paneId, exitCode }

@@ -163,65 +163,6 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
     ? panes.find((p) => p.id === conflictPaneId) ?? null
     : null
 
-  // Same auto-open / click-to-reopen pattern for the merge-error state.
-  // Without this, the only signal in Kanban view is a non-interactive red
-  // "Action failed" chip — the CompletionActionBar's [Details]/[Retry]/[Close]
-  // affordances are suppressed in Kanban (per L-044's audit principle), so the
-  // error reason was unreachable. Auto-open mirrors CompletionActionBar's own
-  // showErrorModal effect so Kanban and Wall both surface the failure
-  // proactively the moment it happens.
-  const [errorPaneId, setErrorPaneId] = useState<string | null>(null)
-  const autoOpenedForError = useRef<Set<string>>(new Set())
-  const previousErrorPanes = useRef<Set<string>>(new Set())
-
-  useEffect(() => {
-    const nowError = new Set<string>()
-    for (const pane of panes) {
-      if (pane.completionStatus?.state === 'error') {
-        nowError.add(pane.id)
-      }
-    }
-    let paneToAutoOpen: string | null = null
-    for (const paneId of nowError) {
-      if (!previousErrorPanes.current.has(paneId)) {
-        paneToAutoOpen = paneId
-        break
-      }
-    }
-    for (const paneId of autoOpenedForError.current) {
-      if (!nowError.has(paneId)) autoOpenedForError.current.delete(paneId)
-    }
-    if (
-      paneToAutoOpen &&
-      !errorPaneId &&
-      !dirtyMainPaneId &&
-      !conflictPaneId &&
-      !autoOpenedForError.current.has(paneToAutoOpen)
-    ) {
-      autoOpenedForError.current.add(paneToAutoOpen)
-      setErrorPaneId(paneToAutoOpen)
-    }
-    previousErrorPanes.current = nowError
-  }, [panes, errorPaneId, dirtyMainPaneId, conflictPaneId])
-
-  const onShowError = useCallback((paneId: string) => {
-    setErrorPaneId(paneId)
-  }, [])
-
-  const errorPane = errorPaneId
-    ? panes.find((p) => p.id === errorPaneId) ?? null
-    : null
-
-  const handleErrorRetry = useCallback(() => {
-    if (!errorPaneId) return
-    void ipcInvoke(IPC.COMPLETION_MERGE, { paneId: errorPaneId, strategy: 'rebase-ff' as MergeStrategy })
-  }, [errorPaneId])
-
-  const handleErrorClearState = useCallback(() => {
-    if (!errorPaneId) return
-    ipcSend(IPC.COMPLETION_CLEAR_STATE, { paneId: errorPaneId })
-  }, [errorPaneId])
-
   return (
     <>
       <div
@@ -247,7 +188,6 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
             onCloseCard={onCloseCard}
             onResolveDirtyMain={onResolveDirtyMain}
             onResolveConflict={onResolveConflict}
-            onShowError={onShowError}
           />
         ))}
       </div>
@@ -269,14 +209,6 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
         <ConflictResolveModal
           pane={conflictPane}
           onClose={() => setConflictPaneId(null)}
-        />
-      )}
-      {!dirtyMainPane && !conflictPane && errorPane && (
-        <CompletionErrorModal
-          message={errorPane.completionStatus?.errorMessage ?? ''}
-          onRetry={handleErrorRetry}
-          onClearState={handleErrorClearState}
-          onClose={() => setErrorPaneId(null)}
         />
       )}
     </>
