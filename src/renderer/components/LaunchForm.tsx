@@ -412,11 +412,17 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
 
       // Re-seed the repo field from the just-persisted last-used path so the
       // next workspace defaults to the same repo instead of a blank field.
-      setRepoPath(localStorage.getItem('claudinha:lastRepoPath') ?? '')
+      const nextRepo = localStorage.getItem('claudinha:lastRepoPath') ?? ''
+      setRepoPath(nextRepo)
       setRepoPaths([])
       setRepoValidStates([])
       setRepoValid(null)
       setRepoIsGit(null)
+      // Re-run validation for the re-seeded path so the submit button doesn't
+      // stay stuck disabled when the form stays mounted after a successful
+      // create (the workspace opens in its own window — LaunchForm doesn't
+      // unmount, so the mount-time validation effect won't re-fire).
+      if (nextRepo.trim()) validateSingleRepoPath(nextRepo)
       setTerminalCount(4)
       setAdvanced(false)
       setRepoMode('single')
@@ -432,7 +438,7 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
     } finally {
       setLaunching(false)
     }
-  }, [workspaceName, repoMode, repoPath, repoPaths, repoValidStates, terminalCount, worktreeMode, namingMode, manualNames, effort, model, repoIsGit, viewMode, advanced, onLaunched])
+  }, [workspaceName, repoMode, repoPath, repoPaths, repoValidStates, terminalCount, worktreeMode, namingMode, manualNames, effort, model, repoIsGit, viewMode, advanced, onLaunched, validateSingleRepoPath])
 
   const repoStatusText = (): string | null => {
     if (!repoPath.trim()) return null
