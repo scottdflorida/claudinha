@@ -6,6 +6,8 @@ import { DiffViewerModal } from './DiffViewerModal'
 import { DirtyMainModal } from './DirtyMainModal'
 import { ConflictResolveModal } from './ConflictResolveModal'
 import { useStrings } from '../lib/strings'
+import { useKanbanCardMoves } from '../hooks/useKanbanCardMoves'
+import { KanbanOverlayCard } from './KanbanOverlayCard'
 
 interface KanbanBoardProps {
   panes: RendererPane[]
@@ -44,6 +46,19 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
     'done': t.kanban.columnDone,
     'error': t.kanban.columnError
   }
+  // Refs shared with useKanbanCardMoves: per-card DOM nodes for fromRect
+  // measurement, per-column drop-target nodes for toRect. Populated by
+  // KanbanCard / KanbanColumn via ref callbacks.
+  const cardRefs = useRef<Map<string, HTMLElement | null>>(new Map())
+  const dropTargetRefs = useRef<Map<PaneStatus, HTMLElement | null>>(new Map())
+
+  // displayedPanes lags `panes` while a card is mid-move. The currently
+  // moving pane is omitted entirely (it lives in `movingCard` as an overlay).
+  const { displayedPanes, movingCard } = useKanbanCardMoves(panes, {
+    cardRefs,
+    dropTargetRefs
+  })
+
   const grouped: Record<PaneStatus, RendererPane[]> = {
     'awaiting-prompt': [],
     'working': [],
@@ -51,9 +66,15 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
     'done': [],
     'error': []
   }
-  for (const pane of panes) {
+  for (const pane of displayedPanes) {
     grouped[bucketFor(pane)].push(pane)
   }
+
+  // FLIP helper in KanbanColumn syncs its compaction duration to the
+  // currently in-flight move (so the source column closes its gap at the
+  // same time the moving overlay lands). When no move is in flight, the
+  // column uses its fallback constant.
+  const compactionDurationMs = movingCard?.durationMs ?? null
 
   // Diff viewer state lives at the board level so the modal overlays the
   // entire window regardless of which card opened it.
@@ -173,9 +194,16 @@ export function KanbanBoard({ panes, activePaneId, onCardClick, onCloseCard }: K
             onCloseCard={onCloseCard}
             onResolveDirtyMain={onResolveDirtyMain}
             onResolveConflict={onResolveConflict}
+            cardRefs={cardRefs}
+            dropTargetRef={(el) => {
+              if (el) dropTargetRefs.current.set(status, el)
+              else dropTargetRefs.current.delete(status)
+            }}
+            compactionDurationMs={compactionDurationMs}
           />
         ))}
       </div>
+      {movingCard && <KanbanOverlayCard moving={movingCard} />}
       {diffPane && (
         <DiffViewerModal
           paneId={diffPane.paneId}

@@ -31,6 +31,20 @@ export function calcGridLayout(n: number): GridLayout {
 
 export type PaneGridLayout = 'wall' | 'kanban-stack'
 
+/**
+ * Optional active-pane slide-up transition state for kanban-stack mode.
+ * Drives Animation A in the Kanban animations plan: a freshly-active terminal
+ * slides up from the bottom over the previously-active one. When `slidingLayerPaneId`
+ * is non-null, both the base and the sliding pane are visible simultaneously,
+ * with the sliding one carrying a translateY transform that ramps from 100% to 0%.
+ */
+export interface KanbanStackTransition {
+  baseLayerPaneId: string | null
+  slidingLayerPaneId: string | null
+  /** 0 = sliding pane fully off-screen at bottom; 1 = fully landed. */
+  slideProgress01: number
+}
+
 interface PaneGridProps {
   paneIds: string[]
   onRequestClosePane?: (paneId: string) => void
@@ -46,6 +60,14 @@ interface PaneGridProps {
   layout?: PaneGridLayout
   /** Required when layout === 'kanban-stack'. Null = none visible. */
   activePaneId?: string | null
+  /**
+   * Optional active-pane slide-up animation state. When provided in
+   * `kanban-stack` mode, the grid renders the base + sliding pane on top of
+   * each other with a translateY transform on the sliding one. When omitted
+   * (or both layer ids are null), falls back to the activePaneId-driven
+   * visibility behavior.
+   */
+  kanbanTransition?: KanbanStackTransition
 }
 
 /**
@@ -62,7 +84,8 @@ export function PaneGrid({
   paneIds,
   onRequestClosePane,
   layout = 'wall',
-  activePaneId = null
+  activePaneId = null,
+  kanbanTransition
 }: PaneGridProps): React.JSX.Element {
   if (paneIds.length === 0) {
     return <div className="w-full h-full bg-terminal-bg" />
@@ -74,10 +97,34 @@ export function PaneGrid({
     // correctly via ResizeObserver. Per L-005/L-008, the same wrapper div per
     // paneId is used in both 'wall' and 'kanban-stack' layouts, so flipping
     // `layout` never destroys an xterm instance.
+    //
+    // When a kanban-transition is in flight, two wrappers are visible at once:
+    // the base layer holds steady at translateY(0) while the sliding layer
+    // animates up from translateY(100%). The non-participating wrappers stay
+    // hidden. The map order, keys, and wrapper div identity never change —
+    // only inline `style` mutates, preserving the L-005/L-008 invariant.
+    const sliding = kanbanTransition?.slidingLayerPaneId ?? null
+    const baseLayer = sliding !== null
+      ? kanbanTransition?.baseLayerPaneId ?? null
+      : null
+    const slidingProgress = kanbanTransition?.slideProgress01 ?? 0
+
     return (
       <div className="w-full h-full relative">
         {paneIds.map((paneId) => {
-          const isVisible = paneId === activePaneId
+          const isSliding = sliding !== null && paneId === sliding
+          const isBase = baseLayer !== null && paneId === baseLayer
+          const isFallbackActive = sliding === null && paneId === activePaneId
+          const isVisible = isSliding || isBase || isFallbackActive
+          // Pointer events go to the topmost visible layer:
+          //   - During a slide: the sliding (incoming) layer captures input.
+          //   - Idle: the active pane.
+          const acceptsPointer = isSliding || (sliding === null && isFallbackActive)
+          // Translate the sliding layer up from the bottom. progress=0 → 100%
+          // off-screen, progress=1 → 0 (landed).
+          const slidingTransform = isSliding
+            ? `translateY(${(1 - slidingProgress) * 100}%)`
+            : undefined
           return (
             <div
               key={paneId}
@@ -85,7 +132,12 @@ export function PaneGrid({
                 position: 'absolute',
                 inset: 0,
                 visibility: isVisible ? 'visible' : 'hidden',
-                pointerEvents: isVisible ? 'auto' : 'none'
+                pointerEvents: acceptsPointer ? 'auto' : 'none',
+                // Sliding layer sits above the base so it covers it as it rises.
+                zIndex: isSliding ? 1 : 0,
+                transform: slidingTransform,
+                // No CSS transition — transform updates per-frame from RAF.
+                willChange: isSliding ? 'transform' : undefined
               }}
               aria-hidden={!isVisible}
             >

@@ -128,4 +128,85 @@ describe('PaneGrid — kanban-stack layout', () => {
       expect(w.style.visibility).toBe('hidden')
     }
   })
+
+  describe('with kanbanTransition (Animation A)', () => {
+    it('shows base + sliding wrappers and applies translateY to the sliding one', () => {
+      const { container } = render(
+        <PaneGrid
+          paneIds={['p1', 'p2', 'p3']}
+          layout="kanban-stack"
+          activePaneId="p2"
+          kanbanTransition={{
+            baseLayerPaneId: 'p1',
+            slidingLayerPaneId: 'p2',
+            slideProgress01: 0.4
+          }}
+        />
+      )
+      const wrappers = getWrapperDivs(container)
+      const byPaneId = (id: string) => wrappers.find((w) => w.querySelector(`[data-pane-id="${id}"]`))!
+
+      // Base + sliding visible at the same time.
+      expect(byPaneId('p1').style.visibility).toBe('visible')
+      expect(byPaneId('p2').style.visibility).toBe('visible')
+      // Other panes still hidden.
+      expect(byPaneId('p3').style.visibility).toBe('hidden')
+
+      // Sliding pane carries a translateY transform; base does not.
+      expect(byPaneId('p2').style.transform).toMatch(/translateY/)
+      // progress=0.4 → (1-0.4)*100% = 60%.
+      expect(byPaneId('p2').style.transform).toContain('60%')
+      expect(byPaneId('p1').style.transform).toBe('')
+
+      // Pointer events go to the sliding (incoming) layer.
+      expect(byPaneId('p2').style.pointerEvents).toBe('auto')
+      expect(byPaneId('p1').style.pointerEvents).toBe('none')
+
+      // Sliding layer is z-stacked above the base.
+      expect(byPaneId('p2').style.zIndex).toBe('1')
+      expect(byPaneId('p1').style.zIndex).toBe('0')
+    })
+
+    it('preserves wrapper identity across transition prop changes (xterm survives)', () => {
+      const { container, rerender } = render(
+        <PaneGrid
+          paneIds={['p1', 'p2']}
+          layout="kanban-stack"
+          activePaneId="p1"
+          kanbanTransition={{ baseLayerPaneId: 'p1', slidingLayerPaneId: null, slideProgress01: 0 }}
+        />
+      )
+      const before = getWrapperDivs(container)
+
+      rerender(
+        <PaneGrid
+          paneIds={['p1', 'p2']}
+          layout="kanban-stack"
+          activePaneId="p2"
+          kanbanTransition={{ baseLayerPaneId: 'p1', slidingLayerPaneId: 'p2', slideProgress01: 0.5 }}
+        />
+      )
+      const after = getWrapperDivs(container)
+      expect(after).toHaveLength(before.length)
+      for (let i = 0; i < before.length; i++) {
+        expect(after[i]).toBe(before[i])
+      }
+    })
+
+    it('falls back to activePaneId when transition has no sliding layer', () => {
+      const { container } = render(
+        <PaneGrid
+          paneIds={['p1', 'p2']}
+          layout="kanban-stack"
+          activePaneId="p2"
+          kanbanTransition={{ baseLayerPaneId: 'p1', slidingLayerPaneId: null, slideProgress01: 0 }}
+        />
+      )
+      const wrappers = getWrapperDivs(container)
+      const byPaneId = (id: string) => wrappers.find((w) => w.querySelector(`[data-pane-id="${id}"]`))!
+      // No sliding layer → only the activePaneId is visible.
+      expect(byPaneId('p1').style.visibility).toBe('hidden')
+      expect(byPaneId('p2').style.visibility).toBe('visible')
+    })
+  })
 })
