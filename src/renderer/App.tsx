@@ -6,7 +6,6 @@ import { WindowShell } from './components/WindowShell'
 import { ManagerWindow } from './components/ManagerWindow'
 import { PaneStateProvider } from './hooks/usePaneState'
 import { AppConfigProvider } from './hooks/useAppConfigProvider'
-import { useAppConfig } from './hooks/useAppConfig'
 import { useIpcListener, ipcSend, ipcInvoke } from './hooks/useIpc'
 import { applySoundConfig } from './lib/sound'
 import { migrateLegacyLocalStorage } from './lib/migrate-legacy-local-storage'
@@ -102,28 +101,15 @@ function App(): React.JSX.Element {
 }
 
 /**
- * ThemeApplier — drives the html[data-theme] attribute from AppConfig.theme.
- * 'dark' / 'light' are explicit user overrides; 'system' (the legacy default)
- * subscribes to prefers-color-scheme so OS theme changes still flow through.
- * Lives inside AppConfigProvider so the listener stays in sync with the
- * centralized config state across windows.
+ * ThemeApplier — drives the html[data-theme] attribute. The toggle is
+ * temporarily removed and the app is locked to dark mode; the rest of the
+ * theme infrastructure (AppConfig.theme, light-mode CSS) is intentionally kept
+ * so the toggle can be reinstated later.
  */
 function ThemeApplier(): null {
-  const { config } = useAppConfig()
   useEffect(() => {
-    const apply = (mode: 'dark' | 'light'): void => {
-      document.documentElement.setAttribute('data-theme', mode)
-    }
-    if (config.theme === 'dark' || config.theme === 'light') {
-      apply(config.theme)
-      return
-    }
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    apply(mq.matches ? 'dark' : 'light')
-    const handler = (e: MediaQueryListEvent): void => apply(e.matches ? 'dark' : 'light')
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [config.theme])
+    document.documentElement.setAttribute('data-theme', 'dark')
+  }, [])
   return null
 }
 
