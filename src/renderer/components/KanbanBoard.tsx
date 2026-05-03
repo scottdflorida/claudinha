@@ -8,6 +8,8 @@ import { DirtyMainModal } from './DirtyMainModal'
 import { ConflictResolveModal } from './ConflictResolveModal'
 import { ChangesReadyModal } from './ChangesReadyModal'
 import { useStrings } from '../lib/strings'
+import { useKanbanCardMoves } from '../hooks/useKanbanCardMoves'
+import { KanbanOverlayCard } from './KanbanOverlayCard'
 
 interface KanbanBoardProps {
   panes: RendererPane[]
@@ -53,6 +55,19 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
     'working': t.kanban.columnWorking,
     'changes-ready': t.kanban.columnChangesReady
   }
+  // Refs shared with useKanbanCardMoves: per-card DOM nodes for fromRect
+  // measurement, per-column drop-target nodes for toRect. Populated by
+  // KanbanCard / KanbanColumn via ref callbacks.
+  const cardRefs = useRef<Map<string, HTMLElement | null>>(new Map())
+  const dropTargetRefs = useRef<Map<PaneStatus, HTMLElement | null>>(new Map())
+
+  // displayedPanes lags `panes` while a card is mid-move. The currently
+  // moving pane is omitted entirely (it lives in `movingCard` as an overlay).
+  const { displayedPanes, movingCard } = useKanbanCardMoves(panes, {
+    cardRefs,
+    dropTargetRefs
+  })
+
   const grouped: Record<PaneStatus, RendererPane[]> = {
     'awaiting-prompt': [],
     'planning': [],
@@ -61,9 +76,15 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
     'working': [],
     'changes-ready': []
   }
-  for (const pane of panes) {
+  for (const pane of displayedPanes) {
     grouped[bucketFor(pane)].push(pane)
   }
+
+  // FLIP helper in KanbanColumn syncs its compaction duration to the
+  // currently in-flight move (so the source column closes its gap at the
+  // same time the moving overlay lands). When no move is in flight, the
+  // column uses its fallback constant.
+  const compactionDurationMs = movingCard?.durationMs ?? null
 
   // ChangesReadyModal state lives at the board level so the modal overlays the
   // entire window regardless of which card opened it. Replaces the old
@@ -188,9 +209,16 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
             onCloseCard={onCloseCard}
             onResolveDirtyMain={onResolveDirtyMain}
             onResolveConflict={onResolveConflict}
+            cardRefs={cardRefs}
+            dropTargetRef={(el) => {
+              if (el) dropTargetRefs.current.set(status, el)
+              else dropTargetRefs.current.delete(status)
+            }}
+            compactionDurationMs={compactionDurationMs}
           />
         ))}
       </div>
+      {movingCard && <KanbanOverlayCard moving={movingCard} />}
       {pillPane && (
         <ChangesReadyModal
           paneId={pillPane.paneId}

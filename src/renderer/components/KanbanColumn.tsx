@@ -1,8 +1,10 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import type { PaneStatus } from '../../shared/types'
 import { STATUS_COLORS } from '../lib/constants'
 import type { RendererPane } from '../hooks/usePaneState'
 import { KanbanCard } from './KanbanCard'
+import { useFlipChildren } from '../lib/flip'
+import { KANBAN_COMPACT_MS } from '../lib/kanbanMotion'
 
 // Theme-aware text color for the column header. The hex STATUS_COLORS map is
 // dark-mode-tuned (working = near-white) and disappears on the cream
@@ -32,6 +34,24 @@ interface KanbanColumnProps {
   onResolveDirtyMain?: (paneId: string) => void
   /** Optional: forwarded to each KanbanCard for the "Conflict" chip click. */
   onResolveConflict?: (paneId: string) => void
+  /**
+   * Shared per-pane DOM-element registry. Each KanbanCard registers its
+   * outermost element here on mount/unmount so useKanbanCardMoves can read
+   * `getBoundingClientRect()` for the source position when starting a move.
+   */
+  cardRefs?: React.MutableRefObject<Map<string, HTMLElement | null>>
+  /**
+   * Bottom drop-target ref. KanbanBoard uses this to measure where a card
+   * should land in this column (always the bottom). Renders as a 1px-tall
+   * invisible spacer below the last card.
+   */
+  dropTargetRef?: (el: HTMLElement | null) => void
+  /**
+   * If a card move is currently in flight, the duration to use for FLIP
+   * compaction so the source column's gap-closing animation lands at the
+   * same time as the moving overlay. When null, falls back to KANBAN_COMPACT_MS.
+   */
+  compactionDurationMs?: number | null
 }
 
 /**
@@ -43,12 +63,19 @@ interface KanbanColumnProps {
  * fixtures must stay visible so users can tell "no agents in this state" from
  * "the column is broken."
  */
-export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onPillClick, onCloseCard, onResolveDirtyMain, onResolveConflict }: KanbanColumnProps): React.JSX.Element {
+export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onPillClick, onCloseCard, onResolveDirtyMain, onResolveConflict, cardRefs, dropTargetRef, compactionDurationMs }: KanbanColumnProps): React.JSX.Element {
   const color = STATUS_COLORS[status]
   const count = panes.length
   // Error column was removed in the new design — error highlight now lives on
   // PaneBorder driven by `terminated`/`completionStatus.state === 'error'`.
   const isPopulatedError = false
+
+  // Local map of paneId -> wrapper div for FLIP. Mirrors any registrations
+  // into the parent-shared cardRefs map (used by useKanbanCardMoves to
+  // measure source rect at move-start).
+  const localRefs = useRef<Map<string, HTMLElement | null>>(new Map())
+  const visiblePaneIds = panes.map((p) => p.id)
+  useFlipChildren(localRefs, visiblePaneIds, compactionDurationMs ?? KANBAN_COMPACT_MS)
 
   return (
     <section
@@ -93,19 +120,47 @@ export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, 
           </div>
         ) : (
           panes.map((pane) => (
-            <KanbanCard
+            <div
               key={pane.id}
-              pane={pane}
-              statusColor={color}
-              isActive={pane.id === activePaneId}
-              onClick={() => onCardClick(pane.id)}
-              onPillClick={onPillClick ? () => onPillClick(pane.id, pane.userName || pane.metrics.sessionTitle || pane.worktreeName) : undefined}
-              onClose={onCloseCard ? () => onCloseCard(pane.id) : undefined}
-              onResolveDirtyMain={onResolveDirtyMain ? () => onResolveDirtyMain(pane.id) : undefined}
-              onResolveConflict={onResolveConflict ? () => onResolveConflict(pane.id) : undefined}
-            />
+              ref={(el) => {
+                // Register in both the local FLIP map and the parent-shared
+                // map (used by useKanbanCardMoves to measure the source rect
+                // when a move starts). On unmount, drop from local; for the
+                // shared registry only drop if it still points at our node
+                // (a remount in another column may already have overwritten).
+                const prevLocal = localRefs.current.get(pane.id) ?? null
+                if (el) {
+                  localRefs.current.set(pane.id, el)
+                  if (cardRefs) cardRefs.current.set(pane.id, el)
+                } else {
+                  localRefs.current.delete(pane.id)
+                  if (cardRefs && prevLocal && cardRefs.current.get(pane.id) === prevLocal) {
+                    cardRefs.current.delete(pane.id)
+                  }
+                }
+              }}
+            >
+              <KanbanCard
+                pane={pane}
+                statusColor={color}
+                isActive={pane.id === activePaneId}
+                onClick={() => onCardClick(pane.id)}
+                onPillClick={onPillClick ? () => onPillClick(pane.id, pane.userName || pane.metrics.sessionTitle || pane.worktreeName) : undefined}
+                onClose={onCloseCard ? () => onCloseCard(pane.id) : undefined}
+                onResolveDirtyMain={onResolveDirtyMain ? () => onResolveDirtyMain(pane.id) : undefined}
+                onResolveConflict={onResolveConflict ? () => onResolveConflict(pane.id) : undefined}
+              />
+            </div>
           ))
         )}
+        {/* Bottom drop-target: a zero-height marker the card-move overlay
+            measures to know where to land. Always present (even when the
+            column is empty) so a card can move into an empty column. */}
+        <div
+          ref={dropTargetRef}
+          aria-hidden="true"
+          style={{ height: 0, flexShrink: 0 }}
+        />
       </div>
     </section>
   )

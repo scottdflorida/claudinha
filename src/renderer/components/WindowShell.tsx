@@ -12,6 +12,7 @@ import type {
 import { SegmentedControl } from './ui/SegmentedControl'
 import { ipcInvoke, ipcSend, useIpcListener } from '../hooks/useIpc'
 import { usePaneState } from '../hooks/usePaneState'
+import { useKanbanActiveTransition } from '../hooks/useKanbanActiveTransition'
 import { PaneGrid } from './PaneGrid'
 import { KanbanBoard } from './KanbanBoard'
 import { KanbanRepoRail } from './KanbanRepoRail'
@@ -210,6 +211,15 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
     }
     setActivePaneId(panes[0].id)
   }, [panes, activePaneId])
+
+  // Drives Animation A: when activePaneId changes, the new pane slides up
+  // over the previously-active one. This is purely visual — focus + IPC fire
+  // immediately in selectActivePane below, so keystrokes route to the new
+  // pane the moment the user clicks (the slide is decoration on top).
+  // Always called with the canonical activePaneId so the hook's internal
+  // baseLayer stays synced even across wall <-> kanban toggles; the
+  // transition state is only consumed by PaneGrid in kanban-stack mode.
+  const kanbanTransition = useKanbanActiveTransition(activePaneId)
 
   const selectActivePane = useCallback((paneId: string) => {
     // Drive keyboard focus along with active-pane selection so the terminal
@@ -1005,6 +1015,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
                   onRequestClosePane={requestClosePane}
                   layout={viewMode === 'kanban' ? 'kanban-stack' : 'wall'}
                   activePaneId={activePaneId}
+                  kanbanTransition={viewMode === 'kanban' ? kanbanTransition : undefined}
                 />
               </div>
               {!INSPECTOR_HIDDEN && workspaceId && (
