@@ -41,6 +41,12 @@ export interface GitStatus {
   hasUncommittedChanges: boolean
   /** Count of modified/added/deleted files (staged + unstaged + untracked) */
   changedFileCount: number
+  /** Up to `MAX_CHANGED_FILES_IN_STATUS` repo-relative paths of the user-changed
+   *  files, sorted lexicographically. Filtered the same way as `changedFileCount`
+   *  (Claudinha infrastructure paths excluded). The renderer uses this to show
+   *  the user *which* files were touched, not just a count. Capped to keep the
+   *  IPC payload bounded; the full count remains in `changedFileCount`. */
+  changedFiles: string[]
   /** Number of commits ahead of main/master */
   commitsAhead: number
   /** Number of commits the local base branch (main/master) has ahead of

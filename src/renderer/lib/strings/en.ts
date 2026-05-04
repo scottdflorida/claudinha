@@ -772,6 +772,28 @@ export const en = {
     pendingChanges: 'Pending changes',
     pendingChangesFmt: (added: number, removed: number, files: number): string =>
       `+${added}/-${removed} across ${files === 1 ? '1 file' : `${files} files`}`,
+    /** Renders the file-name summary in the pending row. The full count is
+     *  the canonical source of truth; the names are a richness layer on top.
+     *  1 file → just the basename; 2–3 → comma-joined; 4+ → first two + "+N more". */
+    pendingChangedFilesFmt: (files: string[], totalCount: number): string => {
+      const basenames = files.map((f) => f.split('/').pop() || f)
+      if (totalCount === 0) return ''
+      if (totalCount === 1) return basenames[0] ?? ''
+      if (totalCount <= 3) return basenames.slice(0, totalCount).join(', ')
+      const head = basenames.slice(0, 2).join(', ')
+      const more = totalCount - 2
+      return `${head}, +${more} more`
+    },
+    /** Default commit message synthesized from the changed-files list. The
+     *  user can edit before clicking Commit; this is just a starting point
+     *  that's more useful than "Update 1 file". */
+    defaultCommitMessageFmt: (files: string[], totalCount: number): string => {
+      if (totalCount === 0) return ''
+      const basename = files[0]?.split('/').pop() || files[0] || ''
+      if (totalCount === 1) return `Update ${basename}`
+      const remainder = totalCount - 1
+      return `Update ${basename} and ${remainder} more ${remainder === 1 ? 'file' : 'files'}`
+    },
     noCommits: 'No commits yet on this branch.',
     viewDiffs: 'View diffs',
     discard: 'Discard',
@@ -786,6 +808,16 @@ export const en = {
     actionMergeFailed: 'Merge failed',
     actionPushToMain: 'Push to main',
     actionPushToBranch: 'Push to branch',
+    /** Label for the merge-target button when the user has picked a branch via
+     *  the inline picker. Replaces `actionMergeToMain` when picker is engaged. */
+    mergeToBranchFmt: (branch: string): string => `Merge to ${branch}`,
+    /** Label for the push-to-base button on the top action path. Mirrors the
+     *  picker so the merge + push read coherently as a pair. */
+    pushToBaseFmt: (branch: string): string => `Push to ${branch}`,
+    /** Tooltip on the picker chevron. */
+    branchPickerTooltip: 'Choose merge target',
+    branchPickerLoading: 'Loading branches…',
+    branchPickerEmpty: 'No other local branches',
     actionPushing: 'Pushing',
     actionPushed: 'Pushed',
     actionPushFailed: 'Push failed',

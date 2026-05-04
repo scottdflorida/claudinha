@@ -9,6 +9,10 @@ export interface MergeQueueEntry {
   strategy: MergeStrategy
   repoRoot: string
   enqueuedAt: number
+  /** Optional user-selected merge target. Absent = use auto-detected
+   *  main/master. When provided, the processor checks out this branch in the
+   *  main repo before running the local merge step. */
+  targetBranch?: string
 }
 
 /**

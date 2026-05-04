@@ -32,7 +32,9 @@ import {
   ghCliAvailable,
   isRebaseInProgress,
   gitWorktreeRemove,
-  gitBranchDelete
+  gitBranchDelete,
+  gitCheckout,
+  localBranchExists
 } from './git-status'
 
 /** Timeout for waiting for Claude to reach 'awaiting-prompt' after respawn */
@@ -253,7 +255,8 @@ export class CompletionExecutor {
    */
   async executeMerge(
     paneId: string,
-    strategy: MergeStrategy
+    strategy: MergeStrategy,
+    targetBranch?: string
   ): Promise<{ error: string | null }> {
     const pane = this.sessionRegistry.getPane(paneId)
     if (!pane) return { error: 'Pane not found.' }
@@ -274,7 +277,8 @@ export class CompletionExecutor {
       paneId,
       strategy,
       repoRoot,
-      enqueuedAt: Date.now()
+      enqueuedAt: Date.now(),
+      targetBranch
     }
 
     const { position, active, completion } = this.mergeQueue.enqueue(entry)
@@ -314,7 +318,7 @@ export class CompletionExecutor {
    * completed. Always either completes or pauses the queue before returning.
    */
   private async processQueuedMerge(entry: MergeQueueEntry): Promise<void> {
-    const { paneId, strategy, repoRoot } = entry
+    const { paneId, strategy, repoRoot, targetBranch } = entry
     try {
       const pane = this.sessionRegistry.getPane(paneId)
       if (!pane) {
@@ -351,12 +355,27 @@ export class CompletionExecutor {
         return
       }
 
-      // 3. Detect base branch
-      const baseBranch = await detectMainBranch(pane.worktreePath)
-      if (!baseBranch) {
-        this.broadcastStatus(paneId, { state: 'error', errorMessage: 'Could not detect main/master branch.' })
-        this.mergeQueue.complete(paneId)
-        return
+      // 3. Resolve base branch — picker selection wins, otherwise auto-detect.
+      // The picker is the *manual* gate (L-057): when present we trust the
+      // user, but still verify the branch exists locally so a stale picker
+      // (branch deleted between open + click) fails loudly instead of merging
+      // into the wrong place.
+      let baseBranch: string | null
+      if (targetBranch) {
+        const exists = await localBranchExists(repoRoot, targetBranch)
+        if (!exists) {
+          this.broadcastStatus(paneId, { state: 'error', errorMessage: `Branch '${targetBranch}' does not exist locally.` })
+          this.mergeQueue.complete(paneId)
+          return
+        }
+        baseBranch = targetBranch
+      } else {
+        baseBranch = await detectMainBranch(pane.worktreePath)
+        if (!baseBranch) {
+          this.broadcastStatus(paneId, { state: 'error', errorMessage: 'Could not detect main/master branch.' })
+          this.mergeQueue.complete(paneId)
+          return
+        }
       }
 
       // 4. Get current branch name
@@ -365,6 +384,22 @@ export class CompletionExecutor {
         this.broadcastStatus(paneId, { state: 'error', errorMessage: 'Could not determine current branch.' })
         this.mergeQueue.complete(paneId)
         return
+      }
+
+      // 4b. If the picker selected a non-default base, switch the main repo
+      // to that branch before merging. `git merge` always merges INTO the
+      // current HEAD, so we have to be on the target. The mainClean check
+      // above guarantees this checkout won't lose user work in the main repo.
+      if (targetBranch) {
+        const mainCurrent = await getCurrentBranch(repoRoot)
+        if (mainCurrent !== baseBranch) {
+          const checkoutErr = await gitCheckout(repoRoot, baseBranch)
+          if (checkoutErr) {
+            this.broadcastStatus(paneId, { state: 'error', errorMessage: `Could not check out '${baseBranch}': ${checkoutErr}` })
+            this.mergeQueue.complete(paneId)
+            return
+          }
+        }
       }
 
       // 5. Execute strategy

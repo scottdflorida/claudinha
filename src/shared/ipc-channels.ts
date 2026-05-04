@@ -266,6 +266,10 @@ export const IPC = {
   GIT_COMMIT_ALL: 'git:commit-all',
   GIT_PANE_COMMIT_LOG: 'git:pane-commit-log',
   GIT_REWORD_COMMIT: 'git:reword-commit',
+  // GIT_LIST_BRANCHES feeds the merge-target picker on ChangesReadyModal: a
+  // list of local branches in the worktree's repo, plus the current branch
+  // (so the picker can preselect it when opened cold).
+  GIT_LIST_BRANCHES: 'git:list-branches',
 
   // renderer → main (fire-and-forget) — set per-pane user name override (Kanban inline rename)
   PANE_SET_USER_NAME: 'pane:set-user-name',
@@ -900,6 +904,10 @@ export interface CloseWorkspaceSequenceResponsePayload {
 export interface CompletionMergePayload {
   paneId: string
   strategy: MergeStrategy
+  /** Optional explicit base branch to merge into (set by the ChangesReadyModal
+   *  branch picker). When absent, the executor falls back to the auto-detected
+   *  `main`/`master`. */
+  targetBranch?: string
 }
 
 /** completion:merge response */
@@ -1130,6 +1138,9 @@ export interface RepoMergeAndPushPayload {
   workspaceId: string
   repoPath: string
   strategy: MergeStrategy
+  /** Optional explicit base branch (chosen via ChangesReadyModal's picker).
+   *  When absent the executor uses the inspector's detected base. */
+  targetBranch?: string
 }
 
 export interface RepoMergeAndPushResult {
@@ -1531,4 +1542,21 @@ export interface GitRewordCommitPayload {
 
 export interface GitRewordCommitResult {
   error: string | null
+}
+
+/**
+ * git:list-branches — list local branches in the pane's worktree, sorted by
+ * recent commit activity (most-recent first). Feeds the merge-target picker
+ * on ChangesReadyModal. `current` is included so the picker can render the
+ * worktree's own branch with an "(on this)" marker rather than offering it
+ * as a merge target. The picker filters `current` out of the selectable list.
+ */
+export interface GitListBranchesPayload {
+  paneId: string
+}
+
+export interface GitListBranchesResult {
+  error: string | null
+  branches: string[]
+  current: string | null
 }

@@ -9,6 +9,11 @@ const execFileAsync = promisify(execFile)
 /** Timeout for git commands (ms) */
 const GIT_TIMEOUT = 5_000
 
+/** Cap on the per-status file-name list shipped to the renderer. The full count
+ *  remains accurate; only the displayable list is bounded so the IPC payload
+ *  doesn't balloon on large refactors. */
+export const MAX_CHANGED_FILES_IN_STATUS = 50
+
 /**
  * Count user-initiated changes in `git status --porcelain` output, excluding
  * Claudinha's own infrastructure paths (`.claude/` for per-project settings;
@@ -67,7 +72,18 @@ export async function getGitStatus(worktreePath: string): Promise<GitStatus | nu
 
     if (!statusResult) return null
 
-    const userChangedFiles = countUserChangedFiles(statusResult.stdout)
+    // Parse porcelain once into the canonical user-file list — both the count
+    // and the displayable list derive from it. We slice off the 3-char status
+    // prefix (`XY ` — the Y column may be a space, so a `.trim()` on the whole
+    // stdout would corrupt the leading-space line). The cap keeps IPC bounded
+    // on large refactors; the full count is still reported.
+    const userFiles = statusResult.stdout
+      .split('\n')
+      .filter((l) => l.length > 0)
+      .map((l) => l.slice(3))
+      .filter((file) => !isClaudinhaInfrastructurePath(file))
+    const userChangedFiles = userFiles.length
+    const changedFiles = [...userFiles].sort().slice(0, MAX_CHANGED_FILES_IN_STATUS)
 
     // Base-branch ahead-of-remote drives the "↑N to push" pill after a local
     // merge has advanced the base branch. We resolve from the worktree to the
@@ -87,6 +103,7 @@ export async function getGitStatus(worktreePath: string): Promise<GitStatus | nu
     return {
       hasUncommittedChanges: userChangedFiles > 0,
       changedFileCount: userChangedFiles,
+      changedFiles,
       commitsAhead: aheadResult,
       baseBranchAheadOfRemote,
       branchName: branchResult?.stdout.trim() || null
@@ -255,6 +272,70 @@ export async function detectMainBranch(dirPath: string): Promise<string | null> 
     }
   }
   return null
+}
+
+/**
+ * List local branches in a directory, sorted by recent commit activity (the
+ * most recently committed branch first). The current branch is always included
+ * so callers can render it as the default selection. Returns the empty array
+ * on any git error so callers can render an empty picker instead of crashing.
+ */
+export async function listBranches(dirPath: string): Promise<{
+  branches: string[]
+  current: string | null
+}> {
+  try {
+    const result = await execFileAsync(
+      'git',
+      ['for-each-ref', '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads/'],
+      { cwd: dirPath, timeout: GIT_TIMEOUT }
+    )
+    const branches = result.stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+    const current = await getCurrentBranch(dirPath)
+    return { branches, current }
+  } catch {
+    return { branches: [], current: null }
+  }
+}
+
+/**
+ * Verify that a local branch ref exists in the given repo. Used as a guard
+ * before checking out a target branch supplied by the renderer's branch picker
+ * — protects against picker-state staleness (e.g., a branch deleted on disk
+ * after the picker was opened).
+ */
+export async function localBranchExists(repoPath: string, branchName: string): Promise<boolean> {
+  try {
+    await execFileAsync(
+      'git', ['rev-parse', '--verify', `refs/heads/${branchName}`],
+      { cwd: repoPath, timeout: GIT_TIMEOUT }
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Check out a branch in a repo (used to switch the main repo to a user-selected
+ * merge target before running the local ff/squash/merge-commit step).
+ * Returns null on success, error string on failure. Caller must verify the
+ * working tree is clean first — `git checkout` will refuse to switch with
+ * uncommitted changes that would be overwritten.
+ */
+export async function gitCheckout(repoPath: string, branchName: string): Promise<string | null> {
+  try {
+    await execFileAsync(
+      'git', ['checkout', branchName],
+      { cwd: repoPath, timeout: GIT_TIMEOUT }
+    )
+    return null
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err)
+  }
 }
 
 /**

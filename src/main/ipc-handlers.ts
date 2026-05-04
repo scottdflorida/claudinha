@@ -115,6 +115,8 @@ import type {
   GitPaneCommitLogResult,
   GitRewordCommitPayload,
   GitRewordCommitResult,
+  GitListBranchesPayload,
+  GitListBranchesResult,
   PaneSetUserNamePayload,
   AppConfigSetPayload,
   AppConfigChangedPayload,
@@ -141,7 +143,7 @@ import type { GitStatusPoller } from './git-status-poller'
 import type { CompletionExecutor } from './completion-executor'
 import type { InspectorService } from './inspector'
 import type { PlanApprovalSequencer } from './plan-approval-sequencer'
-import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff, gitCommitAll, getPaneCommitLog, gitRewordCommit } from './git-status'
+import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff, gitCommitAll, getPaneCommitLog, gitRewordCommit, listBranches } from './git-status'
 import {
   commitDirtyMain,
   stashDirtyMain,
@@ -1706,7 +1708,7 @@ export function registerIpcHandlers(
   // -------------------------------------------------------------------------
 
   ipcMain.handle(IPC.COMPLETION_MERGE, async (_event, payload: CompletionMergePayload) => {
-    return completionExecutor.executeMerge(payload.paneId, payload.strategy)
+    return completionExecutor.executeMerge(payload.paneId, payload.strategy, payload.targetBranch)
   })
 
   ipcMain.handle(IPC.COMPLETION_PR, async (_event, payload: CompletionPrPayload) => {
@@ -1951,7 +1953,7 @@ export function registerIpcHandlers(
   ipcMain.handle(
     IPC.REPO_MERGE_AND_PUSH,
     async (_event, payload: RepoMergeAndPushPayload): Promise<RepoMergeAndPushResult> => {
-      const { workspaceId, repoPath, strategy } = payload
+      const { workspaceId, repoPath, strategy, targetBranch } = payload
       const workspace = workspaceManager.getWorkspace(workspaceId)
       if (!workspace) {
         return { error: 'Workspace not found.', enqueued: 0, mergedCount: 0, pushAttempted: false }
@@ -1966,7 +1968,7 @@ export function registerIpcHandlers(
       // effectively sequential in terms of git operations, but the await
       // pattern makes the success/failure aggregation clean.
       const mergeResults = await Promise.all(
-        eligible.map((p) => completionExecutor.executeMerge(p.id, strategy))
+        eligible.map((p) => completionExecutor.executeMerge(p.id, strategy, targetBranch))
       )
       const mergedCount = mergeResults.filter((r) => !r.error).length
       const allSucceeded = mergedCount === eligible.length
@@ -1975,7 +1977,10 @@ export function registerIpcHandlers(
       let pushError: string | undefined
       if (allSucceeded) {
         const repoRoot = inspector.getRepoRootForGroup(repoPath)
-        const baseBranch = inspector.getBaseBranchForGroup(repoPath)
+        // Picker selection (manual gate) wins over the inspector's auto-detected
+        // base. The merge step already advanced `targetBranch` locally, so it's
+        // also what we push to origin.
+        const baseBranch = targetBranch ?? inspector.getBaseBranchForGroup(repoPath)
         if (repoRoot && baseBranch) {
           pushAttempted = true
           const err = await gitPushBaseBranch(repoRoot, baseBranch)
@@ -2360,6 +2365,17 @@ export function registerIpcHandlers(
       if (err) return { error: err }
       gitStatusPoller.triggerCheck(paneId)
       return { error: null }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.GIT_LIST_BRANCHES,
+    async (_event, payload: GitListBranchesPayload): Promise<GitListBranchesResult> => {
+      const { paneId } = payload
+      const pane = sessionRegistry.getPane(paneId)
+      if (!pane) return { error: `Unknown pane: ${paneId}`, branches: [], current: null }
+      const result = await listBranches(pane.worktreePath)
+      return { error: null, branches: result.branches, current: result.current }
     }
   )
 

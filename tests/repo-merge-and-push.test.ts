@@ -133,7 +133,7 @@ function makePane(overrides: Partial<PaneState> = {}): PaneState {
     },
     createdAt: 0,
     isWorktree: true,
-    gitStatus: { hasUncommittedChanges: false, changedFileCount: 0, commitsAhead: 1, branchName: 'feature' },
+    gitStatus: { hasUncommittedChanges: false, changedFileCount: 0, changedFiles: [], commitsAhead: 1, baseBranchAheadOfRemote: null, branchName: 'feature' },
     ...overrides
   }
 }

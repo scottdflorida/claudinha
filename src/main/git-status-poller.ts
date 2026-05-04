@@ -147,11 +147,19 @@ export class GitStatusPoller {
 
   private statusEqual(a: GitStatus | null, b: GitStatus): boolean {
     if (!a) return false
-    return (
-      a.hasUncommittedChanges === b.hasUncommittedChanges &&
-      a.changedFileCount === b.changedFileCount &&
-      a.commitsAhead === b.commitsAhead &&
-      a.branchName === b.branchName
-    )
+    if (
+      a.hasUncommittedChanges !== b.hasUncommittedChanges ||
+      a.changedFileCount !== b.changedFileCount ||
+      a.commitsAhead !== b.commitsAhead ||
+      a.branchName !== b.branchName
+    ) return false
+    // changedFiles can change without changedFileCount changing (e.g. user
+    // reverts foo.ts and edits bar.ts in the same poll window). Sorted both
+    // sides so equality is positional.
+    if (a.changedFiles.length !== b.changedFiles.length) return false
+    for (let i = 0; i < a.changedFiles.length; i++) {
+      if (a.changedFiles[i] !== b.changedFiles[i]) return false
+    }
+    return true
   }
 }

@@ -6,10 +6,10 @@ import { Button } from './Button'
 // Dialog
 // ---------------------------------------------------------------------------
 
-type DialogSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+type DialogSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
 
 const SIZE_MAX_WIDTH: Record<DialogSize, number> = {
-  xs: 360, sm: 480, md: 560, lg: 720, xl: 900
+  xs: 360, sm: 480, md: 560, lg: 720, xl: 900, xxl: 1040
 }
 
 interface DialogProps {

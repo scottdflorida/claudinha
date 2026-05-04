@@ -789,6 +789,22 @@ export const ptBR: Strings = {
     pendingChanges: 'Alterações pendentes',
     pendingChangesFmt: (added: number, removed: number, files: number): string =>
       `+${added}/-${removed} em ${files === 1 ? '1 arquivo' : `${files} arquivos`}`,
+    pendingChangedFilesFmt: (files: string[], totalCount: number): string => {
+      const basenames = files.map((f) => f.split('/').pop() || f)
+      if (totalCount === 0) return ''
+      if (totalCount === 1) return basenames[0] ?? ''
+      if (totalCount <= 3) return basenames.slice(0, totalCount).join(', ')
+      const head = basenames.slice(0, 2).join(', ')
+      const more = totalCount - 2
+      return `${head}, +${more} mais`
+    },
+    defaultCommitMessageFmt: (files: string[], totalCount: number): string => {
+      if (totalCount === 0) return ''
+      const basename = files[0]?.split('/').pop() || files[0] || ''
+      if (totalCount === 1) return `Atualiza ${basename}`
+      const remainder = totalCount - 1
+      return `Atualiza ${basename} e mais ${remainder} ${remainder === 1 ? 'arquivo' : 'arquivos'}`
+    },
     noCommits: 'Sem commits ainda neste branch.',
     viewDiffs: 'Ver diffs',
     discard: 'Descartar',
@@ -803,6 +819,11 @@ export const ptBR: Strings = {
     actionMergeFailed: 'Merge falhou',
     actionPushToMain: 'Enviar à main',
     actionPushToBranch: 'Enviar ao branch',
+    mergeToBranchFmt: (branch: string): string => `Mesclar em ${branch}`,
+    pushToBaseFmt: (branch: string): string => `Enviar à ${branch}`,
+    branchPickerTooltip: 'Escolher destino do merge',
+    branchPickerLoading: 'Carregando branches…',
+    branchPickerEmpty: 'Sem outros branches locais',
     actionPushing: 'Enviando',
     actionPushed: 'Enviado',
     actionPushFailed: 'Push falhou',

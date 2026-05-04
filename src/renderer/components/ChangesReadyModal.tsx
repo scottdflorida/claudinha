@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, FileDiff, Pencil, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ChevronDown, FileDiff, Pencil, Trash2, X } from 'lucide-react'
 import { IPC } from '../../shared/ipc-channels'
-import type { CommitInfo, GhCliCheckResult, GitCommitAllResult, GitPaneCommitLogResult, GitRewordCommitResult } from '../../shared/ipc-channels'
+import type { CommitInfo, GhCliCheckResult, GitCommitAllResult, GitListBranchesResult, GitPaneCommitLogResult, GitRewordCommitResult } from '../../shared/ipc-channels'
 import type { CompletionActionStatus, MergeStrategy, PaneCloseAction } from '../../shared/types'
 import { ipcInvoke, ipcSend } from '../hooks/useIpc'
 import { usePaneState } from '../hooks/usePaneState'
 import { useStrings } from '../lib/strings'
 import { Dialog } from './ui/Dialog'
-import { Button } from './ui/Button'
+import { Popover } from './ui/Popover'
 import { DiffViewerModal } from './DiffViewerModal'
 import { PaneCloseConfirmModal } from './PaneCloseConfirmModal'
 import { buildPaneCloseOptions, type PaneCloseDescriptor } from '../lib/pane-close-options'
@@ -122,11 +122,13 @@ export function ChangesReadyModal({
   const linesAddedRaw = pane?.metrics.linesAdded ?? 0
   const linesRemovedRaw = pane?.metrics.linesRemoved ?? 0
   const changedFiles = pane?.gitStatus?.changedFileCount ?? 0
+  const changedFilesList = pane?.gitStatus?.changedFiles ?? []
+  // Default commit message is now name-aware ("Update KanbanBoard.tsx" rather
+  // than the generic "Update 1 file"). Falls back to an empty draft when the
+  // file list hasn't propagated yet — the user can type their own message.
   const defaultPendingMessage = useMemo(() => {
-    if (changedFiles === 0) return ''
-    const fileWord = changedFiles === 1 ? 'file' : 'files'
-    return `Update ${changedFiles} ${fileWord} (+${linesAddedRaw}/-${linesRemovedRaw})`
-  }, [changedFiles, linesAddedRaw, linesRemovedRaw])
+    return t.changesReadyModal.defaultCommitMessageFmt(changedFilesList, changedFiles)
+  }, [changedFilesList, changedFiles, t])
   const [pendingMessage, setPendingMessage] = useState(defaultPendingMessage)
   const userEditedPending = useRef(false)
   useEffect(() => {
@@ -204,6 +206,38 @@ export function ChangesReadyModal({
   const commitsAhead = gitStatus?.commitsAhead ?? 0
   const everythingCommitted = !hasUncommitted
 
+  // ---------------------------------------------------------------------------
+  // Merge-target picker — clicking the `<branch>` portion of "Merge to <branch>"
+  // opens a popover listing local branches. Selection is local state and is
+  // threaded into COMPLETION_MERGE / REPO_MERGE_AND_PUSH; null = let the
+  // executor auto-detect main/master (the original behavior).
+  //
+  // The label always renders SOMETHING — when nothing's been picked yet, we
+  // show 'main' as a best-effort default. The executor ignores the label and
+  // falls back to detectMainBranch when targetBranch is undefined, so a repo
+  // that uses 'master' merges correctly even though the chip says "main."
+  // ---------------------------------------------------------------------------
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerBranches, setPickerBranches] = useState<string[] | null>(null)
+  const [pickerLoading, setPickerLoading] = useState(false)
+  const [selectedTargetBranch, setSelectedTargetBranch] = useState<string | null>(null)
+  const branchPickerAnchorRef = useRef<HTMLButtonElement>(null)
+  const targetBranchLabel = selectedTargetBranch ?? 'main'
+
+  useEffect(() => {
+    if (!pickerOpen || pickerBranches !== null) return
+    setPickerLoading(true)
+    ipcInvoke(IPC.GIT_LIST_BRANCHES, { paneId })
+      .then((res) => {
+        const r = res as GitListBranchesResult
+        // Drop the worktree's own branch — you can't merge a branch into itself.
+        const filtered = r.branches.filter((b) => b !== r.current)
+        setPickerBranches(filtered)
+      })
+      .catch(() => setPickerBranches([]))
+      .finally(() => setPickerLoading(false))
+  }, [pickerOpen, pickerBranches, paneId])
+
   const commit: ButtonSpec = useMemo(() => {
     if (!completion) {
       if (everythingCommitted && commitsAhead === 0) return { state: 'idle', label: t.changesReadyModal.actionCommit }
@@ -213,8 +247,8 @@ export function ChangesReadyModal({
     return mapCompletionToCommitButton(completion, t)
   }, [completion, everythingCommitted, commitsAhead, t])
 
-  const merge: ButtonSpec = useMemo(() => mapCompletionToMergeButton(completion, hasUncommitted, t), [completion, hasUncommitted, t])
-  const pushToMain: ButtonSpec = useMemo(() => mapCompletionToPushMainButton(completion, t), [completion, t])
+  const merge: ButtonSpec = useMemo(() => mapCompletionToMergeButton(completion, hasUncommitted, targetBranchLabel, t), [completion, hasUncommitted, targetBranchLabel, t])
+  const pushToMain: ButtonSpec = useMemo(() => mapCompletionToPushMainButton(completion, targetBranchLabel, t), [completion, targetBranchLabel, t])
   const pushToBranch: ButtonSpec = useMemo(() => mapCompletionToPushBranchButton(completion, hasUncommitted, t), [completion, hasUncommitted, t])
   const createPr: ButtonSpec = useMemo(() => mapCompletionToCreatePrButton(completion, ghAvailable, t), [completion, ghAvailable, t])
 
@@ -240,8 +274,12 @@ export function ChangesReadyModal({
   // commit is implicit in both. Push-to-main runs the composite
   // REPO_MERGE_AND_PUSH (merge + push base) so the chain matches the visual.
   const handleMerge = useCallback(() => {
-    void ipcInvoke(IPC.COMPLETION_MERGE, { paneId, strategy: 'rebase-ff' as MergeStrategy })
-  }, [paneId])
+    void ipcInvoke(IPC.COMPLETION_MERGE, {
+      paneId,
+      strategy: 'rebase-ff' as MergeStrategy,
+      targetBranch: selectedTargetBranch ?? undefined
+    })
+  }, [paneId, selectedTargetBranch])
 
   const handlePushToMain = useCallback(() => {
     if (!workspaceId || !pane) return
@@ -251,9 +289,10 @@ export function ChangesReadyModal({
       // surface that here, so REPO_MERGE_AND_PUSH falls back gracefully.
       // For a single-pane action the per-repo grouping doesn't matter.
       repoPath: pane.repoName,
-      strategy: 'rebase-ff' as MergeStrategy
+      strategy: 'rebase-ff' as MergeStrategy,
+      targetBranch: selectedTargetBranch ?? undefined
     }).catch((err) => console.warn('[ChangesReadyModal] push-to-main failed:', err))
-  }, [paneId, workspaceId, pane])
+  }, [paneId, workspaceId, pane, selectedTargetBranch])
 
   const handlePushToBranch = useCallback(() => {
     // No standalone branch-push IPC exists today — Push-to-branch is part of
@@ -429,8 +468,14 @@ export function ChangesReadyModal({
                   <span className="text-warning-fg shrink-0 mt-1.5" aria-hidden="true">●</span>
                   <div className="flex-1 min-w-0 flex flex-col gap-1">
                     <div className="flex items-baseline gap-2 min-w-0">
-                      <span className="truncate text-xs text-fg-muted">
+                      <span className="shrink-0 text-xs text-fg-muted">
                         {t.changesReadyModal.pendingChanges}
+                      </span>
+                      {/* File-name list — the headline of the row, the line stats
+                          live below it as the secondary hint. Replaces the old
+                          count-only "Update 1 file" rendering. */}
+                      <span className="truncate text-xs text-fg-secondary" title={changedFilesList.join('\n')}>
+                        {t.changesReadyModal.pendingChangedFilesFmt(changedFilesList, changedFiles)}
                       </span>
                       <span className="text-xs text-fg-muted tabular-nums shrink-0 ml-auto">
                         {t.changesReadyModal.pendingChangesFmt(linesAdded, linesRemoved, changedFiles)}
@@ -456,16 +501,6 @@ export function ChangesReadyModal({
                       <span className="text-xs text-danger-fg break-words">{commitError}</span>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleCommitNow}
-                    disabled={committing || !pendingMessage.trim()}
-                    aria-label={t.changesReadyModal.commitNowAria}
-                    title={t.changesReadyModal.actionCommit}
-                    className="shrink-0 mt-1 text-fg-muted hover:text-success-fg disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Check size={14} />
-                  </button>
                 </li>
               )}
 
@@ -600,34 +635,33 @@ export function ChangesReadyModal({
             </ul>
           </section>
 
-          {/* Action tree — two paths */}
+          {/* Action tree — Y-shape:
+                  ┌─ Push to branch  ─→ Create PR
+              Commit
+                  └─ Merge to <branch> ─→ Push to <branch>
+              The single Commit trunk on the left branches into two parallel
+              chains. Bracket lines are pure CSS — no SVG. */}
           <section>
-            <div className="flex flex-col gap-3">
-              {/* Top path: Commit → Merge → Push to main */}
-              <div className="flex items-center gap-2">
-                <ActionButton spec={commit} disabled />
-                <Connector />
+            <div className="grid grid-cols-[auto_28px_1fr] items-center gap-y-3">
+              {/* Trunk: vertically centered across both rows */}
+              <div className="row-span-2 self-stretch flex items-center">
                 <ActionButton
-                  ref={mergeBtnRef}
-                  spec={merge}
-                  onClick={handleMerge}
-                  disabled={merge.state === 'in-progress' || merge.state === 'queued'}
-                />
-                <Connector />
-                <ActionButton
-                  spec={pushToMain}
-                  onClick={handlePushToMain}
-                  disabled={
-                    pushToMain.state === 'in-progress' ||
-                    pushToMain.state === 'queued' ||
-                    !workspaceId
-                  }
+                  spec={commit}
+                  onClick={handleCommitNow}
+                  disabled={committing || !hasUncommitted || !pendingMessage.trim()}
                 />
               </div>
-              {/* Bottom path: Commit → Push to branch → Create PR */}
+              {/* Y-bracket: vertical spine + 3 horizontal arms (top branch,
+                  bottom branch, trunk), all border-subtle. The spine spans the
+                  midpoints of the two rows; arms align to those midpoints. */}
+              <div className="row-span-2 relative self-stretch" aria-hidden="true">
+                <div className="absolute left-1/2 top-1/4 bottom-1/4 w-px bg-[var(--color-border-subtle)]" />
+                <div className="absolute left-1/2 top-1/4 right-0 h-px bg-[var(--color-border-subtle)]" />
+                <div className="absolute left-1/2 bottom-1/4 right-0 h-px bg-[var(--color-border-subtle)]" />
+                <div className="absolute right-1/2 top-1/2 left-0 h-px bg-[var(--color-border-subtle)]" />
+              </div>
+              {/* Top branch: Push to branch → Create PR */}
               <div className="flex items-center gap-2">
-                <ActionButton spec={commit} disabled />
-                <Connector />
                 <ActionButton
                   spec={pushToBranch}
                   onClick={handlePushToBranch}
@@ -650,7 +684,74 @@ export function ChangesReadyModal({
                   tooltip={ghAvailable === false ? t.changesReadyModal.ghMissingTooltip : undefined}
                 />
               </div>
+              {/* Bottom branch: Merge to <branch> → Push to <branch>. The
+                  branch label is rendered as a chevron-suffixed inline button
+                  that opens the picker; selection updates both labels. */}
+              <div className="flex items-center gap-2">
+                <MergeToBranchButton
+                  ref={mergeBtnRef}
+                  spec={merge}
+                  branchLabel={targetBranchLabel}
+                  pickerAnchorRef={branchPickerAnchorRef}
+                  onMergeClick={handleMerge}
+                  onPickerToggle={() => setPickerOpen((v) => !v)}
+                  disabled={merge.state === 'in-progress' || merge.state === 'queued'}
+                  pickerTooltip={t.changesReadyModal.branchPickerTooltip}
+                />
+                <Connector />
+                <ActionButton
+                  spec={pushToMain}
+                  onClick={handlePushToMain}
+                  disabled={
+                    pushToMain.state === 'in-progress' ||
+                    pushToMain.state === 'queued' ||
+                    !workspaceId
+                  }
+                />
+              </div>
             </div>
+
+            {/* Branch picker popover — anchored to the chevron button on the
+                merge action. Lists local branches; selection retargets both
+                the merge and the top-row push label/ref. */}
+            <Popover
+              anchorRef={branchPickerAnchorRef}
+              open={pickerOpen}
+              onClose={() => setPickerOpen(false)}
+              placement="bottom-start"
+              className="min-w-[200px] max-h-[260px] overflow-y-auto"
+            >
+              {pickerLoading ? (
+                <div className="px-3 py-2 text-xs text-fg-muted">
+                  {t.changesReadyModal.branchPickerLoading}
+                </div>
+              ) : pickerBranches && pickerBranches.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-fg-muted">
+                  {t.changesReadyModal.branchPickerEmpty}
+                </div>
+              ) : (
+                <ul className="flex flex-col">
+                  {(pickerBranches ?? []).map((branch) => (
+                    <li key={branch}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTargetBranch(branch)
+                          setPickerOpen(false)
+                        }}
+                        className={`
+                          w-full text-left px-3 py-1.5 text-sm rounded
+                          hover:bg-overlay
+                          ${selectedTargetBranch === branch ? 'text-accent font-[600]' : 'text-fg-primary'}
+                        `}
+                      >
+                        {branch}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Popover>
           </section>
         </div>
       </Dialog>
@@ -720,6 +821,73 @@ function Connector(): React.JSX.Element {
   return <span aria-hidden="true" className="text-fg-subtle">→</span>
 }
 
+/**
+ * MergeToBranchButton — composite "Merge to <branch>" affordance with a
+ * clickable branch chip on the right. The verb text fires the merge action;
+ * the chip fires the picker. Visually it reads as a single button so the
+ * two-region split is invisible to the user; semantically there are two
+ * <button> elements so each click target has its own keyboard focus +
+ * disabled state.
+ *
+ * The chip is enabled even when the merge button is in 'in-progress' or
+ * 'queued' (the user might want to retarget for the *next* attempt — though
+ * in practice they'd cancel first; we don't add a separate gate). When the
+ * merge is in a success / error state, the chip stays interactive — picker
+ * selection survives across attempts.
+ */
+const MergeToBranchButton = React.forwardRef<HTMLButtonElement, {
+  spec: ButtonSpec
+  branchLabel: string
+  pickerAnchorRef: React.RefObject<HTMLButtonElement>
+  onMergeClick: () => void
+  onPickerToggle: () => void
+  disabled: boolean
+  pickerTooltip: string
+}>(function MergeToBranchButton({ spec, branchLabel, pickerAnchorRef, onMergeClick, onPickerToggle, disabled, pickerTooltip }, ref) {
+  // The verb portion shown on the merge half — extract everything before the
+  // branch label from the localized string. Falls back to the full label if
+  // the branch name doesn't appear (transient: status overrides like
+  // "Merging" / "Merged" — those don't contain the branch label so the whole
+  // label renders as the verb and the chip still shows the picker target).
+  const verbText = spec.label.endsWith(branchLabel)
+    ? spec.label.slice(0, spec.label.length - branchLabel.length).trimEnd()
+    : spec.label
+  return (
+    <span className="inline-flex items-stretch rounded border border-[var(--color-border-strong)] overflow-hidden">
+      <button
+        ref={ref}
+        type="button"
+        onClick={onMergeClick}
+        disabled={disabled}
+        className={`
+          inline-flex items-center px-3 py-1.5 text-sm font-[500]
+          transition-colors duration-[80ms]
+          disabled:opacity-50 disabled:cursor-not-allowed
+          ${STATE_CLASSES[spec.state]} border-0 rounded-none
+        `}
+      >
+        {verbText}
+      </button>
+      <button
+        ref={pickerAnchorRef}
+        type="button"
+        onClick={onPickerToggle}
+        title={pickerTooltip}
+        aria-label={pickerTooltip}
+        className="
+          inline-flex items-center gap-1 px-2 py-1.5 text-sm font-[500]
+          border-l border-[var(--color-border-subtle)]
+          text-fg-primary bg-overlay/40 hover:bg-overlay
+          transition-colors duration-[80ms]
+        "
+      >
+        <span>{branchLabel}</span>
+        <ChevronDown size={12} aria-hidden="true" className="text-fg-muted" />
+      </button>
+    </span>
+  )
+})
+
 // ---------------------------------------------------------------------------
 // Completion-status → ButtonSpec mapping
 //
@@ -743,8 +911,12 @@ function mapCompletionToCommitButton(s: CompletionActionStatus | null, t: T): Bu
   return { state: 'idle', label: t.changesReadyModal.actionCommit }
 }
 
-function mapCompletionToMergeButton(s: CompletionActionStatus | null, hasUncommitted: boolean, t: T): ButtonSpec {
-  if (!s) return { state: 'idle', label: t.changesReadyModal.actionMergeToMain }
+function mapCompletionToMergeButton(s: CompletionActionStatus | null, hasUncommitted: boolean, branchLabel: string, t: T): ButtonSpec {
+  // The merge button's label always names the *current* picker selection so
+  // "Merge to <branch>" stays in sync with the picker as the user adjusts it.
+  // Only the in-progress / success / error labels override this.
+  const idleLabel = t.changesReadyModal.mergeToBranchFmt(branchLabel)
+  if (!s) return { state: 'idle', label: idleLabel }
   switch (s.state) {
     case 'queued':
       return { state: 'queued', label: t.changesReadyModal.actionQueued }
@@ -761,18 +933,22 @@ function mapCompletionToMergeButton(s: CompletionActionStatus | null, hasUncommi
     case 'pushing':
     case 'pr-created':
       // PR-side flow active — merge is blocked on the other path.
-      return { state: 'blocked', label: hasUncommitted ? t.changesReadyModal.actionAwaitingCommit : t.changesReadyModal.actionMergeToMain }
+      return { state: 'blocked', label: hasUncommitted ? t.changesReadyModal.actionAwaitingCommit : idleLabel }
     default:
-      return { state: 'idle', label: t.changesReadyModal.actionMergeToMain }
+      return { state: 'idle', label: idleLabel }
   }
 }
 
-function mapCompletionToPushMainButton(s: CompletionActionStatus | null, t: T): ButtonSpec {
-  if (!s) return { state: 'idle', label: t.changesReadyModal.actionPushToMain }
+function mapCompletionToPushMainButton(s: CompletionActionStatus | null, branchLabel: string, t: T): ButtonSpec {
+  // Push-to-base label mirrors the picker so the top action path reads as a
+  // pair: "Merge to <branch>" → "Push to <branch>". The actual ref pushed is
+  // always the picker target (or auto-detected main when no picker selection).
+  const idleLabel = t.changesReadyModal.pushToBaseFmt(branchLabel)
+  if (!s) return { state: 'idle', label: idleLabel }
   switch (s.state) {
     case 'merged':
       // Local merge done; remote push not yet attempted.
-      return { state: 'idle', label: t.changesReadyModal.actionPushToMain }
+      return { state: 'idle', label: idleLabel }
     case 'rebasing':
     case 'merging':
       return { state: 'blocked', label: t.changesReadyModal.actionAwaitingMerge }
@@ -781,7 +957,7 @@ function mapCompletionToPushMainButton(s: CompletionActionStatus | null, t: T): 
     case 'error':
       return { state: 'error', label: t.changesReadyModal.actionPushFailed }
     default:
-      return { state: 'idle', label: t.changesReadyModal.actionPushToMain }
+      return { state: 'idle', label: idleLabel }
   }
 }
 

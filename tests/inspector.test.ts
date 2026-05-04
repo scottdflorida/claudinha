@@ -113,7 +113,9 @@ function makeGitStatus(overrides: Partial<GitStatus> = {}): GitStatus {
   return {
     hasUncommittedChanges: false,
     changedFileCount: 0,
+    changedFiles: [],
     commitsAhead: 0,
+    baseBranchAheadOfRemote: null,
     branchName: 'feature-branch',
     ...overrides
   }

@@ -49,7 +49,10 @@ import {
   gitMergeAbort,
   gitPush,
   ghCreatePr,
-  ghCliAvailable
+  ghCliAvailable,
+  listBranches,
+  localBranchExists,
+  gitCheckout
 } from '../src/main/git-status'
 
 // ---------------------------------------------------------------------------
@@ -209,10 +212,45 @@ describe('getGitStatus', () => {
     expect(result).toEqual({
       hasUncommittedChanges: true,
       changedFileCount: 3,
+      changedFiles: ['file1.ts', 'file2.ts', 'newfile.ts'],
       commitsAhead: 3,
       baseBranchAheadOfRemote: null,
       branchName: 'feature-branch'
     })
+  })
+
+  it('changedFiles is sorted lexicographically and excludes Claudinha infrastructure paths', async () => {
+    mockExecSequence([
+      [null, ' M zeta.ts\n M alpha.ts\n?? .claude/settings.json\n M middle.ts\n', ''],
+      [null, 'feature\n', ''],
+      [null, '0\n', '']
+    ])
+
+    const result = await getGitStatus('/repo/worktree')
+
+    expect(result).not.toBeNull()
+    expect(result!.changedFiles).toEqual(['alpha.ts', 'middle.ts', 'zeta.ts'])
+    expect(result!.changedFileCount).toBe(3)
+  })
+
+  it('changedFiles is capped at MAX_CHANGED_FILES_IN_STATUS but changedFileCount stays accurate', async () => {
+    // 60 files; cap is 50. Counting reflects all 60; the displayable list is
+    // bounded.
+    const lines = Array.from({ length: 60 }, (_, i) => ` M f${String(i).padStart(3, '0')}.ts`).join('\n') + '\n'
+    mockExecSequence([
+      [null, lines, ''],
+      [null, 'feature\n', ''],
+      [null, '0\n', '']
+    ])
+
+    const result = await getGitStatus('/repo/worktree')
+
+    expect(result).not.toBeNull()
+    expect(result!.changedFileCount).toBe(60)
+    expect(result!.changedFiles).toHaveLength(50)
+    // Sorted: f000.ts is first, f049.ts is the 50th
+    expect(result!.changedFiles[0]).toBe('f000.ts')
+    expect(result!.changedFiles[49]).toBe('f049.ts')
   })
 
   it('filters out .claude/ entries from porcelain output', async () => {
@@ -282,6 +320,7 @@ describe('getGitStatus', () => {
     expect(result).toEqual({
       hasUncommittedChanges: false,
       changedFileCount: 0,
+      changedFiles: [],
       commitsAhead: 0,
       baseBranchAheadOfRemote: null,
       branchName: 'main'
@@ -895,5 +934,95 @@ describe('getCurrentBranch', () => {
     const result = await getCurrentBranch('/repo')
 
     expect(result).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listBranches — feeds the merge-target picker on ChangesReadyModal
+// ---------------------------------------------------------------------------
+
+describe('listBranches', () => {
+  it('returns local branches in committer-date order with the current branch', async () => {
+    // listBranches makes 2 calls in sequence: for-each-ref then getCurrentBranch.
+    mockExecSequence([
+      [null, 'main\nfeature-x\nrelease-1.2\n', ''],   // for-each-ref
+      [null, 'feature-x\n', '']                        // getCurrentBranch
+    ])
+
+    const result = await listBranches('/worktree')
+
+    expect(result.branches).toEqual(['main', 'feature-x', 'release-1.2'])
+    expect(result.current).toBe('feature-x')
+  })
+
+  it('returns an empty result when git fails', async () => {
+    mockExecFailure('not a git repo')
+
+    const result = await listBranches('/not-a-repo')
+
+    expect(result).toEqual({ branches: [], current: null })
+  })
+
+  it('strips blank lines from the for-each-ref output', async () => {
+    mockExecSequence([
+      [null, '\nmain\n\nfeature\n', ''],
+      [null, 'main\n', '']
+    ])
+
+    const result = await listBranches('/worktree')
+
+    expect(result.branches).toEqual(['main', 'feature'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// localBranchExists — guards picker selection against stale branch state
+// ---------------------------------------------------------------------------
+
+describe('localBranchExists', () => {
+  it('returns true when the branch ref resolves', async () => {
+    mockExecSuccess('abc123\n')
+
+    const result = await localBranchExists('/repo', 'develop')
+
+    expect(result).toBe(true)
+    expect(mockExecFileAsync).toHaveBeenCalledWith(
+      'git', ['rev-parse', '--verify', 'refs/heads/develop'],
+      expect.objectContaining({ cwd: '/repo' })
+    )
+  })
+
+  it('returns false when the branch does not exist', async () => {
+    mockExecFailure('unknown revision')
+
+    const result = await localBranchExists('/repo', 'no-such-branch')
+
+    expect(result).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// gitCheckout — switches the main repo to a user-selected merge target
+// ---------------------------------------------------------------------------
+
+describe('gitCheckout', () => {
+  it('returns null on success', async () => {
+    mockExecSuccess('')
+
+    const result = await gitCheckout('/repo', 'develop')
+
+    expect(result).toBeNull()
+    expect(mockExecFileAsync).toHaveBeenCalledWith(
+      'git', ['checkout', 'develop'],
+      expect.objectContaining({ cwd: '/repo' })
+    )
+  })
+
+  it('returns the error string on failure', async () => {
+    mockExecFailure('your local changes would be overwritten')
+
+    const result = await gitCheckout('/repo', 'develop')
+
+    expect(result).toBe('your local changes would be overwritten')
   })
 })
