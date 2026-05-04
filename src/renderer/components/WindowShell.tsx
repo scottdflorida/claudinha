@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MessageSquareText, Moon, Sun } from 'lucide-react'
+import { MessageSquareText } from 'lucide-react'
 import { IPC } from '../../shared/ipc-channels'
 import type {
   RateLimitsPayload,
@@ -180,23 +180,6 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
     },
     [setAppConfig]
   )
-
-  // Effective theme — drives which icon (Sun/Moon) the title-bar toggle shows.
-  // When config.theme is 'system', mirror the OS prefers-color-scheme so the
-  // icon matches what's actually painted. The toggle always writes an explicit
-  // 'dark' or 'light', so once the user clicks once this falls through quickly.
-  const [systemDark, setSystemDark] = useState<boolean>(
-    () => window.matchMedia('(prefers-color-scheme: dark)').matches
-  )
-  useEffect(() => {
-    if (appConfig.theme !== 'system') return
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = (e: MediaQueryListEvent): void => setSystemDark(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [appConfig.theme])
-  const effectiveTheme: 'dark' | 'light' =
-    appConfig.theme === 'system' ? (systemDark ? 'dark' : 'light') : appConfig.theme
 
   // Kanban single-active-pane selection. Optimistic local state mirrored to
   // workspace.activePaneId via WORKSPACE_SET_ACTIVE_PANE. Auto-selects the
@@ -875,8 +858,8 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
           )}
         </div>
         {/* Right-aligned title-bar controls — order is Submit Feedback,
-            Theme toggle, Wall/Kanban toggle. The Feedback button carries
-            `ml-auto` so the whole group anchors to the right edge. */}
+            Wall/Kanban toggle. The Feedback button carries `ml-auto` so the
+            whole group anchors to the right edge. */}
         <button
           type="button"
           onClick={() => void openFeedbackUrl()}
@@ -887,23 +870,6 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
         >
           <MessageSquareText size={14} />
           <span className="text-xs">{t.managerWindow.submitFeedback}</span>
-        </button>
-        {/* Theme toggle — sun shows when current theme is dark (click → light);
-            moon shows when current theme is light (click → dark). Reads the
-            effective theme so the OS-preference fallback also gets the right
-            icon, and writes an explicit 'dark'/'light' so subsequent clicks
-            stay deterministic. */}
-        <button
-          type="button"
-          onClick={() => {
-            void setAppConfig({ theme: effectiveTheme === 'dark' ? 'light' : 'dark' })
-          }}
-          title={effectiveTheme === 'dark' ? t.windowShell.themeLight : t.windowShell.themeDark}
-          aria-label={effectiveTheme === 'dark' ? t.windowShell.themeLight : t.windowShell.themeDark}
-          className="relative mr-2 z-10 flex items-center text-fg-muted hover:text-fg-primary transition-colors px-2 py-1 rounded"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          {effectiveTheme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
         </button>
         {/* View-mode toggle — Wall vs Kanban. Hidden when the window has no
             workspace (manager bootstrap state). Sits at the right edge of the
