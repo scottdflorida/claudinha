@@ -1244,3 +1244,175 @@ Decision rule when adding a new modal to a project that already has one: list th
 Self-check before assuming a "modal renders behind another modal" report is a z-index conflict: *"Are both modals built on the same DOM primitive? If one is `<dialog>.showModal()` and the other is a `position: fixed` div, no z-index value will fix the layering — they're in different paint stacks."* The same self-check applies to "modal doesn't take focus when opened": if a top-layer dialog is already open, focus is trapped there until that dialog closes or a sibling `showModal()` joins the top layer.
 
 Related: L-001 (focus must follow user-initiated creation) — same family of "the user just opened this; it must own focus." L-025 (a third-party component that owns its own DOM focus needs its native focus event subscribed to, not its click handler) — adjacent: in both cases the fix is to *use the primitive's own affordances* rather than re-implementing them on top.
+
+---
+
+## L-061: In a multi-worktree workflow, `local main` is shared mutable state — `git diff main` for "what did this worktree contribute" reports sibling-worktree changes as deletions
+
+**Date:** 2026-05-05
+**Source:** User feedback — the LLM-generated change summary in the Change Action modal said "two files were deleted, one new file was created" describing changes from a *different terminal session*. The user's actual worktree had touched a single file. The summary was confidently wrong.
+**Category:** git semantics in multi-worktree workflows / diff-base selection
+
+**What happened:**
+`getDiff(worktreePath)` ran `git diff <baseBranch>` (working tree vs base), which `summarizePaneChanges` fed to `claude -p` for a 1-2 sentence summary. In a single-worktree workflow this is correct: `<base>` is stable, the diff shows this branch's contribution, the LLM summarizes it. In Claudinha's multi-worktree workflow it's wrong: every worktree shares one local `main` ref, and any worktree that merged into main between this branch's creation and now advanced main past this branch's branch-point. From this worktree's perspective, those advances look like *removals* (this worktree is "behind"), and the LLM faithfully describes them as deletions. The user sees a summary about files they never touched in a worktree they never used.
+
+The fix is `git diff $(git merge-base <base> HEAD)`. The merge-base is the commit where this branch diverged from base — a stable anchor that doesn't move when sibling worktrees merge. Diffing against the merge-base gives only what HEAD itself contributed since branching, which is exactly the question the LLM is supposed to answer. Pre-merge it produces the right summary; post-merge it produces an empty diff (HEAD == merge-base) which short-circuits the LLM call entirely.
+
+**Why the agent got it wrong:**
+The original author of `getDiff` chose `git diff <base>` because in the single-worktree mental model that command means "what's different between this branch and base," which is also the right answer. The mental model didn't include "what if base has commits this branch doesn't?" — that's a state Claudinha *creates by design*, every time a sibling worktree merges, but the diff helper was written without that context in mind. The bug only manifests when two or more worktrees coexist in the same workspace, which is the typical case in Claudinha but the *atypical* case for the implicit mental model that "main only moves when *I* push."
+
+The deeper trap is that "diff vs base" reads like a stable, well-understood git operation. It's stable for a *checkout* — base is whatever's checked out at the time. It's NOT stable for a *worktree branch comparison* in a project where base is shared mutable state across multiple branches. The agent (and several iterations after) trusted the abstraction without auditing what "base" referred to and how it could move.
+
+A second contributor: the bug surface looked like a *Claude/LLM* problem ("the LLM hallucinated"), not a *git query* problem. The user's first instinct was that the LLM was wrong; my first instinct was the same. We both spent time looking at prompt engineering before the actual root cause — the input diff was wrong — surfaced. When an LLM confidently describes content that doesn't exist, the question to ask first is "what's actually in the input?" — because LLMs hallucinate sometimes, but they describe their input accurately most of the time. The diff was NOT empty; it was full of *real changes* — just not this worktree's.
+
+**How to avoid this in the future:**
+For any "what did this branch contribute" question in a multi-worktree codebase, anchor the comparison on `git merge-base <base> HEAD` rather than `<base>` directly. Both `git diff <base>` (working-tree comparison) and `git log <base>..HEAD` (range) have this defect — the floor is the wrong reference when base is shared and mutable. Use the merge-base as the floor, period.
+
+Decision rule when writing or reviewing a `git diff` / `git log` / `git rev-list` query against a shared base: ask *"what does this query return when base has advanced via a sibling worktree's merge between branch creation and now?"* If the answer is "extra commits / deletions that aren't this branch's contribution," the query is using the wrong floor. Replace `<base>` with `$(git merge-base <base> HEAD)`.
+
+Self-check before trusting an LLM-generated description: *"Did I verify the input the LLM actually saw? An LLM with a wrong input will produce a wrong output that reads like correct prose. The bug is upstream of the LLM."*
+
+Related: L-031 (filter with one named exception is a pattern in disguise) — `<base>..HEAD` is the same family of "the floor is implicit and conflated with a moving reference"; both want the floor named explicitly. L-032 (`git diff` does not see untracked files) — same family of "git's CLI defaults look right in isolation but lie about coverage in a multi-state workflow."
+
+---
+
+## L-062: When parsing an external producer's structured output, verify field names against a real sample — schema drift fails silently when the matcher is a string compare
+
+**Date:** 2026-05-05
+**Source:** User feedback — Kanban cards always showed `wt-7ae740` instead of Claude's session title. Tracing revealed the JSONL parser at `metrics-collector.ts:447` matched on `entry.type === 'custom-title' && entry.customTitle`, but a real running transcript emits `{type:'ai-title', aiTitle:'…'}` and `{type:'agent-name', agentName:'…'}`. Claude Code split the old single `custom-title` entry into two newer entries some time before late April 2026 and the parser was never updated.
+**Category:** consumer/producer schema discipline / external-format contract
+
+**What happened:**
+The fallback chain in `resolvePaneDisplayName` was `userName → metrics.sessionTitle → worktreeName`. The chain itself worked. The IPC plumbing worked. The reducer worked. The display call site re-derived on every render. But `metrics.sessionTitle` was always `null`, because the parser that populates it was matching on an entry type Claude Code no longer emits. Every new session looked indistinguishable from "no title yet" — the failure mode was *invisible*, exactly as if Claude hadn't auto-named the session. We had no test that asserted "feed a real-shape transcript, get a non-null sessionTitle." Every test fed the *parser's own* expected shape, so the tests were tautologically green.
+
+The user said *"I have never seen an agent name inherit the claude session title"* — a rare gift. They didn't say "this one card is wrong"; they said "this *never* works." That's the signal that the failure mode is structural, not flaky. A few seconds of `grep -o '"type":"[^"]*"' <real-transcript>.jsonl | sort -u` on a live file in `~/.claude/projects/` showed the actual entry types and the gap was obvious.
+
+**Why the agent got it wrong:**
+The agent who wrote the parser used the JSONL schema that was current *at the time the parser was written* and froze it into both the matcher and the test fixtures. The fixture choice baked the assumption in: tests verified "given an entry whose type is `custom-title`, sessionTitle becomes the customTitle value" — a perfectly true tautology that proves nothing about whether real Claude Code transcripts will ever produce that entry. When the producer's schema drifted, no test broke, no error was thrown, and the silently-null field just looked like "the AI hasn't titled the session yet." It blended into the legitimate "no title" path.
+
+A second contributor: the entry type was a *string literal compare*. Strings have no compile-time relationship to the producer; nothing in the type system or build pipeline can tell you the literal you typed isn't a value the producer actually emits. If the parser had been generated from a published schema, the drift would have shown up at typecheck.
+
+A third contributor: the comment on the parser said "AI-generated session title (PE-04)" — a project-internal codename. It documented *intent*, not *the wire format being matched*. A future agent reading the comment had no obvious cue to go look at the live JSONL.
+
+**How to avoid this in the future:**
+When writing or reviewing code that pattern-matches on an external producer's structured output (JSONL entries, statusline JSON, hook payloads, file shapes the OS or another tool produces):
+
+1. **Anchor at least one test on a real sample, not a synthetic one shaped like the matcher.** Copy a representative entry from a live producer file into a test fixture and assert the matcher catches it. If the producer's shape changes, this test fails — which is exactly the signal the silently-null field will never give you.
+2. **Before trusting a "field is always null" hypothesis, run `grep -o '"type":"[^"]*"' <file> | sort -u` (or its equivalent) against a live producer file** to enumerate what shapes actually exist on disk. The parser claims to handle everything; the real file claims to be everything you actually need to handle.
+3. **Distinguish "nothing yet" from "wrong shape" in the failure mode.** If `null` means both "producer hasn't written it" *and* "producer wrote it but we didn't recognize it," you cannot tell them apart from observation. Add a debug log when the parser sees an entry it cannot classify, or assert in the parser that *some* terminal entry (assistant, custom-title equivalent, stop) appears so a structurally wrong file fails loudly during dev.
+4. **Treat the user's "never works" as a structural claim.** Single-card "this is wrong" can be an edge case. "I have never seen this work" almost always means the path is unreachable, the matcher is broken, or the data never flows. Don't confirm by looking at code; confirm by inspecting a live sample of the input.
+
+Self-check before shipping a parser of an external producer's output: *"If the producer renames a field tomorrow, what test fails? If the answer is 'none, my code silently stops working,' the tests are pinned to my assumptions instead of the producer's contract."*
+
+---
+
+## L-062: `git diff` ignores untracked files — any "what did this worktree contribute" diff has to surface them via `git add -N` (intent-to-add) or equivalent
+
+**Date:** 2026-05-05
+**Source:** User feedback — the LLM-generated change summary in the Change Action modal stayed stuck on "..." for a worktree where two new files had been added; the diff viewer also said "No differences vs the base branch" for the same worktree. Both were driven off `getDiff(worktreePath)` and both came back empty even though `git status` reported the worktree dirty.
+**Category:** git semantics in mixed tracked/untracked workflows / diff coverage
+
+**What happened:**
+`getDiff` ran `git diff <merge-base>` against the worktree. That command compares the *index* and the *working tree* against the given ref — but only for tracked files. Untracked files are reported by `git status --porcelain` (with the `??` prefix) and are entirely invisible to `git diff` until they're added (even just intent-to-add with `git add -N`). For a worktree whose entire change is new files (not yet `git add`ed), `getDiff` returned empty stdout. Downstream:
+  - `summarizePaneChanges` short-circuited with `description: ''` and the renderer fell back to its `'…'` placeholder. The user saw "..." indefinitely; the LLM was never even called.
+  - The diff viewer rendered "No differences vs the base branch."
+
+The fix is `git add -N <files>` before `git diff`: marks each untracked entry as "intent to add," which causes `git diff` to emit a full new-file diff for it. The intent-to-add markers are non-destructive (no content is staged — just an index entry) and reversible with `git reset HEAD -- <files>`. We wrap the diff in a try/finally so the unstage always fires regardless of whether the diff itself succeeded.
+
+**Why the agent got it wrong:**
+The original `getDiff` was written against the mental model of "this branch is past base by some commits + maybe some uncommitted edits." That model implicitly assumed every change is *tracked* — a reasonable assumption when iterating on an existing project, less so when the worktree's contribution is "create three new files." The agent didn't enumerate the modes a working-tree change can be in (modified-tracked, staged-tracked, untracked, intent-to-add, deleted, renamed) and check that the chosen `git diff` form covers them all. So untracked-only worktrees produced empty diffs without anyone noticing, until a real test session hit one.
+
+The deeper trap is that `git diff` *looks* like a complete answer to "what's different." The CLI doesn't print a warning when there are untracked files in scope; it just silently omits them. L-032 already named this exact pattern ("`git diff` does not see untracked files — one git command rarely represents 'everything that would land'") for the merge flow's pre-checks. The same pattern resurfaced here because `getDiff` was a new helper added later, and L-032's lesson didn't propagate to its design. That's the real takeaway: a class of pitfall named in lessons-learned still requires audit for *every new helper that crosses the same domain*, not just the original one.
+
+A second contributor: the LLM's silent failure made the symptom look like an LLM problem ("the AI is broken"). When an LLM's output is wrong but the input is correct, prompt engineering can help. When the input is empty, the LLM has nothing to work with. The bug is upstream of the LLM, every time the LLM is given an empty input.
+
+**How to avoid this in the future:**
+For any helper that answers "what did this worktree change," enumerate every mode a working-tree change can be in and verify the helper covers them all. A shorthand: a helper that uses `git diff` without first running `git add -N` on untracked files is incomplete by construction. Either:
+- Stage untracked as intent-to-add before diffing (best: minimal side effect, fully reversible), OR
+- Compose `git diff` output with `git ls-files --others --exclude-standard` and synthesize new-file diffs per untracked path, OR
+- Use `git status --porcelain` as the spine and pull per-file diffs for tracked entries plus full content for untracked.
+
+Self-check before trusting any "what changed in this worktree" output: *"If I add a brand-new file (no `git add`), does this command see it? Run it. If the answer is no, the command is incomplete; either add intent-to-add or compose with `git ls-files --others`."*
+
+Audit when a lesson resurfaces: if a lesson is about a class of git-CLI defaults being misleading (L-032), explicitly check every *new* helper that operates in the same domain for the same defect. The lessons-learned index is worth scanning when adding a new helper, not just when debugging.
+
+Related: L-032 (`git diff` does not see untracked files — original framing). L-061 (multi-worktree main is shared mutable state — the *floor* of the diff was the trap; this is the *coverage* of the diff being the trap).
+
+---
+
+## L-063: A button state added to a state machine without a corresponding `disabled` predicate is just a CSS class — auto-disable in the leaf component or audit every callsite
+
+**Date:** 2026-05-05
+**Source:** User feedback — after a successful merge, "Push to branch" and "Create PR" buttons stayed clickable and silently created a PR the user didn't want. The state-machine mapping correctly returned `state: 'blocked'` for those buttons; the visual styling (faded border, muted text) showed the user it was blocked; but clicking still fired the IPC.
+**Category:** state machine / disabled-prop pattern
+
+**What happened:**
+The action-tree mapping (`mapCompletionToPushBranchButton`, `mapCompletionToCreatePrButton`) returned `state: 'blocked'` post-merge to indicate "this path is invalid; pick the other one." The `STATE_CLASSES` lookup applied a muted gray border so the user could see the button was inactive. But the JSX `disabled` predicate at every callsite was hand-rolled and only enumerated a subset of states — typically `'in-progress'`, `'queued'`, plus an external gate like `ghAvailable === false`. `'blocked'` was missing from every check. So the button was *visually* disabled but *behaviorally* enabled; click fired the wrong IPC; user got a draft PR they didn't ask for.
+
+The fix is to auto-disable in the leaf `ActionButton` (and `BranchTargetButton`) components: define `NON_CLICKABLE_STATES = new Set(['blocked', 'in-progress', 'queued', 'success'])` once, treat it as the canonical "this state is not a click target" rule, and OR it into the effective disabled. Callsites then only handle *external* gates (system conditions outside the button's state union — `!workspaceId`, `ghAvailable === false`, etc.).
+
+**Why the agent got it wrong:**
+The state machine was extended to include `'blocked'` in a feature pass that wired up the cross-path "pick one of two paths" logic. The author of that pass added the new state to the enum, added a `STATE_CLASSES` entry for the visual styling, and added the mapping function returns. They did NOT audit every existing callsite's `disabled` predicate to add the new state. There were five+ callsites; each had its own duplicated `disabled={state === 'in-progress' || state === 'queued' || ...}` expression; updating each manually was the pattern, and the manual update was missed for `'blocked'` everywhere.
+
+The deeper trap is that *visual* styling and *behavioral* gating are two systems that both consume the same state, but they live at different code locations and have different update mechanisms. The CSS map auto-applies to whatever state is set; the disabled prop has to be hand-extended at every site. As state unions grow, this asymmetry guarantees drift — the visual will always be in sync with the union, the behavior will always lag. The asymmetry is the bug; consolidating the gate into the leaf component fixes it permanently.
+
+**How to avoid this in the future:**
+When a leaf component's state union grows, the leaf component owns the click-target policy — never the callsites. Add a `NON_CLICKABLE_STATES` (or similarly named) Set at the leaf, and have its `disabled` prop be `disabled || NON_CLICKABLE_STATES.has(spec.state) || !onClick`. Callsites contribute external gates only.
+
+Self-check when adding a new value to an existing button-state union: *"What does it mean to click a button in this new state? If the answer is 'nothing should happen,' is the leaf component's auto-disable list updated? Or am I about to ship a state that's visually disabled but behaviorally live?"*
+
+Decision rule when reviewing a PR that adds a state to a state machine consumed by a UI: grep for `state === '<oldstate>'` checks at callsites and expect either (a) a corresponding `state === '<newstate>'` addition at every site, or (b) a centralization at the leaf. (a) is brittle; (b) is the right architecture.
+
+Related: L-054 (bulk-action affordances on the same surface should share a context gate, not just per-action eligibility signals) — the same family of "gate logic is duplicated and drifts." L-055 (audit each affordance — re-run audit when state union grows) — same family. The fix here is the architectural answer to L-054/L-055: don't duplicate the gate; centralize it.
+
+---
+
+## L-064: A button label and the IPC it fires must agree — drift between them creates silent action substitution that hides for multiple iterations
+
+**Date:** 2026-05-05
+**Source:** User feedback — clicking "Push to branch" silently created a draft PR. The button label said one action; the IPC fired a different (broader) action. The user never asked for a PR but got one.
+**Category:** label/action divergence / IPC reuse
+
+**What happened:**
+The renderer's `handlePushToBranch` callback fired `IPC.COMPLETION_PR { paneId, draft: true }`. That IPC's handler (`executePr`) does TWO steps: push the branch AND `gh pr create --draft`. There was no pure "push branch only" IPC; the renderer was reusing `COMPLETION_PR` because it was the one IPC that pushed, accepting the side effect of always creating a PR. The button label "Push to branch" advertised the first step only.
+
+The bug hid because the side effect (a draft PR being created) wasn't blocked by the modal — the user just got a PR they didn't expect. They might not even notice immediately; the modal closed and a PR sat in their gh dashboard. The mismatch was discovered when a user explicitly tried to push without creating a PR ("I clicked push to branch and it … flowed forward and created the PR without me even asking").
+
+The fix is to add a real "push only" path: a new `executePushBranch` method on the executor that does just step 1 (with the existing auto-commit), plus `IPC.COMPLETION_PUSH_BRANCH` to invoke it. The button label and the IPC now agree.
+
+**Why the agent got it wrong:**
+The original mapping ("Push to branch" → `COMPLETION_PR { draft: true }`) was a pragmatic shortcut: "Push to branch" was the prerequisite step for "Create PR," and creating a draft PR also pushes the branch, so reusing the existing IPC saved a round-trip of building a new one. That pragmatism papered over a labeling lie. The button said "Push to branch"; the action was "Push and create draft PR." The reuse decision wasn't documented, so future-me (and the user reviewing the modal) had no surface to question it.
+
+The deeper trap is that *PR creation includes a push as an implementation detail*, so "use the PR IPC for push" feels like a superset reuse: the push is happening, plus more. But "more" isn't free — it has user-visible side effects (a draft PR appearing on GitHub). When a button's IPC does *more* than the label promises, the button is lying. Reuse-with-side-effects is the same family of design defect as a method that's named after one of its operations but does several.
+
+**How to avoid this in the future:**
+Whenever you add or rename a button label, treat it as an obligation to audit the IPC the button fires. Read the IPC's handler end-to-end and verify every action it performs is implied by the label. Side effects (a PR being created, a notification firing, a state being broadcast) are NOT implied by a label that names only the primary action.
+
+Self-check when wiring a button's onClick to an IPC: *"Does this IPC do anything beyond what my button's label says? If so, either the label is wrong, the IPC is wrong, or I need a new narrower IPC for this button."*
+
+Related: L-031 (filter with one named exception is a pattern in disguise) — same family of "the implementation includes a hidden behavior the surface doesn't advertise."
+
+---
+
+## L-065: A new field on a broadcast struct must be added to every change-detection guard that gates the broadcast — otherwise the field is silently undeliverable
+
+**Date:** 2026-05-05
+**Source:** Bug — "↑N to push" status pill stayed stale after the agent pushed; cleared only when an unrelated field changed.
+**Category:** implementation pattern
+
+**What happened:**
+`GitStatus` had a `baseBranchAheadOfRemote` field (added later, to drive the new "↑N to push" pill). The per-pane git poller emits `PANE_GIT_STATUS` only if `statusEqual(prev, next)` says the struct changed. `statusEqual` compared `hasUncommittedChanges`, `changedFileCount`, `commitsAhead`, `branchName`, `changedFiles[]` — but **not** `baseBranchAheadOfRemote`. After a manual `git push origin main` in a terminal, the next poll observed the count drop from N to 0; the guard treated this as no-change; no broadcast went out; the pill stayed at "↑N to push." The pill only "fixed itself" when some *other* field (e.g. an uncommitted edit later) flipped, dragging the now-correct push count along with it.
+
+**Why the agent got it wrong:**
+When the field was originally added, it was wired *forward* (computed in `getGitStatus`, surfaced in IPC, rendered in the pill) but not *backward* (registered in the dedup guard that decides whether the renderer ever sees the new value). The "forward" path is obvious because you're following the data to the screen. The "backward" path is invisible — the dedup is a negative space, a *not*-broadcast that nothing surfaces. The field passes type checks, lights up correctly on the very first poll (because `prev` is null), and only fails on the **transition** from N to a different N. That timing makes it look like the renderer is broken, not the producer.
+
+The deeper trap: equality / signature / hash functions written *before* a struct grew are silent allowlists. They quietly enumerate "the fields that mattered when this was written" and leave new fields outside the gate by default. Future-you adds a field and stays inside the type system; the dedup keeps using its frozen field list and quietly suppresses transitions.
+
+**How to avoid this in the future:**
+When adding a field to any struct that crosses an IPC / poll / dedup boundary, do a "find every guard" sweep alongside the producer and consumer wiring:
+
+- Search the file that defines the struct AND any neighboring `*-poller`, `*-broadcast`, `*-summary`, `*-signature`, `statusEqual`, `signature`, `hash`, `compare`, `digest` for references that enumerate the *old* fields.
+- For each one, ask: "If the field I'm adding changes between two snapshots and nothing else does, will this function notice?" If no, add it.
+- A regression test that asserts a single-field transition still propagates is cheap and pins this in place.
+
+Self-check when adding a field to a wire/poll struct: *"What functions decide whether a downstream consumer sees the new value of this struct? Have I updated all of them, or only the producer?"*
