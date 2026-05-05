@@ -147,10 +147,18 @@ export class GitStatusPoller {
 
   private statusEqual(a: GitStatus | null, b: GitStatus): boolean {
     if (!a) return false
+    // Every field the renderer can show must participate in the equality
+    // check. `baseBranchAheadOfRemote` in particular drives the "↑N to push"
+    // pill — omitting it caused the pill to stay stale after a manual
+    // `git push origin main` from a terminal pane: the count would drop from
+    // N to 0 at the source, but this guard treated the status as unchanged
+    // and never broadcast, so the pill only cleared once some other field
+    // (e.g. an uncommitted edit) flipped.
     if (
       a.hasUncommittedChanges !== b.hasUncommittedChanges ||
       a.changedFileCount !== b.changedFileCount ||
       a.commitsAhead !== b.commitsAhead ||
+      a.baseBranchAheadOfRemote !== b.baseBranchAheadOfRemote ||
       a.branchName !== b.branchName
     ) return false
     // changedFiles can change without changedFileCount changing (e.g. user

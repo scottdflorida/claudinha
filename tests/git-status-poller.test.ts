@@ -300,6 +300,36 @@ describe('GitStatusPoller', () => {
       )
     })
 
+    it('broadcasts when only baseBranchAheadOfRemote changes (push count cleared)', async () => {
+      // Regression: after a manual `git push origin main` from a terminal
+      // pane, the local refs/remotes/origin/main ref updates and the next
+      // poll sees baseBranchAheadOfRemote drop from N to 0. Earlier, the
+      // equality guard ignored this field, so the "↑N to push" pill stayed
+      // stale until some unrelated field changed.
+      const pane = makePaneState({ id: 'pane-1' })
+      registry.getPane.mockReturnValue(pane)
+
+      const ahead = makeGitStatus({ baseBranchAheadOfRemote: 2 })
+      mockGetGitStatus.mockResolvedValue(ahead)
+
+      poller.watchPane('pane-1')
+      await flushMicrotasks()
+
+      vi.clearAllMocks()
+      registry.getPane.mockReturnValue(pane)
+
+      const cleared = makeGitStatus({ baseBranchAheadOfRemote: 0 })
+      mockGetGitStatus.mockResolvedValue(cleared)
+
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(windowManager._sendSpy).toHaveBeenCalledWith(
+        IPC.PANE_GIT_STATUS,
+        { paneId: 'pane-1', gitStatus: cleared }
+      )
+      expect(registry.updatePaneGitStatus).toHaveBeenCalledWith('pane-1', cleared)
+    })
+
     it('calls sessionRegistry to update pane state on status change', async () => {
       const pane = makePaneState({ id: 'pane-1' })
       registry.getPane.mockReturnValue(pane)
