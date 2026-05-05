@@ -1416,3 +1416,38 @@ When adding a field to any struct that crosses an IPC / poll / dedup boundary, d
 - A regression test that asserts a single-field transition still propagates is cheap and pins this in place.
 
 Self-check when adding a field to a wire/poll struct: *"What functions decide whether a downstream consumer sees the new value of this struct? Have I updated all of them, or only the producer?"*
+
+---
+
+## L-066: A sticky one-shot success flag is correct on a single-instance surface and becomes a category error the moment the surface gains a multi-instance interpretation
+
+**Date:** 2026-05-03
+**Source:** User feedback — after Push-to-main on batch A, then Create PR on a new batch B in the same modal session, the bulk-tree "Push to main" button kept saying "Pushed to main" success even though the operation underway was a PR on a different batch.
+**Category:** state-machine boundaries / UI affordances and the units they describe
+
+**What happened:**
+The Change Action modal's "Push to main" button success label was driven by a `pushBaseBranchSucceeded` boolean — set once when REPO_PUSH_BASE_BRANCH returned `{error: null}`, never reset. That was correct when the modal was a single-shot per-pane action surface: one push, one success label, modal closes. When the modal grew a batch list — multiple commits each with their own lifecycle status — the button's *meaning* shifted from "the (one) action this modal exists to drive succeeded" to "this transition has happened for whatever the user is currently working with." A boolean can encode the first; it cannot encode the second. So the label kept claiming success during a subsequent unrelated round on a different batch.
+
+The fix was to derive the success label from `batches`: "the bulk push-to-main button is success iff every non-hidden batch is currently at `pushed-to-main`." Same for `pushBranchSucceeded`. The transient in-flight flags stayed (those genuinely describe a single in-flight RPC); the *outcome* flags were category errors.
+
+**Why the agent got it wrong:**
+The original `pushBaseBranchSucceeded` was added when the modal had a single-slot mental model: one pane, one chain of actions, one outcome per round. The flag was the cleanest implementation of "remember the action succeeded so the button doesn't revert to idle." It worked because the *unit* it described (the modal session's primary action) and the *unit* the surface implied (the entire modal) were the same.
+
+When the batch list landed in a later pass, the modal gained a multi-instance interpretation: each row is a unit; the bottom action tree is now talking about *aggregates* over those units. The flag wasn't ported because it wasn't visibly broken — it just kept doing what it always did, which was correct under the old mental model and wrong under the new one. The bug was a *unit-of-description* drift, not a logic bug.
+
+The deeper trap: when a UI surface evolves from "describes one thing" to "describes a collection of things," every state variable has to be re-examined for which mental model it's encoding. Variables that named the *whole surface* may now need to name *per-item* state, OR be derived from the collection. Variables that name a *single in-flight RPC* are still fine. The agent who adds the multi-instance interpretation needs to audit every state variable and decide which category each falls into; the original author can't anticipate the future generalization.
+
+A related pattern: success flags are usually one-direction (idle → success). That asymmetry makes them especially prone to staleness when the *meaning* of success changes. An idempotent derivation from authoritative state (here: `batches`) is self-correcting — it can flip back to idle when the world changes — where a one-shot flag cannot.
+
+**How to avoid this in the future:**
+When generalizing a single-instance surface to a multi-instance one (a list, a collection, a set of independently-stateful items), audit every existing state variable on the surface for *which unit it describes*. Three categories:
+
+1. **Per-item state** (e.g. "this row is in editing mode") → keep, but key by item id.
+2. **In-flight RPC state** (e.g. "this RPC is mid-flight") → keep; the RPC is still a single unit.
+3. **Outcome / success / completion flags about "the action"** → these are the suspects. Re-derive from authoritative item state instead of caching a one-shot boolean. If an outcome can't be re-derived (e.g. because no item state captures "user has acknowledged this success"), make the cache item-keyed, not surface-wide.
+
+Self-check when generalizing a UI surface from one-of to many-of: *"For each existing local state variable, what is the unit it describes? If that unit just split into N units, does the variable still describe what I think it describes?"* The variables that fail this question are the ones that will silently mislead the user once the surface is multi-instance.
+
+Decision rule when adding outcome / success / completion local state to a UI surface: prefer derivation from authoritative state (server, batch list, etc.) over a sticky one-shot flag, even when there's only one instance today. Sticky flags are correct accidentally — they happen to work because there's one of everything; they stop working the moment that's no longer true. A derivation that "happens to work" today and continues working under generalization is the more durable form.
+
+Related: L-031 (filter with one named exception is a pattern in disguise) — same family of "the implementation works for the special case but breaks for the general case the surface is about to grow into." L-063 (button state without disable predicate is just CSS) — same family of "the visual was right, the behavior was wrong, and the asymmetry between them is structural."
