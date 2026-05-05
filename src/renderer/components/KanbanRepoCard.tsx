@@ -148,8 +148,9 @@ export function KanbanRepoCard({
           disabled={editDisabled}
           aria-label={t.kanban.editClaudeMdAria}
           title={editDisabled ? t.kanban.editClaudeMdDisabled : t.kanban.editClaudeMdEnabled}
-          className="shrink-0 text-fg-muted hover:text-fg-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          className="shrink-0 flex items-center gap-1 text-fg-muted hover:text-fg-primary disabled:opacity-40 disabled:cursor-not-allowed"
         >
+          <span className="text-[11px]">claude.md</span>
           <FileText size={12} />
         </button>
       </header>
