@@ -988,7 +988,7 @@ export const ptBR: Strings = {
     labelAwaitingOrders: 'Aguardando ordens',
     labelWorking: 'Trabalhando',
     labelNeedsInput: 'Precisa de entrada',
-    labelDone: 'Concluído',
+    labelDone: 'Mudanças prontas',
     labelError: 'Erro',
     labelLost: 'Perdido',
     labelResolvingConflict: 'Resolvendo Conflito',

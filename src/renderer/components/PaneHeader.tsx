@@ -308,7 +308,11 @@ function KanbanHeaderRight({
 }: KanbanHeaderRightProps): React.JSX.Element {
   const t = useStrings()
   const statusColor = terminated ? STATUS_TERMINATED_COLOR : STATUS_COLORS[paneStatus]
-  const label = formatStatusLabel(paneStatus, activeToolName, terminated, isResolvingConflict, t)
+  // Pass terminated=false so the pill speaks the same vocabulary as the kanban
+  // column above it ("Working", "Changes ready", …) instead of swapping in
+  // "Lost". The terminated signal is delivered visually via the red border
+  // below — same treatment as the kanban card's red left border.
+  const label = formatStatusLabel(paneStatus, activeToolName, false, isResolvingConflict, t)
 
   const contextPercent = metrics?.contextPercent ?? null
 
@@ -334,6 +338,7 @@ function KanbanHeaderRight({
       <span
         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-raised text-fg-secondary"
         title={label}
+        style={{ border: `1px solid ${terminated ? '#DB4D3F' : 'transparent'}` }}
       >
         <span
           aria-hidden="true"

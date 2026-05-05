@@ -982,7 +982,7 @@ export const en = {
     labelAwaitingOrders: 'Awaiting orders',
     labelWorking: 'Working',
     labelNeedsInput: 'Needs input',
-    labelDone: 'Done',
+    labelDone: 'Changes ready',
     labelError: 'Error',
     labelLost: 'Lost',
     labelResolvingConflict: 'Resolving Conflict',

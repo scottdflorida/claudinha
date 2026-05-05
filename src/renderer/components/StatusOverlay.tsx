@@ -118,7 +118,12 @@ export function StatusOverlay({
   isResolvingConflict = false
 }: StatusOverlayProps): React.JSX.Element {
   const t = useStrings()
-  let label = formatStatusLabel(status, activeToolName, terminated, isResolvingConflict, t)
+  // Pass terminated=false so the pill speaks the same vocabulary as the
+  // kanban columns ("Working", "Changes ready", …) instead of "Lost". The
+  // terminated signal comes through visually: the pane's PaneBorder turns
+  // red, and the pill border below also goes solid red — same treatment as
+  // the kanban card's red left border.
+  let label = formatStatusLabel(status, activeToolName, false, isResolvingConflict, t)
 
   // Append git summary when idle (but not during conflict resolution)
   if (
@@ -136,7 +141,9 @@ export function StatusOverlay({
   }
 
   const color = terminated ? STATUS_TERMINATED_COLOR : STATUS_COLORS[status]
-  const borderColor = `${color}80` // 0.5 alpha
+  // Solid #DB4D3F when terminated (matches KanbanCard's red left border);
+  // otherwise the existing alpha-tinted status color.
+  const borderColor = terminated ? '#DB4D3F' : `${color}80`
   const isWorking = !terminated && status === 'working'
 
   return (
@@ -154,9 +161,13 @@ export function StatusOverlay({
           ...(isWorking && { animation: 'status-working-pulse 1.4s ease-in-out infinite' })
         }}
       >
+        {/* Render the regular status icon even when terminated — the kanban
+            card mirrors this (it doesn't swap icons on terminate, just
+            changes the border color). The red pill border + red PaneBorder
+            already carry the lost signal. */}
         <StatusIcon
           status={status}
-          terminated={terminated}
+          terminated={false}
           isResolvingConflict={isResolvingConflict}
           color={color}
         />

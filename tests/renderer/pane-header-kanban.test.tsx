@@ -58,6 +58,40 @@ describe('PaneHeader — chromeMode="kanban"', () => {
     expect(getByText('Running command')).toBeTruthy()
   })
 
+  // The pill should speak the same vocabulary as the kanban column above it.
+  // The column header is "Changes ready"; the pill used to say "Done".
+  it('shows "Changes ready" (matching the kanban column header) for changes-ready panes', () => {
+    const { getByText, queryByText } = render(
+      <PaneHeader
+        {...baseProps()}
+        chromeMode="kanban"
+        paneStatus="changes-ready"
+      />
+    )
+    expect(getByText('Changes ready')).toBeTruthy()
+    expect(queryByText('Done')).toBeNull()
+  })
+
+  // Terminated panes used to read "Lost" in the pill, but kanban columns
+  // have no Lost state — terminated cards just get a red border on whichever
+  // column they sit in. The pill mirrors that: keep the underlying status
+  // label, frame the chip in red.
+  it('on a terminated pane, keeps the underlying status label and adds a red border (no "Lost")', () => {
+    const { getByText, queryByText } = render(
+      <PaneHeader
+        {...baseProps()}
+        chromeMode="kanban"
+        paneStatus="working"
+        terminated={true}
+      />
+    )
+    expect(queryByText('Lost')).toBeNull()
+    const pill = getByText('Working').parentElement as HTMLElement | null
+    expect(pill).not.toBeNull()
+    // JSDOM normalizes hex to rgb when parsing the `border` shorthand.
+    expect(pill?.style.borderColor).toBe('rgb(219, 77, 63)')
+  })
+
   it('renders compact metrics inline when present', () => {
     const { getByText } = render(
       <PaneHeader
