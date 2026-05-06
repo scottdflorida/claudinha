@@ -776,6 +776,44 @@ describe('InspectorService.askKeeperLLM', () => {
     expect(report.error).toBeUndefined()
   })
 
+  it('invokes claude with --model haiku --effort low', async () => {
+    let claudeArgs: readonly string[] = []
+    mockExecFile.mockImplementation(((
+      cmd: string,
+      args: readonly string[],
+      _opts: unknown,
+      cb?: ExecFileCallback
+    ) => {
+      const callback = (cb ?? ((): void => {})) as ExecFileCallback
+      if (cmd === 'git' && args[0] === 'rev-parse') callback(null, 'main', '')
+      else if (cmd === 'git' && args[0] === 'merge-base') callback(null, 'merge-base-sha', '')
+      else if (cmd === 'git' && args[0] === 'diff' && args[1] === '--numstat') callback(null, '1\t0\ta.ts', '')
+      else if (cmd === 'git' && args[0] === 'ls-files' && args[1] === '--others') callback(null, '', '')
+      else if (cmd === 'git' && args[0] === 'diff' && args[1] === '--no-color') callback(null, 'diff', '')
+      else if (cmd === 'git' && args[0] === 'branch') callback(null, 'main', '')
+      else if (cmd === 'git' && args[0] === 'rev-list') callback(null, '0', '')
+      else if (cmd === 'claude') {
+        claudeArgs = args
+        callback(null, '## ok', '')
+      }
+      else callback(new Error(`unexpected git call: ${cmd} ${args.join(' ')}`), '', '')
+      return {}
+    }) as unknown as typeof execFile)
+
+    const panes = [makePane({ id: 'p1' })]
+    const { svc } = mkService(panes)
+    await svc.onPanePolled('p1')
+    await svc.askKeeperLLM('workspace-1')
+
+    const modelIdx = claudeArgs.indexOf('--model')
+    const effortIdx = claudeArgs.indexOf('--effort')
+    expect(modelIdx).toBeGreaterThanOrEqual(0)
+    expect(claudeArgs[modelIdx + 1]).toBe('haiku')
+    expect(effortIdx).toBeGreaterThanOrEqual(0)
+    expect(claudeArgs[effortIdx + 1]).toBe('low')
+    expect(claudeArgs).toContain('-p')
+  })
+
   it('returns { error } when the claude subprocess fails', async () => {
     installLlmMock({ error: new Error('claude not found') })
     const panes = [makePane({ id: 'p1' })]
@@ -845,7 +883,8 @@ describe('InspectorService.askKeeperLLM', () => {
       else if (cmd === 'git' && args[0] === 'branch') callback(null, 'main', '')
       else if (cmd === 'git' && args[0] === 'rev-list') callback(null, '0', '')
       else if (cmd === 'claude') {
-        sentPrompt = args[1] // args[0] is '-p', args[1] is the prompt
+        const promptIdx = args.indexOf('-p') + 1
+        sentPrompt = args[promptIdx]
         callback(null, '## ok', '')
       }
       else callback(new Error(`unexpected git call: ${cmd} ${args.join(' ')}`), '', '')
