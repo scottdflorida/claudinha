@@ -1,8 +1,14 @@
 # Research: Completion Actions
 
-**Status:** research / draft for discussion · do not implement yet
+**Status:** research → decisions made · ready to translate into an
+implementation plan
 **Branch:** `claude/research-completion-actions-Kczpw`
-**Date:** 2026-05-06
+**Date:** 2026-05-06 (updated post-discussion)
+
+> **Update:** the nine open questions in §9 have been resolved. Option B
+> (turn-as-commit) is the chosen direction with Option A as a per-session
+> fallback; Option C is dropped. See §9 for the full set of decisions and
+> §6/§8 for the reframed design.
 
 This document is the research foundation for a fresh design of "completion
 actions" in Claudinha — the surface where the user views, understands,
@@ -280,8 +286,11 @@ shape our design.
    Users want pending and shipped/in-flight visible at once.
 2. **JetBrains "changelists"** are the cleanest existing answer to
    "cluster file changes into N logical commits." Drag files between
-   named buckets, commit each bucket independently. This is the only
-   mainstream UX for "user-clusters-the-clustering."
+   named buckets, commit each bucket independently. We considered
+   adopting this directly (see Option C in earlier drafts) but it's
+   incompatible with auto-commit-per-turn; the *idea* of letting users
+   re-cluster commits survives in Option B's "split a turn at publish
+   time" affordance.
 3. **Phabricator/Gerrit** treat the *logical change* (Differential
    Revision / Change-Id) as the unit of review, with successive uploads
    as numbered "patch sets." Reviewing diff N vs diff N+1 is a
@@ -320,152 +329,229 @@ clean commit history" problem yet. We have a chance to.
 
 ---
 
-## 6. Three design options
+## 6. Design options (reassessed)
 
-These differ on one fundamental question: **what's the storage model
-for "rounds of changes" — synthesised from git, or first-class?**
-Everything else (UI layout, action affordances) can be retrofitted to
-either choice; this is the choice that's hard to reverse.
+The original draft considered three options that differ on one
+fundamental question: **what's the storage model for "rounds of changes"
+— synthesised from git, or first-class?** With the decisions in §9,
+the answer is now firm:
 
-### Option A — Working-tree-first (the lightest touch)
+> **Chosen direction: Option B (turn-as-commit).** Auto-commit each turn
+> as a `wip(turn-N): <summary>` commit on the worktree branch. The agent's
+> turns become first-class git objects, addressable, diffable, undoable.
+> Publishing squashes selected turns into clean commits. **Option A** is
+> retained as a per-session fallback when the user toggles auto-commit
+> off. **Option C (changelists)** is dropped — it's incompatible with
+> auto-commit (changelists track working-tree hunks, which auto-commit
+> clears).
 
-**Storage**: there is no "Patch" or "Turn" entity. State lives entirely
-in git itself: working tree, local commits, origin. Claudinha reads
-git on demand and renders.
+The rest of §6 documents the chosen design (B) in detail, then
+summarises A as a fallback. Option C is dropped and not described
+further.
 
-**Per-terminal modal**:
-- Top section "Pending" — uncommitted working-tree edits, file-by-file,
-  with checkboxes (VS Code-style staging hidden behind checkbox UX).
-  User selects which files to include in the next commit, writes a
-  message, hits Commit.
-- Middle section "Local commits" — list of commits ahead of base.
-  Per-commit actions: view diff, reword, amend (last one), open PR,
-  merge.
-- Bottom section "Shipped" — last K merged/pushed commits, read-only,
-  for context.
-- Right rail or bottom: bulk actions ("Push", "Merge to base",
-  "Open PR").
-
-**"Round" = nothing in the data model.** The user thinks of rounds
-informally; the UI doesn't track them. To cluster, they pick files into
-commits at commit time.
-
-**Repo-level modal**:
-- One row per agent in the repo, with badges for state (uncommitted /
-  ahead-of-base / pushed / pr-open).
-- Filter chips: "uncommitted," "ready to merge," "ready to push,"
-  "conflict."
-- Bulk actions on filtered set: "Merge all ready," "Push all ready,"
-  "Open PRs for all pushable."
-
-**Pros**:
-- Simplest. Fewest moving parts. No new storage.
-- Everything we render is recomputable from git, so we can never get
-  out of sync.
-- Aligns with how mature git GUIs work today.
-
-**Cons**:
-- "Round" is invisible. The user can't see "this hunk came from turn 3,
-  that hunk from turn 5" — they're a single dirty working tree.
-- Re-clustering is limited to "pick files for next commit." No way to
-  say "split this commit into two" without dropping into a CLI rebase.
-- Loses the temporal dimension that the user explicitly cares about
-  ("multiple rounds of changes").
-
-### Option B — Turn-as-Commit (auto-commit per turn) [tentative lean]
+### Option B — Turn-as-Commit (chosen)
 
 **Storage**: every turn auto-commits. Each Stop with file changes
 produces a `wip(turn-N): <subject>` commit on the worktree's branch
-immediately. Turns are git commits; nothing extra to persist.
-Subject lines come from a Haiku summary of the diff (we already use
-Haiku for summaries elsewhere; this is the same pattern).
+immediately. Turns are git commits; nothing extra to persist. Subject
+lines come from the Haiku summary we already produce for the inspector
+(reuse the same pipeline).
 
-**Per-terminal modal**:
-- Top section "**Turns**" — vertical list, newest at top, one row per
-  turn. Each row shows: turn #, summary, file count, +/- counts,
-  state badge. Click expands to inline diff. Range-select (Shift-click)
-  to view a span as one diff.
-- A "Publish" affordance per turn or per range:
-  - **Publish as one commit** (default) — squashes the selected turns
-    into one new commit, prompts for message, runs `git rebase -i`
-    under the hood to collapse turns into a clean publish-commit on
-    the worktree branch.
-  - **Publish each turn as its own commit** — keeps the per-turn
-    commits and just pushes/merges them as-is.
-- "**Undo turn**" per turn — `git reset --hard <turn-N-1>`. Aider
-  precedent. Cheap because turns are real commits.
-- Below the turn list: "Already published" — patches that have shipped,
-  collapsed by default.
-- Bottom action bar: Commit (publish) → Merge → Push → PR, with the
-  current state of each verb (idle / queued / running / done / blocked).
+**Per-terminal modal — layout**
 
-**"Round" = a turn = a wip commit.** First-class. Diffable, undoable,
-addressable.
+```
+┌──────────────────────────────────────────────────────────────┐
+│ <repo>  ·  <agent name>  ·  branch: <worktree-branch>        │
+│                                                              │
+│ Turns (4 pending · 2 published)                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ ✦ Turn 6  "Wire up debounce on the search input"        │  │
+│  │   2 files · +14/-3   ·  open                            │  │
+│  ├────────────────────────────────────────────────────────┤  │
+│  │ ✦ Turn 5  "Add /search endpoint"                        │  │
+│  │   3 files · +52/-1   ·  open                            │  │
+│  ├────────────────────────────────────────────────────────┤  │
+│  │ ✓ Turn 4  "Add search index migration"                  │  │
+│  │   1 file  · +18/-0   ·  pushed (commit a1b2c3)          │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ▸ Already published (2 turns, collapsed)                    │
+│                                                              │
+│  [Publish selected ▾]    [Discard turn]                      │
+└──────────────────────────────────────────────────────────────┘
+```
 
-**Repo-level modal**:
-- Same as Option A's repo modal, but rows include "N turns pending /
-  M turns published" rather than just file counts.
-- Bulk action "Publish all turns from agent X as one commit each" is
-  meaningful in this model and not in A.
+- **Turns list**, newest first. Each row: turn #, Haiku summary, file
+  count, +/-, state badge (`open` / `committed` / `pushed` / `pr-open`
+  / `merged` / `shipped`).
+- **Click** a row to expand inline diff.
+- **Range-select** (Shift-click) selects a contiguous span of turns;
+  the diff view shows them as one combined diff (Phabricator
+  precedent).
+- **Multi-select** (X-on-hover, Linear-style) for non-contiguous turns.
+- **Publish selected** dropdown:
+  - **Squash and publish** (default) — collapse selected turns into one
+    new commit, prompt for message (pre-filled with concatenated turn
+    summaries), then run the configured publish path (§5 below).
+  - **Publish each turn as its own commit** — keep per-turn commits;
+    push/merge as-is. Useful for users who want fine-grained history.
+  - **Split a turn** (advanced) — open the hunk picker (see below) to
+    break one turn-commit into multiple publish-commits.
+- **Discard turn** — drops a turn-commit. If the discarded turn is not
+  the most recent open turn, also rebases subsequent open turns over
+  the gap (or aborts with a clear "you'd have to discard turns 5, 6,
+  too" prompt). Destructive; confirm dialog.
+
+**Hunk-level granularity (decided: day-one)**
+
+Per Q3, hunk-level support ships in v1. Three places it surfaces:
+
+1. **At publish time**: when the user chooses "Split a turn," the
+   modal opens a hunk picker per turn-commit. Hunks have checkboxes;
+   checked hunks go into commit A, unchecked into commit B. The user
+   can repeat to produce N commits from one turn.
+2. **In Discard**: discard-with-hunks lets the user drop specific hunks
+   from a turn rather than the whole turn. Implemented as
+   "split the turn, discard one half."
+3. **Diff viewer**: hunks are the navigation unit (J/K to walk hunks
+   within a turn).
+
+Implementation: each turn-commit is split via the standard
+`git rebase -i edit` + `git reset HEAD^` + per-hunk `git add -p`
++ `git commit` + `git rebase --continue` choreography. The main
+process owns this; the renderer drives via a `TURN_SPLIT` IPC.
+
+**Publish paths (decided: per-repo configurable)**
+
+Per Q5, two paths exist and the user picks per repo (with an initial
+default at workspace launch):
+
+1. **Direct merge** — local merge into base, then push base.
+   `git checkout <base> && git merge <strategy> <branch> && git push origin <base>`.
+2. **PR** — push the worktree branch to origin, then `gh pr create`.
+   The user finishes review on GitHub.
+
+The repo-level modal (§7) shows both verbs as buttons when both are
+enabled; per-terminal modal shows the repo's chosen default(s) in the
+Publish dropdown. Configuration lives on the repo entity, defaulting
+from the workspace's launch choice.
+
+**Side-clone for direct-merge (decided: yes)**
+
+Per Q4, direct-merge runs against a **side-clone** of the main repo
+rather than the user's main working copy. This sidesteps the "main
+repo working tree must be clean" constraint entirely.
+
+Sketch: lazily create `.worktrees/.merge-staging/` (a bare clone or a
+worktree of `<base>`), run `git merge` there, push to origin, then
+fast-forward the user's actual main if it's clean. If the user's main
+is dirty, we still pushed origin, and their next pull/fetch picks it
+up — they're never blocked.
+
+This eliminates `DirtyMainModal` for the merge path. (It still applies
+to other flows that touch main directly, if any remain.)
+
+**Bulk-merge conflict handling (decided: skip-and-surface, multi-conflict-aware)**
+
+Per Q7, bulk merges do not stop on the first conflict. They:
+
+1. Iterate the selected agents, attempting merge for each.
+2. On conflict, **abort that one** (`git merge --abort`), record the
+   conflict, and **continue to the next**.
+3. After the queue drains, surface a multi-conflict modal listing all
+   the conflicts. The user can resolve them one at a time (with the
+   existing `ConflictResolveModal` flow per agent), or punt them all
+   to Claude (one resume-with-conflict prompt per agent), or discard
+   the conflicting work.
+
+This means `merge-queue` becomes a result-aggregating pipeline rather
+than a stop-on-error sequence.
+
+**Telemetry (decided: yes)**
+
+Every action becomes a tracked event in
+`docs/analytics-event-catalog.md`. Minimum event set for v1:
+
+- `turn_auto_committed`
+- `turn_published_squashed` / `turn_published_individual`
+- `turn_split` (with N output commits)
+- `turn_discarded`
+- `publish_path_chosen` (direct-merge | pr)
+- `merge_attempted` / `merge_succeeded` / `merge_conflicted` / `merge_aborted`
+- `pr_opened` / `pr_open_failed`
+- `bulk_action_started` / `bulk_action_completed` (with success/conflict/failure counts)
+- `auto_commit_toggled` (on→off / off→on, per session)
+
+All keyed by anonymous `installation_id` per existing telemetry rules
+(no paths, no commit messages, no diffs).
+
+**Auto-commit fallback (Option A behaviour)**
+
+Per Q2, auto-commit defaults to ON. A per-session toggle disables it.
+With auto-commit off, the modal degrades to Option A's working-tree-
+first view: top section is uncommitted changes (with checkboxes,
+VS Code-style), middle is local commits, bottom is shipped. Same
+modal frame, different top section.
+
+The toggle lives in the per-terminal modal header (a small
+"Auto-commit: on/off" pill). Switching mid-session is allowed; turning
+off doesn't retroactively un-commit, turning on doesn't backfill
+commits for already-edited files.
 
 **Pros**:
-- Matches the user's mental model exactly: rounds are real things.
+- Matches the user's "rounds" mental model exactly.
 - Round-vs-round diff is `git diff <turn-N>..<turn-M>` — free.
-- Undo is `git reset` to a turn boundary — free.
-- All state recomputable from git: Patch.state derives from where the
-  commit sits in `git log` relative to publish-commits and base.
-- Solves the commit-message problem: the user sees N descriptive turn
-  commits and can squash with their own summary at publish time.
+- Discard is `git reset` / `git rebase` — straightforward because
+  turns are real commits.
+- All state recomputable from git: Patch.state derives from the
+  commit's position in `git log`.
+- Hunk-level support is a localised feature on top of real commits,
+  not a parallel storage system.
 
-**Cons**:
-- The worktree branch acquires WIP commits the user might not want
-  visible. Mitigation: WIP commits never reach base. Squash-on-publish
-  is the default; raw-publish is opt-in. The wip log is private to the
-  worktree branch.
-- Auto-committing during a turn the user wanted to abandon mid-flight
-  is friction. Mitigation: still auto-commit; "Undo turn" is one click.
-- `git rebase -i` to squash is fragile if the user has externally
-  committed in parallel. Mitigation: the worktree is owned by the
-  agent; manual external commits are rare and can be detected
-  (compare HEAD before/after).
-- Adds a "did this commit autoland?" question to the agent-loop telemetry
-  surface that we currently don't have.
+**Cons (and mitigations)**:
+- Worktree branch accumulates `wip(turn-N)` commits the user might not
+  want visible publicly. **Mitigation:** wip commits never leave the
+  worktree branch; squash-on-publish is the default; per-turn publish
+  is opt-in. (Yes, per-turn publish *would* expose the wip commits;
+  warn at the publish-dropdown choice.)
+- `git rebase -i` for split-turn is fragile if the user has externally
+  committed on the worktree branch in parallel. **Mitigation:** detect
+  HEAD movement before/after; if HEAD changed unexpectedly, abort the
+  split with a clear error.
+- Auto-commit during a turn the user wants to abandon mid-flight feels
+  wasteful. **Mitigation:** Discard is one click; reflog catches the
+  rest.
+- Side-clone for merges adds disk usage. **Mitigation:** one shared
+  side-clone per repo, lazily created, garbage-collected when the repo
+  has no active agents.
 
-### Option C — Changelists (manual clustering over a dirty tree)
+### Option A — Working-tree-first (per-session fallback only)
 
-**Storage**: a sidecar file per worktree (e.g.,
-`.worktrees/wt-<branch>/.claudinha-changelists.json`) tracking named
-"changelists" — each is a set of file paths or hunks attributed to a
-turn or to a user-named cluster. The working tree stays dirty until
-the user commits a changelist.
+When a user toggles **auto-commit off** for a session, the per-terminal
+modal degrades to a working-tree-first view. Storage and lifecycle:
 
-**Per-terminal modal**:
-- Top section "Active changelists" — by default, one per turn, named
-  by the turn's prompt summary. User can drag files between
-  changelists, rename them, merge/split them. Per-changelist Commit
-  button.
-- Middle: ahead-of-base commits. Bottom: shipped.
+- No turn-commits are produced; the working tree stays dirty as the
+  agent edits.
+- The modal's top section is uncommitted edits, file-by-file, with
+  checkboxes (VS Code-style staging hidden behind checkbox UX). The
+  user picks files (or hunks, when expanded), writes a message, and
+  clicks Commit — same hunk picker as Option B's split flow.
+- The middle section is local commits (ahead of base) — same display
+  as Option B's "already published" section.
+- Publish, push, PR, discard verbs all behave identically to Option B
+  — only the source of pending work differs (working-tree edits vs
+  turn-commits).
 
-**"Round" = a changelist that defaults to the turn that produced it,
-but the user can re-cluster freely.**
+"Round" is not a first-class concept in this mode; the user clusters
+files into commits manually at commit time. Switching auto-commit
+back on does not retroactively create turn-commits for past edits.
 
-**Pros**:
-- Maximum flexibility. JetBrains users love this for a reason.
-- Clean commit history without auto-commit noise.
-- Lets the user split one turn's work across two commits trivially.
+### Repo-level surface
 
-**Cons**:
-- Hardest to implement correctly. Hunk-level changelist tracking that
-  survives further edits is non-trivial; if turn 5 modifies a line that
-  turn 3 added, the bookkeeping is gnarly.
-- Sidecar state can drift from real git state (deleted files, external
-  edits). Mitigation: aggressive reconciliation on every poll.
-- "Undo a turn" stops being free; you're rolling back a changelist's
-  hunks, which is tantamount to `git checkout -p`.
+The repo-level modal is the same regardless of any session's
+auto-commit setting (since the repo modal aggregates *commits* and
+*publish state*, not turn-commits specifically):
 
-### Cross-option: the repo-level surface
-
-For all three options, the repo-level modal looks similar:
 - Header: repo name + "N agents · M pending items"
 - Filter chips (Sourcegraph-style): All / Pending / Pushable /
   PR-open / Conflict / Failed
@@ -476,90 +562,175 @@ For all three options, the repo-level modal looks similar:
 - Linear-style keyboard: J/K to walk, X to multi-select, Enter to drill,
   numeric hotkeys for filter chips.
 
-**Bulk actions worth supporting** (all are gated by per-agent
-prerequisites — the bulk action just iterates and surfaces failures):
+**Per-repo Publish-path config (decided: yes, with workspace default)**
+
+Per Q5, each repo has a Publish-path setting with three values:
+`direct-merge` | `pr` | `both`. Surface:
+
+- **Workspace launch dialog** asks once: "Default Publish path for new
+  repos in this workspace?" with the three options. Pre-fills the
+  Publish-path setting for any repo opened thereafter.
+- **Repo-level modal header** has a small dropdown showing the current
+  setting; user can change it any time.
+- **Both** means: the repo modal shows two side-by-side bulk-action
+  buttons ("Merge directly" and "Open PRs"); per-terminal modal shows
+  both as choices in the Publish dropdown. **Direct-merge** or **pr**
+  alone hide the unused affordances.
+
+**Bulk actions worth supporting** (all gated by per-agent prerequisites
+— the bulk action iterates, accumulates results, and surfaces failures):
 - Push all (selected agents) — push their worktree branches.
-- Merge all (selected agents) — sequential local merges into base.
-  Fail-fast vs continue-on-failure is a setting.
-- Open PRs for all (selected agents) — sequential `gh pr create`.
+- Merge all (selected agents, when path includes direct-merge) —
+  sequential merges into base via the side-clone (§6 Option B). On
+  conflict, abort that one and continue (decided in Q7); accumulate
+  conflicts and surface them all at the end.
+- Open PRs for all (selected agents, when path includes pr) —
+  sequential `gh pr create`. Same skip-and-surface pattern for
+  failures.
 - Discard all (selected agents) — destructive, double-confirmed.
 
-We **shouldn't** support bulk-commit (a single message for many
-agents' work) because committing requires per-agent intent.
+We **don't** support bulk-commit (a single message for many agents'
+work) — committing requires per-agent intent.
 
 ---
 
 ## 7. Design comparison at a glance
 
-| Dimension                              | A: Working-tree | B: Turn-as-Commit | C: Changelists |
-|----------------------------------------|------------------|-------------------|----------------|
-| Implementation complexity              | Low              | Medium            | High           |
-| Storage to add                         | None             | None (uses git)   | Sidecar JSON   |
-| Maps user's "rounds" mental model      | Weak             | Strong            | Medium         |
-| Round-vs-round diff                    | Manual           | Free              | Possible       |
-| Undo a turn                            | Hard             | Free              | Medium         |
-| Re-cluster freely                      | At commit time   | Squash/split      | Drag-and-drop  |
-| Commit-history cleanliness             | Good (manual)    | Good (squash)     | Best           |
-| Risk of drift between UI and real git  | Lowest           | Low               | Highest        |
-| Keystrokes from idea to shipped        | Most             | Fewest            | Medium         |
-| Plays well with parallel external edits | Best             | Medium            | Worst          |
+| Dimension                              | B: Turn-as-Commit (chosen) | A: Working-tree (fallback)    |
+|----------------------------------------|----------------------------|-------------------------------|
+| Default mode                           | Yes (auto-commit on)       | Opt-in (auto-commit off)      |
+| Storage to add                         | None (uses git)            | None                          |
+| Maps user's "rounds" mental model      | Strong                     | Weak                          |
+| Round-vs-round diff                    | Free (`git diff`)          | Manual                        |
+| Discard a turn                         | One click (`git reset`)    | Hard (revert hunks manually)  |
+| Re-cluster freely                      | Squash / split at publish  | Pick files at commit time     |
+| Commit-history cleanliness             | Good (squash on publish)   | Good (user-curated commits)   |
+| Hunk-level granularity                 | At publish-time split      | At commit-time staging        |
+| Risk of drift between UI and real git  | Low                        | Lowest                        |
+| Keystrokes from idea to shipped        | Fewest                     | Most                          |
+| Plays well with parallel external edits | Medium                    | Best                          |
+
+Option C (changelists) is dropped (incompatible with auto-commit; see §6).
 
 ---
 
-## 8. Recommendation (tentative — to discuss)
+## 8. Recommendation (decided)
 
-**Lean: Option B — Turn-as-Commit**, with two refinements:
+**Option B — Turn-as-Commit** is the chosen direction, with these
+specifics:
 
-1. **Wip commits never leave the worktree branch by default.** Publish
-   always squashes by default; the user opts in to "preserve turn
-   commits" per publish if they want.
-2. **Allow option-A behavior as a fallback.** A per-session toggle
-   "Auto-commit turns: on/off" (default on). If off, the modal
-   degrades to option A's working-tree-first view.
+1. **Auto-commit is on by default.** Each Stop with file changes
+   produces a `wip(turn-N): <haiku-summary>` commit on the worktree
+   branch. The user can toggle auto-commit off per session; that
+   degrades the modal to Option A's working-tree-first view.
+2. **Wip commits never leave the worktree branch by default.** Publish
+   always squashes; per-turn-publish is opt-in per publish action.
+3. **Hunk-level granularity ships in v1**, exposed as "Split a turn"
+   at publish time and at discard time.
+4. **Direct-merge runs against a side-clone** of the main repo, not
+   the user's main working copy — the "main repo must be clean"
+   constraint goes away.
+5. **Publish path is per-repo configurable** (`direct-merge` | `pr` |
+   `both`), with a workspace-launch default applied to new repos.
+6. **Discard** is the only "remove" verb. No separate Undo.
+7. **Bulk merges skip-on-conflict and surface all failures at the
+   end** — multiple agents can be in conflict simultaneously.
+8. **Persistence of unpublished turns across paused-terminal snapshots
+   is out of scope for v1.**
+9. **Every action is a telemetry event**; catalog updates ship with
+   the feature.
 
-This gives us the strongest mental-model match (turns are real,
-diffable, undoable, addressable) while keeping a clean publish history
-and preserving an escape hatch for users who hate auto-commit.
-
-The repo-level surface is the same for all options; we can build it
-once.
+The repo-level surface is independent of per-session auto-commit
+state and is built once.
 
 ---
 
-## 9. Open questions for the discussion
+## 9. Decisions (resolved 2026-05-06)
 
-1. **Vocabulary**: do we like *turn* / *patch* / *batch* / *publish*?
-   Alternatives: *round* (your word, currently unused in code) /
-   *change* / *version* / *ship*. Whatever we pick, we should make it
-   the consistent term in code, UI, and docs.
-2. **Auto-commit default**: on or off? On gives us option B's
-   ergonomics by default; off forces every user through option A.
-3. **Hunk-level granularity**: ship from day one, or a fast-follow?
-   Cursor and Claude-Code-VS-Code both shipped without it and have
-   open issues; that's a warning shot.
-4. **Where does "merge" actually run?** In the worktree, or in the main
-   repo? Today it's the main repo; that imposes the "main repo working
-   tree must be clean" constraint. Could we instead push the worktree
-   branch and merge from a side-clone, sidestepping the main-repo
-   constraint entirely?
-5. **PR-or-direct-merge default**: should the default Publish path be
-   "merge locally to base + push base," or "push branch + open PR"?
-   Different teams want different defaults; do we make this a
-   workspace-scoped policy?
-6. **Discard vs undo distinction**: is "Undo turn 5" different from
-   "Discard turn 5"? Proposal: Undo = revert to before the turn (kept
-   in reflog); Discard = drop the turn-commit and squash subsequent
-   turns down (destructive, requires confirm).
-7. **Conflict UX during bulk merge**: today's `ConflictResolveModal`
-   resumes Claude on the conflict. Does that compose with bulk merge
-   (pause queue → resolve → resume queue)?
-8. **Persistence after session close**: paused-terminal snapshots
-   already exist. Do unpublished turns "follow" the paused snapshot?
-   Probably yes — Cursor's reopen-bug class warns us not to lose
-   pending state on reopen.
-9. **Telemetry**: every action (publish, merge, push, PR, undo,
-   discard) should be a tracked event so we can tune later. Catalog
-   addition for `docs/analytics-event-catalog.md`.
+The nine open questions from the original draft have been resolved.
+Each entry below records the question, the decision, and any new
+design implications absorbed into §6/§8.
+
+**1. Vocabulary — DECIDED: my proposal.**
+We adopt **turn** (one prompt-to-Stop cycle), **patch** (the file
+delta a turn produces, addressable as a wip commit), **batch** (a set
+the user acts on together), **publish** (umbrella verb for
+push/merge/PR). These supersede "round" everywhere we add new code,
+strings, and docs. Existing usages of "completion" remain for the
+overall feature umbrella where they're already entrenched (e.g.,
+`completion-policy-store.ts`); fresh code uses the new vocabulary.
+
+**2. Auto-commit default — DECIDED: ON.**
+Every Stop with file changes auto-commits as `wip(turn-N)`. Per-session
+toggle off available; switching off mid-session does not un-commit
+existing wip commits. This makes Option B the spine and Option A a
+fallback only. Drives the §6 design.
+
+**3. Hunk-level granularity — DECIDED: include in v1.**
+Hunks are the navigation unit in the diff viewer (J/K). "Split a turn"
+at publish time uses a hunk picker. "Discard hunks from a turn" is
+shorthand for "split the turn, discard one half." Implementation:
+`git rebase -i edit` + `git reset HEAD^` + selective `git add -p`.
+
+**4. Where merge runs — DECIDED: side-clone.**
+Direct-merge runs in a lazily-created side-clone at
+`.worktrees/.merge-staging/` rather than the user's main working
+copy. The "main repo working tree must be clean" constraint is
+eliminated for the merge path. One side-clone per repo, GC'd when no
+agents remain.
+
+**5. PR vs direct-merge default — DECIDED: per-repo, with workspace
+default.**
+Each repo has a Publish-path setting: `direct-merge` | `pr` | `both`.
+The workspace launch dialog asks once for the default (applied to
+repos opened in that workspace). The repo-level modal exposes a
+dropdown to change it any time. With `both`, both verbs surface as
+side-by-side affordances; with one, the other's affordances hide.
+
+**6. Discard vs Undo — DECIDED: Discard only.**
+There is no separate Undo verb. **Discard turn N** drops the
+turn-commit; if subsequent turns exist, they rebase over the gap (or
+the dialog warns "you'd have to discard turns 5, 6, too"). Always
+destructive, always requires a single confirm. Reflog still catches
+disasters; we don't surface it as a UI verb.
+
+**7. Bulk-merge conflict handling — DECIDED: skip-and-surface,
+multi-conflict-aware.**
+Bulk merge iterates the selected agents. On conflict for any one,
+abort that merge (`git merge --abort`), record the conflict, continue
+to the next. After the queue drains, surface a multi-conflict modal
+listing every conflicted agent. The user can resolve them
+one-at-a-time (existing per-agent flow), bulk-punt them all to Claude
+(one resume-with-conflict prompt per agent), or discard the
+conflicting work. The current `merge-queue` becomes a result-
+aggregating pipeline rather than stop-on-error.
+
+**8. Persistence after session close — DECIDED: out of scope for v1.**
+Paused-terminal snapshots do not need to track unpublished turns yet.
+We accept that resuming a paused terminal a week later starts with no
+turn-list memory. This is explicit scope reduction; revisit in v2 if
+demand surfaces. The Cursor reopen-bug warning still applies *within
+a session* — the per-session modal must rehydrate from git on every
+open, not from cached state.
+
+**9. Telemetry — DECIDED: ship with the feature.**
+Catalog additions to `docs/analytics-event-catalog.md`:
+
+- `turn_auto_committed` — fields: turn_index, file_count, additions, deletions
+- `turn_published` — fields: kind (`squashed` | `individual` | `split`),
+  turn_count_in, commit_count_out, publish_path (`direct-merge` | `pr`)
+- `turn_discarded` — fields: turn_index, had_dependents (bool)
+- `merge_attempted` / `merge_succeeded` / `merge_conflicted` — fields:
+  conflict_paths_count (0 if succeeded)
+- `pr_opened` / `pr_open_failed` — fields: error_class (failed only)
+- `bulk_action_started` / `bulk_action_completed` — fields: action,
+  agent_count, success_count, conflict_count, failure_count
+- `auto_commit_toggled` — fields: from, to, mid_session (bool)
+- `publish_path_changed` — fields: scope (`workspace` | `repo`),
+  from, to
+
+All events keyed by anonymous `installation_id`; no paths, no commit
+messages, no diffs. Same redaction rules as existing events.
 
 ---
 
