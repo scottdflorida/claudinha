@@ -610,9 +610,13 @@ export class InspectorService {
     }
 
     try {
+      // Pin the Inspector summary to Haiku at low effort. The report is a
+      // short structured digest of diffs the user is about to merge, so
+      // there's no upside to paying Opus/Sonnet rates or waiting for a
+      // higher-effort response — Haiku at low keeps it cheap and snappy.
       const { stdout } = await execFileAsync(
         'claude',
-        ['-p', prompt],
+        ['--model', 'haiku', '--effort', 'low', '-p', prompt],
         { timeout: LLM_TIMEOUT, maxBuffer: 4 * 1024 * 1024 }
       )
       return { workspaceId, generatedAt: Date.now(), markdown: stdout.trim() }
