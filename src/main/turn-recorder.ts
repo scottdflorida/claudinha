@@ -171,38 +171,40 @@ export class TurnRecorder {
     const placeholderSummary = `${status.changedFileCount} file${status.changedFileCount === 1 ? '' : 's'} changed`
     const placeholderMsg = formatTurnCommitMessage(nextIndex, placeholderSummary, turnId)
 
-    // 1. Stage everything EXCEPT Claudinha's own infrastructure paths.
+    // 1. Stage everything, then defensively unstage Claudinha's own
+    //    infrastructure paths.
     //
     //    `git add -A` covers tracked + untracked + deletions in one shot.
     //    Per L-062, untracked files need at least intent-to-add to show up
     //    in `git diff` — `git add -A` fully stages them.
     //
-    //    BUT: `.claude/` and `.worktrees/` are infrastructure that must not
-    //    land in user-facing commits. Two ways they can sneak in:
-    //      a) Once tracked from a prior commit, `.claude/settings.local.json`
-    //         updates (e.g. Claude auto-granting itself a permission rule)
-    //         get re-staged by `git add -A` regardless of `.git/info/exclude`
-    //         (which only governs untracked files).
-    //      b) A worktree created before `ensureClaudinhaPathsIgnored` ran
-    //         can have these entries un-ignored locally.
+    //    Earlier attempt used pathspec exclusion (`-- :!.claude :!.worktrees`)
+    //    to avoid staging infra in the first place. That's the right idea
+    //    in isolation, but `ensureClaudinhaPathsIgnored` writes both dirs
+    //    to `.git/info/exclude` on every worktree we create — and git
+    //    refuses to evaluate a pathspec that names an ignored path with
+    //    "The following paths are ignored by one of your .gitignore files
+    //    [...] Use -f if you really want to add them." That's git treating
+    //    *exclusion-only* references as if they were *intent-to-include*,
+    //    so the whole `add` errors out before doing anything.
     //
-    //    Pathspec magic `:!<dir>/` excludes a directory from the operation.
-    //    We build the exclusion list from the canonical `CLAUDINHA_INFRASTRUCTURE_DIRS`
-    //    so adding a new infra dir means one place to edit. If the user
-    //    *did* add a `.claude/settings.local.json` modification they want
-    //    in a turn, they'll need to commit it explicitly — the auto-commit
-    //    deliberately excludes it.
-    const excludePathspecs = CLAUDINHA_INFRASTRUCTURE_DIRS.map((dir) => `:!${dir}`)
-    const addErr = await runGitWithLockRetry(
-      ['add', '-A', '--', ...excludePathspecs],
-      { cwd: pane.worktreePath }
-    )
+    //    Two-step approach is safer:
+    //      a) `git add -A` — adds everything, but the gitignore in
+    //         `.git/info/exclude` already prevents `.claude/` and
+    //         `.worktrees/` from being added if they're untracked.
+    //      b) `git reset HEAD -- .claude .worktrees` — unstages those dirs
+    //         in case they're TRACKED from a prior commit (gitignore
+    //         doesn't apply to tracked files; e.g. Claude auto-mode
+    //         silently writing a permission rule into a tracked
+    //         `.claude/settings.local.json`).
+    //
+    //    Reset on a non-existent path is silent (no error). The empty-
+    //    staged-diff check below catches the "all changes were infra"
+    //    case so we don't produce empty wip-commits.
+    const addErr = await runGitWithLockRetry(['add', '-A'], { cwd: pane.worktreePath })
     if (addErr) {
       return { outcome: 'error', error: `git add -A: ${addErr}` }
     }
-    // Belt + suspenders: if any infra paths were already staged from a
-    // pre-turn-recorder action (e.g. spawn-time .claude/ writes), unstage
-    // them before the commit so they never enter the wip-commit.
     await runGitWithLockRetry(
       ['reset', 'HEAD', '--', ...CLAUDINHA_INFRASTRUCTURE_DIRS],
       { cwd: pane.worktreePath }
