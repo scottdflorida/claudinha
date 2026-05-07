@@ -1,10 +1,19 @@
-import { execFile } from 'child_process'
+import { execFile, execFileSync } from 'child_process'
 import { promisify } from 'util'
 import fs from 'fs'
 import path from 'path'
 import type { GitStatus } from '../shared/types'
 
 const execFileAsync = promisify(execFile)
+
+/**
+ * Members of the "Claudinha infrastructure" path category that should never
+ * appear as user work in `git status` (filtered by `isClaudinhaInfrastructurePath`)
+ * and should be locally git-ignored on every repo we write to (handled by
+ * `ensureClaudinhaPathsIgnored`). Adding a new infra dir means adding it here
+ * once — both filter and ignore-writer pick it up.
+ */
+const CLAUDINHA_INFRASTRUCTURE_DIRS = ['.worktrees', '.claude'] as const
 
 /** Timeout for git commands (ms) */
 const GIT_TIMEOUT = 5_000
@@ -49,7 +58,72 @@ export function countUserChangedFiles(porcelainOutput: string): number {
  */
 export function isClaudinhaInfrastructurePath(file: string): boolean {
   const segments = file.split('/')
-  return segments.includes('.claude') || segments.includes('.worktrees')
+  return CLAUDINHA_INFRASTRUCTURE_DIRS.some((dir) => segments.includes(dir))
+}
+
+/**
+ * Append Claudinha's infrastructure dirs (`.worktrees/`, `.claude/`) to the
+ * repo's local-only `.git/info/exclude` so git itself stops flagging them as
+ * untracked. Idempotent — safe to call before every worktree creation. Best-
+ * effort — never throws, since failing to write the exclude file must not
+ * block worktree creation. Doesn't touch the user's tracked `.gitignore`,
+ * which means the ignore stays local to the user's clone and never lands in
+ * a commit.
+ *
+ * Skips any dir that `git check-ignore` already reports as ignored — covers
+ * users who've already added the entry to `.gitignore`, a global ignore
+ * file, or a prior `.git/info/exclude` write by us.
+ */
+export function ensureClaudinhaPathsIgnored(repoRoot: string): void {
+  let excludeFilePath: string
+  try {
+    const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: repoRoot,
+      timeout: GIT_TIMEOUT,
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).toString().trim()
+    if (!commonDir) return
+    excludeFilePath = path.isAbsolute(commonDir)
+      ? path.join(commonDir, 'info', 'exclude')
+      : path.join(repoRoot, commonDir, 'info', 'exclude')
+  } catch {
+    return // not a git repo, or git unavailable — nothing to do
+  }
+
+  const toAppend: string[] = []
+  for (const dir of CLAUDINHA_INFRASTRUCTURE_DIRS) {
+    try {
+      execFileSync('git', ['check-ignore', '-q', `${dir}/`], {
+        cwd: repoRoot,
+        timeout: GIT_TIMEOUT,
+        stdio: 'ignore'
+      })
+      // exit 0 → already ignored somewhere; skip
+    } catch {
+      toAppend.push(`${dir}/`)
+    }
+  }
+  if (toAppend.length === 0) return
+
+  try {
+    fs.mkdirSync(path.dirname(excludeFilePath), { recursive: true })
+    let existing = ''
+    try {
+      existing = fs.readFileSync(excludeFilePath, 'utf8')
+    } catch {
+      // file doesn't exist yet — created below
+    }
+    const existingLines = new Set(
+      existing.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+    )
+    const additions = toAppend.filter((line) => !existingLines.has(line))
+    if (additions.length === 0) return
+
+    const prefix = existing.length === 0 || existing.endsWith('\n') ? '' : '\n'
+    fs.appendFileSync(excludeFilePath, prefix + additions.join('\n') + '\n', 'utf8')
+  } catch (err) {
+    console.warn('[git-status] ensureClaudinhaPathsIgnored: write failed', err)
+  }
 }
 
 /**

@@ -54,6 +54,7 @@ import type { StatusDetector } from './status-detector'
 import type { MetricsCollector } from './metrics-collector'
 import type { PaneTransitionBuffer } from './pane-transition-buffer'
 import type { GitStatusPoller } from './git-status-poller'
+import { ensureClaudinhaPathsIgnored } from './git-status'
 import type { PaneSpawnBuffer } from './pane-spawn-buffer'
 import type { WorkspaceManager } from './workspace-manager'
 import type { PlanApprovalSequencer } from './plan-approval-sequencer'
@@ -229,6 +230,7 @@ export function spawnTerminalsIntoWorkspace(
 
       if (spawnPayload.mode === 'new-worktree') {
         const wtName = spawnPayload.worktreeName!
+        ensureClaudinhaPathsIgnored(droneRepoPath)
         fs.mkdirSync(path.join(droneRepoPath, '.worktrees'), { recursive: true })
         const wtPath = path.join(droneRepoPath, '.worktrees', wtName)
         execFileSync('git', ['worktree', 'add', wtPath, '-b', wtName], {
