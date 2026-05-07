@@ -2,7 +2,7 @@ import React, { useCallback } from 'react'
 import {
   ArrowRightLeft, X, MoreHorizontal,
   Hand,
-  ArrowUp, Asterisk, ChevronDown
+  ArrowUp, ChevronDown
 } from 'lucide-react'
 import type { EffortLevel, Model, GitStatus, PaneStatus, PaneMetrics } from '../../shared/types'
 import type { PaneMetricsIpc } from '../../shared/ipc-channels'
@@ -126,7 +126,6 @@ export function PaneHeader({
   const handleMove = useCallback((e: React.MouseEvent) => { e.stopPropagation(); onMoveClick?.() }, [onMoveClick])
   const handleModelClick = useCallback((e: React.MouseEvent) => { e.stopPropagation(); onModelClick?.() }, [onModelClick])
 
-  const isDirty = gitStatus?.hasUncommittedChanges ?? false
   const commitsAhead = gitStatus?.commitsAhead ?? 0
 
   // Kanban mode: shift the header one step darker on the surface scale so it
@@ -171,15 +170,6 @@ export function PaneHeader({
             </span>
           )
         })()}
-
-        {/* Dirty indicator */}
-        {isDirty && (
-          <Asterisk
-            size={11}
-            className="flex-shrink-0"
-            style={{ color: 'var(--color-status-done)' }}
-          />
-        )}
 
         {/* Ahead indicator */}
         {!isNarrow && commitsAhead > 0 && (
