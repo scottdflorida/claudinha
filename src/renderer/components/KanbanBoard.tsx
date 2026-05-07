@@ -194,10 +194,7 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
       <div
         className="grid w-full h-full bg-surface"
         style={{
-          // Awaiting-orders is a narrow rail (~140px) — the others split the
-          // remaining width evenly. Reflects the plan's "compact awaiting rail"
-          // requirement.
-          gridTemplateColumns: '140px repeat(5, minmax(0, 1fr))',
+          gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
           gap: 1,
           background: 'var(--color-border-strong)' // hairline column dividers via gap fill
         }}
