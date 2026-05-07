@@ -148,7 +148,6 @@ export function KanbanCard({
     else onPillClick?.()
   }, [completionState, onResolveConflict, onResolveDirtyMain, onPillClick])
 
-  const isAwaitingOrders = pane.status === 'awaiting-prompt'
   const baseBg = isActive ? 'bg-overlay' : 'bg-raised'
 
   return (
@@ -167,12 +166,18 @@ export function KanbanCard({
       aria-label={`Select ${agentName}`}
       className={`
         group/card w-full text-left rounded-md ${baseBg}
-        flex flex-col gap-1.5 cursor-pointer
-        ${isAwaitingOrders ? 'px-2 py-1.5' : 'px-3 py-2'}
+        flex flex-col justify-center gap-0 cursor-pointer
+        px-3 py-1
         transition-colors duration-[80ms]
         hover:bg-overlay focus:outline-none focus-visible:outline-accent
       `}
       style={{
+        // Fixed height so the in-flight overlay never shrinks/expands when
+        // the source column's two-line content (working with active tool,
+        // changes-ready with diff) doesn't match the destination's. Every
+        // card is the same 34px shell; one-line content centers,
+        // two-line content groups tightly.
+        height: 34,
         // Red left-border when the pane is in any error condition: PTY
         // terminated OR a transient action failure (mirrors PaneBorder's
         // hasError treatment in Wall mode).
@@ -185,14 +190,12 @@ export function KanbanCard({
           Close X and rename pencil are HOVER-ONLY across every column —
           one consistent rule, no per-column variant. */}
       <div className="flex items-baseline min-w-0 gap-2">
-        {!isAwaitingOrders && (
-          <span
-            className="text-[11px] text-fg-muted shrink-0 truncate max-w-[40%]"
-            title={pane.repoName}
-          >
-            {pane.repoName}
-          </span>
-        )}
+        <span
+          className="text-[11px] text-fg-muted shrink-0 truncate max-w-[40%]"
+          title={pane.repoName}
+        >
+          {pane.repoName}
+        </span>
         {isEditingName ? (
           <input
             ref={nameInputRef}
@@ -217,7 +220,7 @@ export function KanbanCard({
               title={`${agentName} — click pencil to rename`}
               onDoubleClick={startEdit}
             >
-              {isAwaitingOrders ? pane.repoName : agentName}
+              {agentName}
             </span>
             <button
               type="button"
