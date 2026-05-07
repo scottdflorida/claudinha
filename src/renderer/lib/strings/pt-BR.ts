@@ -206,6 +206,7 @@ export const ptBR: Strings = {
     branchNamingLabel: 'Nomeação de branch',
     namingAuto: 'Automática',
     namingCustom: 'Personalizada',
+    namingDisabledOnMain: 'Desativado — os terminais rodam na branch atual, nenhuma branch nova é criada.',
     perTerminalRepos: 'Repositórios por terminal',
     sharedBranchNameLabel: 'Nome da branch compartilhada',
     sharedBranchPlaceholder: 'feature/foo',

@@ -193,6 +193,7 @@ export const en = {
     branchNamingLabel: 'Branch naming',
     namingAuto: 'Auto',
     namingCustom: 'Custom',
+    namingDisabledOnMain: 'Disabled — terminals run on the current branch, no new branch is created.',
     perTerminalRepos: 'Per-terminal repositories',
     sharedBranchNameLabel: 'Shared branch name',
     sharedBranchPlaceholder: 'feature/foo',

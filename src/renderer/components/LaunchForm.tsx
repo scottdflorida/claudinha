@@ -472,7 +472,11 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
 
   const isPerRepo = repoMode === 'per-pane'
   const isShared = worktreeMode === 'shared'
-  const isCustom = namingMode === 'manual'
+  const isMain = worktreeMode === 'main'
+  // When 'On main' is selected, no branches are created and naming is moot —
+  // collapse the matrix as if the user picked Auto so the manual-name inputs
+  // don't render even if `namingMode` was left on 'manual' from a prior run.
+  const isCustom = namingMode === 'manual' && !isMain
 
   // "Terminal N: [repo input + Browse]" row
   const renderRepoRow = (i: number): React.JSX.Element => {
@@ -792,16 +796,21 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
                 )}
               </div>
 
-              {/* Branch naming */}
-              <SegmentedControl
-                label={t.launchFormUI.branchNamingLabel}
-                options={[
-                  { value: 'auto', label: t.launchFormUI.namingAuto },
-                  { value: 'manual', label: t.launchFormUI.namingCustom }
-                ]}
-                value={namingMode}
-                onChange={(v) => setNamingMode(v as NamingMode)}
-              />
+              {/* Branch naming — disabled in 'On main' mode (no branch is created) */}
+              <div className="flex flex-col gap-1.5">
+                <SegmentedControl
+                  label={t.launchFormUI.branchNamingLabel}
+                  options={[
+                    { value: 'auto', label: t.launchFormUI.namingAuto, disabled: isMain },
+                    { value: 'manual', label: t.launchFormUI.namingCustom, disabled: isMain }
+                  ]}
+                  value={namingMode}
+                  onChange={(v) => setNamingMode(v as NamingMode)}
+                />
+                {isMain && (
+                  <p className="text-xs text-fg-muted">{t.launchFormUI.namingDisabledOnMain}</p>
+                )}
+              </div>
 
               {/* Conditional fields driven by (Location × Layout × Naming) */}
               {renderConditionalFields()}

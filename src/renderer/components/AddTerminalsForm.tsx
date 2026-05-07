@@ -441,7 +441,10 @@ export function AddTerminalsForm({
 
   const isPerRepo = repoMode === 'per-pane'
   const isShared = worktreeMode === 'shared'
-  const isCustom = namingMode === 'manual'
+  const isMain = worktreeMode === 'main'
+  // 'On main' = no branches created; treat naming as effectively Auto for the
+  // conditional-fields matrix so manual-name inputs don't render.
+  const isCustom = namingMode === 'manual' && !isMain
 
   const renderRepoRow = (i: number): React.JSX.Element => {
     const v = repoValidStates[i] ?? EMPTY_VALIDATION
@@ -748,16 +751,21 @@ export function AddTerminalsForm({
         )}
       </div>
 
-      {/* Branch naming */}
-      <SegmentedControl
-        label={t.launchFormUI.branchNamingLabel}
-        options={[
-          { value: 'auto', label: t.launchFormUI.namingAuto },
-          { value: 'manual', label: t.launchFormUI.namingCustom }
-        ]}
-        value={namingMode}
-        onChange={(v) => setNamingMode(v as NamingMode)}
-      />
+      {/* Branch naming — disabled in 'On main' mode (no branch is created) */}
+      <div className="flex flex-col gap-1.5">
+        <SegmentedControl
+          label={t.launchFormUI.branchNamingLabel}
+          options={[
+            { value: 'auto', label: t.launchFormUI.namingAuto, disabled: isMain },
+            { value: 'manual', label: t.launchFormUI.namingCustom, disabled: isMain }
+          ]}
+          value={namingMode}
+          onChange={(v) => setNamingMode(v as NamingMode)}
+        />
+        {isMain && (
+          <p className="text-xs text-fg-muted">{t.launchFormUI.namingDisabledOnMain}</p>
+        )}
+      </div>
 
       {/* Conditional fields driven by (Location × Layout × Naming) */}
       {renderConditionalFields()}
