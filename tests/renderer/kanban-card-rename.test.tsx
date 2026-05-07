@@ -55,7 +55,9 @@ function makePane(overrides: Partial<RendererPane> = {}): RendererPane {
       modelDisplayName: null,
       linesAdded: null,
       linesRemoved: null,
-      sessionTitle: null
+      sessionTitle: null,
+      agentName: null,
+      initialPrompt: null
     },
     terminated: false,
     hasUnseenStatusChange: false,
@@ -88,12 +90,33 @@ describe('KanbanCard — agent-name fallback chain', () => {
     expect(queryByText('feature-x')).toBeNull()
   })
 
-  it('falls back to sessionTitle when userName is null', () => {
+  it('falls back to agentName when userName is null', () => {
     const { getByText, queryByText } = render(
       <KanbanCard
         pane={makePane({
           userName: null,
-          metrics: { ...makePane().metrics, sessionTitle: 'Auto Title' }
+          metrics: {
+            ...makePane().metrics,
+            agentName: 'add-people-stories-folder',
+            sessionTitle: 'Add a story'
+          }
+        })}
+        statusColor="#fff"
+        isActive={false}
+        onClick={() => {}}
+      />
+    )
+    expect(getByText('add-people-stories-folder')).toBeTruthy()
+    expect(queryByText('Add a story')).toBeNull()
+    expect(queryByText('feature-x')).toBeNull()
+  })
+
+  it('falls back to sessionTitle when userName and agentName are null', () => {
+    const { getByText, queryByText } = render(
+      <KanbanCard
+        pane={makePane({
+          userName: null,
+          metrics: { ...makePane().metrics, agentName: null, sessionTitle: 'Auto Title' }
         })}
         statusColor="#fff"
         isActive={false}
@@ -104,7 +127,7 @@ describe('KanbanCard — agent-name fallback chain', () => {
     expect(queryByText('feature-x')).toBeNull()
   })
 
-  it('falls back to worktreeName when both userName and sessionTitle are absent', () => {
+  it('falls back to worktreeName when userName, agentName, and sessionTitle are all absent', () => {
     const { getByText } = render(
       <KanbanCard
         pane={makePane({ userName: null })}
@@ -114,6 +137,38 @@ describe('KanbanCard — agent-name fallback chain', () => {
       />
     )
     expect(getByText('feature-x')).toBeTruthy()
+  })
+
+  it('relabels from worktreeName to sessionTitle when metrics arrive after the card is mounted', () => {
+    // Regression: the original bug let the card show wt-xxxxxx forever
+    // because the JSONL parser silently never matched. This test pins the
+    // reactive update we always intended.
+    const initialPane = makePane({ userName: null, worktreeName: 'wt-7ae740' })
+    const { rerender, getByText, queryByText } = render(
+      <KanbanCard
+        pane={initialPane}
+        statusColor="#fff"
+        isActive={false}
+        onClick={() => {}}
+      />
+    )
+    expect(getByText('wt-7ae740')).toBeTruthy()
+
+    const withTitle = makePane({
+      userName: null,
+      worktreeName: 'wt-7ae740',
+      metrics: { ...makePane().metrics, sessionTitle: 'Add a story' }
+    })
+    rerender(
+      <KanbanCard
+        pane={withTitle}
+        statusColor="#fff"
+        isActive={false}
+        onClick={() => {}}
+      />
+    )
+    expect(getByText('Add a story')).toBeTruthy()
+    expect(queryByText('wt-7ae740')).toBeNull()
   })
 })
 

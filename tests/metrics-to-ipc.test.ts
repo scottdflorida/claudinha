@@ -12,6 +12,7 @@ function makeMetrics(overrides?: Partial<PaneMetrics>): PaneMetrics {
     linesAdded: null,
     linesRemoved: null,
     sessionTitle: null,
+    agentName: null,
     initialPrompt: null,
     ...overrides
   }
@@ -45,6 +46,11 @@ describe('metricsToIpc', () => {
     expect(result.linesAdded).toBe(10)
     expect(result.linesRemoved).toBe(3)
     expect(result.sessionTitle).toBe('Fix bug')
+  })
+
+  it('round-trips agentName through the IPC shape', () => {
+    const result = metricsToIpc(makeMetrics({ agentName: 'add-people-stories-folder' }))
+    expect(result.agentName).toBe('add-people-stories-folder')
   })
 
   it('converts Map<string,number> toolsUsed to plain Record', () => {

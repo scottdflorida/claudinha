@@ -122,6 +122,7 @@ const emptyMetrics: PaneMetricsIpc = {
   linesAdded: null,
   linesRemoved: null,
   sessionTitle: null,
+  agentName: null,
   initialPrompt: null
 }
 

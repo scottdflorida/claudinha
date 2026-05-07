@@ -603,6 +603,7 @@ export function registerIpcHandlers(
       linesAdded: null,
       linesRemoved: null,
       sessionTitle: null,
+      agentName: null,
       initialPrompt: null
     }
 
@@ -2738,7 +2739,7 @@ export function registerIpcHandlers(
             totalTokens: null, contextPercent: null, toolsUsed: null,
             totalCostUsd: null, durationMs: null, modelDisplayName: null,
             linesAdded: null, linesRemoved: null, sessionTitle: null,
-            initialPrompt: null
+            agentName: null, initialPrompt: null
           }
 
           const paneState: PaneState = {

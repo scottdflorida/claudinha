@@ -274,7 +274,10 @@ export interface PaneMetrics {
   linesRemoved: number | null // total lines removed
 
   // From JSONL transcript (PE-04)
-  sessionTitle: string | null // AI-generated session title (from custom-title entry)
+  /** AI-generated session title — Claude's `ai-title` JSONL entry (prose, e.g. "Add a story"). */
+  sessionTitle: string | null
+  /** Per-session agent name — Claude's `agent-name` JSONL entry (kebab-case, e.g. "add-people-stories-folder"). */
+  agentName: string | null
   /** First user message extracted from the JSONL transcript (used as the dormant card subtitle) */
   initialPrompt: string | null
 }
@@ -543,8 +546,8 @@ export interface PaneState {
   isResolvingConflict?: boolean
   /**
    * Optional user-supplied display name that overrides the auto fallback chain
-   * in card / row labels. `null` = no override (falls back to sessionTitle →
-   * worktreeName). Updated via PANE_SET_USER_NAME.
+   * in card / row labels. `null` = no override (falls back to agentName →
+   * sessionTitle → worktreeName). Updated via PANE_SET_USER_NAME.
    */
   userName?: string | null
   /**

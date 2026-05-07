@@ -89,7 +89,8 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
   const metrics = pane?.metrics ?? {
     totalTokens: null, contextPercent: null, toolsUsed: null,
     totalCostUsd: null, durationMs: null, modelDisplayName: null,
-    linesAdded: null, linesRemoved: null, sessionTitle: null, initialPrompt: null
+    linesAdded: null, linesRemoved: null, sessionTitle: null,
+    agentName: null, initialPrompt: null
   }
   const isApiBilling = pane?.isApiBilling ?? false
   const effort = pane?.effort ?? 'high'

@@ -37,8 +37,10 @@ interface JsonlEntry {
   }
   /** Present on tool_use entries */
   tool_name?: string
-  /** Present on custom-title entries (AI-generated session title) */
-  customTitle?: string
+  /** Present on `ai-title` entries — Claude's auto-generated session title (prose). */
+  aiTitle?: string
+  /** Present on `agent-name` entries — kebab-case per-session agent name. */
+  agentName?: string
   [key: string]: unknown
 }
 
@@ -317,6 +319,7 @@ export class MetricsCollector {
       totalTokens: existingMetrics.totalTokens,
       toolsUsed: existingMetrics.toolsUsed,
       sessionTitle: existingMetrics.sessionTitle,
+      agentName: existingMetrics.agentName,
       initialPrompt: existingMetrics.initialPrompt,
 
       // Statusline-derived fields
@@ -428,6 +431,7 @@ export class MetricsCollector {
     let latestUsage: JsonlEntry['message'] | null = null
     let latestModelId: string | null = null
     let sessionTitle: string | null = null
+    let agentName: string | null = null
     let initialPrompt: string | null = null
     const toolCounts: ToolUsageSummary = new Map()
 
@@ -443,9 +447,15 @@ export class MetricsCollector {
       // Skip sidechain and error entries
       if (entry.isSidechain || entry.isApiErrorMessage) continue
 
-      // Extract AI-generated session title (PE-04)
-      if (entry.type === 'custom-title' && entry.customTitle) {
-        sessionTitle = entry.customTitle
+      // Extract Claude's auto-generated session title (`ai-title` JSONL entry).
+      // Latest occurrence wins so re-titles after compaction are honored.
+      if (entry.type === 'ai-title' && entry.aiTitle) {
+        sessionTitle = entry.aiTitle
+      }
+      // Extract Claude Code's per-session agent name (`agent-name` JSONL entry).
+      // Same latest-wins rule.
+      if (entry.type === 'agent-name' && entry.agentName) {
+        agentName = entry.agentName
       }
 
       // Capture the first human-authored user message as the session's
@@ -513,6 +523,7 @@ export class MetricsCollector {
       toolsUsed: toolCounts.size > 0 ? toolCounts : existingMetrics.toolsUsed,
       contextPercent: contextPercent ?? existingMetrics.contextPercent,
       sessionTitle: sessionTitle ?? existingMetrics.sessionTitle,
+      agentName: agentName ?? existingMetrics.agentName,
       initialPrompt: initialPrompt ?? existingMetrics.initialPrompt,
       // Statusline-derived (preserved)
       totalCostUsd: existingMetrics.totalCostUsd,

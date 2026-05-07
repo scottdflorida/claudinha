@@ -61,6 +61,7 @@ function makeMetrics() {
     linesAdded: null,
     linesRemoved: null,
     sessionTitle: null,
+    agentName: null,
     initialPrompt: null
   }
 }
@@ -354,7 +355,7 @@ describe('MetricsCollector', () => {
 
     it('triggers an eager JSONL parse the first time a pane learns its transcript_path', async () => {
       // While a session is mid-turn (status=working) the Stop hook hasn't
-      // fired yet. If Claude has already written `custom-title` into the
+      // fired yet. If Claude has already written `ai-title` into the
       // JSONL, we want the sessionTitle to show up within one statusline
       // poll cycle instead of waiting for the next Stop. applyStatuslineData
       // detects the "first time seen" transition and kicks off the parse.
@@ -369,7 +370,7 @@ describe('MetricsCollector', () => {
       )
       mockReadFile.mockResolvedValue(
         makeJsonl(
-          { type: 'custom-title', customTitle: 'cute-animal-stories' }
+          { type: 'ai-title', aiTitle: 'cute-animal-stories' }
         ) as unknown as Buffer
       )
 
@@ -669,11 +670,11 @@ describe('MetricsCollector', () => {
       )
     })
 
-    it('extracts customTitle from JSONL into sessionTitle (PE-04)', async () => {
+    it('extracts aiTitle from JSONL into sessionTitle', async () => {
       setupForJsonl(
         makeJsonl(
           { type: 'assistant', message: { usage: { input_tokens: 100, output_tokens: 50 } } },
-          { type: 'custom-title', customTitle: 'fix-auth-middleware', sessionId: 'sess-1' },
+          { type: 'ai-title', aiTitle: 'Fix auth middleware', sessionId: 'sess-1' },
           { tool_name: 'Read' }
         )
       )
@@ -681,13 +682,28 @@ describe('MetricsCollector', () => {
       await runAndFlush()
 
       const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
-      expect(metrics.sessionTitle).toBe('fix-auth-middleware')
+      expect(metrics.sessionTitle).toBe('Fix auth middleware')
       // Other fields still parsed correctly
       expect(metrics.totalTokens).toBe(150)
       expect(metrics.toolsUsed?.get('Read')).toBe(1)
     })
 
-    it('preserves existing sessionTitle when JSONL has no custom-title entry (PE-04)', async () => {
+    it('extracts agentName from JSONL alongside sessionTitle', async () => {
+      setupForJsonl(
+        makeJsonl(
+          { type: 'agent-name', agentName: 'fix-auth-middleware', sessionId: 'sess-1' },
+          { type: 'ai-title', aiTitle: 'Fix auth middleware', sessionId: 'sess-1' }
+        )
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.agentName).toBe('fix-auth-middleware')
+      expect(metrics.sessionTitle).toBe('Fix auth middleware')
+    })
+
+    it('preserves existing sessionTitle when JSONL has no ai-title entry', async () => {
       setupForJsonl(
         makeJsonl(
           { type: 'assistant', message: { usage: { input_tokens: 100, output_tokens: 50 } } }
@@ -701,18 +717,61 @@ describe('MetricsCollector', () => {
       expect(metrics.sessionTitle).toBe('previous-title')
     })
 
-    it('uses latest customTitle when multiple custom-title entries exist (PE-04)', async () => {
+    it('preserves existing agentName when JSONL has no agent-name entry', async () => {
       setupForJsonl(
         makeJsonl(
-          { type: 'custom-title', customTitle: 'first-title' },
-          { type: 'custom-title', customTitle: 'updated-title' }
+          { type: 'assistant', message: { usage: { input_tokens: 100, output_tokens: 50 } } }
+        ),
+        { agentName: 'previous-agent-name' }
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.agentName).toBe('previous-agent-name')
+    })
+
+    it('uses latest aiTitle when multiple ai-title entries exist', async () => {
+      setupForJsonl(
+        makeJsonl(
+          { type: 'ai-title', aiTitle: 'First title' },
+          { type: 'ai-title', aiTitle: 'Updated title' }
         )
       )
 
       await runAndFlush()
 
       const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
-      expect(metrics.sessionTitle).toBe('updated-title')
+      expect(metrics.sessionTitle).toBe('Updated title')
+    })
+
+    it('uses latest agentName when multiple agent-name entries exist', async () => {
+      setupForJsonl(
+        makeJsonl(
+          { type: 'agent-name', agentName: 'first-name' },
+          { type: 'agent-name', agentName: 'updated-name' }
+        )
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.agentName).toBe('updated-name')
+    })
+
+    it('does not capture stale custom-title entries (legacy format dropped)', async () => {
+      setupForJsonl(
+        makeJsonl(
+          // Old field name + entry type that Claude Code no longer emits.
+          { type: 'custom-title', customTitle: 'should-be-ignored' }
+        )
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.sessionTitle).toBeNull()
+      expect(metrics.agentName).toBeNull()
     })
 
     it('extracts the first user message into initialPrompt (string content)', async () => {

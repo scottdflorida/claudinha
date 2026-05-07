@@ -13,13 +13,20 @@ export interface DisplayNamePane {
   userName?: string | null
   metrics: {
     sessionTitle: string | null
+    /**
+     * `agent-name` JSONL entry. Optional so existing call sites that only
+     * carry `sessionTitle` (dormant snapshots, history records) keep
+     * compiling — they simply skip this rung of the chain.
+     */
+    agentName?: string | null
   }
 }
 
 /**
  * Resolve the pane's display name using the canonical fallback chain:
- *   `userName` (user-set via inline rename)
- *   → `metrics.sessionTitle` (Claude-generated `custom-title` from JSONL)
+ *   `userName` (claudinha inline rename)
+ *   → `metrics.agentName` (Claude Code `agent-name` JSONL entry)
+ *   → `metrics.sessionTitle` (Claude Code `ai-title` JSONL entry)
  *   → `worktreeName` (final fallback; the `wt-xxxxxx` branch id).
  *
  * Keep this as the single source of truth — all UI surfaces that render a
@@ -28,6 +35,8 @@ export interface DisplayNamePane {
 export function resolvePaneDisplayName(pane: DisplayNamePane): string {
   const userName = pane.userName?.trim()
   if (userName && userName.length > 0) return userName
+  const agentName = pane.metrics.agentName?.trim()
+  if (agentName && agentName.length > 0) return agentName
   const title = pane.metrics.sessionTitle?.trim()
   if (title && title.length > 0) return title
   return pane.worktreeName

@@ -323,6 +323,7 @@ export interface PaneMetricsIpc {
   linesAdded: number | null
   linesRemoved: number | null
   sessionTitle: string | null
+  agentName: string | null
   initialPrompt: string | null
 }
 
@@ -345,6 +346,7 @@ export function metricsToIpc(metrics: PaneMetrics): PaneMetricsIpc {
     linesAdded: metrics.linesAdded,
     linesRemoved: metrics.linesRemoved,
     sessionTitle: metrics.sessionTitle,
+    agentName: metrics.agentName,
     initialPrompt: metrics.initialPrompt
   }
 }

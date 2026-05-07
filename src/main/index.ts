@@ -20,6 +20,7 @@ fixPathForPackagedApp()
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc-channels'
 import type { WindowInitPayload } from '../shared/ipc-channels'
+import { resolvePaneDisplayName } from '../shared/pane-display'
 import { registerAnalyticsIpc, getInstallationId } from './analytics/analytics-config'
 import { analyticsBus } from './analytics/analytics-bus'
 import { initAnalyticsService, shutdownAnalyticsService } from './analytics/analytics-service'
@@ -400,7 +401,7 @@ app.whenReady().then(() => {
         status: pane.status,
         isWorktree: pane.isWorktree,
         repoName: pane.repoName,
-        agentName: pane.metrics.sessionTitle ?? pane.worktreeName,
+        agentName: resolvePaneDisplayName(pane),
         worktreeName: pane.worktreeName,
         branchName: pane.gitStatus?.branchName ?? null,
         hasUncommittedChanges: pane.gitStatus?.hasUncommittedChanges ?? false,
