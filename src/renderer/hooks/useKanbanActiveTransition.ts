@@ -46,7 +46,8 @@ function easeOut(t: number): number {
 }
 
 export function useKanbanActiveTransition(
-  activePaneId: string | null
+  activePaneId: string | null,
+  disableTransitions: boolean = false
 ): KanbanActiveTransitionState {
   const [state, setState] = useState<KanbanActiveTransitionState>({
     baseLayerPaneId: null,
@@ -65,6 +66,26 @@ export function useKanbanActiveTransition(
   useEffect(() => {
     if (activePaneId === null) return
 
+    if (disableTransitions) {
+      // Snap mode — used during the initial-spawn overlay and any other
+      // window where the caller declares this hook should not animate.
+      // Drain the queue, abort any in-flight RAF, and update base directly.
+      // When disableTransitions later flips to false, this effect re-runs
+      // with the latest activePaneId; baseRef will already match it (we
+      // snapped to it), so the tail check returns no-op.
+      queueRef.current = []
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      runningRef.current = false
+      if (baseRef.current !== activePaneId) {
+        baseRef.current = activePaneId
+        setState({ baseLayerPaneId: activePaneId, slidingLayerPaneId: null, slideProgress01: 0 })
+      }
+      return
+    }
+
     const queue = queueRef.current
     const tail = queue.length > 0 ? queue[queue.length - 1] : baseRef.current
     if (tail === activePaneId) return
@@ -73,9 +94,10 @@ export function useKanbanActiveTransition(
     if (!runningRef.current) {
       processNext()
     }
-    // baseRef is intentionally not a dep — it's a ref. activePaneId is the
-    // only real input; re-running on it covers every click.
-  }, [activePaneId])
+    // baseRef is intentionally not a dep — it's a ref. activePaneId and
+    // disableTransitions are the inputs; re-running on either covers
+    // every click and every overlay transition.
+  }, [activePaneId, disableTransitions])
 
   // Cleanup any in-flight RAF on unmount.
   useEffect(() => {

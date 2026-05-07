@@ -99,7 +99,10 @@ afterEach(() => {
  * and exposes them for direct manipulation. Also seeds the refs with stub
  * elements so getBoundingClientRect returns deterministic values.
  */
-function renderMovesHook(initialPanes: RendererPane[]): {
+function renderMovesHook(
+  initialPanes: RendererPane[],
+  initialCardRects: Record<string, { left: number; top: number; width: number; height: number }> = {}
+): {
   result: { current: ReturnType<typeof useKanbanCardMoves> }
   cardRefs: React.MutableRefObject<Map<string, HTMLElement | null>>
   dropTargetRefs: React.MutableRefObject<Map<PaneStatus, HTMLElement | null>>
@@ -107,6 +110,13 @@ function renderMovesHook(initialPanes: RendererPane[]): {
 } {
   const cardRefs = { current: new Map<string, HTMLElement | null>() }
   const dropTargetRefs = { current: new Map<PaneStatus, HTMLElement | null>() }
+  // Seed card rects BEFORE renderHook so the hook's rect-capture layout
+  // effect picks them up on the very first render. In real React this
+  // mirrors KanbanColumn's ref callbacks firing during commit, ahead of
+  // layout effects.
+  for (const [id, rect] of Object.entries(initialCardRects)) {
+    cardRefs.current.set(id, makeRectEl(rect))
+  }
   // Seed every column drop target so the hook can always measure toRect.
   const allCols: PaneStatus[] = ['awaiting-prompt', 'working', 'needs-input', 'done', 'error']
   for (const c of allCols) {
@@ -139,18 +149,15 @@ describe('useKanbanCardMoves', () => {
 
   it('starts an overlay move when a pane changes column', async () => {
     const panes = [makePane({ id: 'p1', status: 'awaiting-prompt' })]
-    const { result, cardRefs, rerender } = renderMovesHook(panes)
-    // Seed the card's DOM element so the source rect can be measured.
-    cardRefs.current.set('p1', makeRectEl({ left: 0, top: 0, width: 100, height: 50 }))
+    const { result, rerender } = renderMovesHook(panes, {
+      p1: { left: 0, top: 0, width: 100, height: 50 }
+    })
 
-    // Status changes to 'done'. Hook should enqueue and start animating
-    // after a microtask flush.
+    // Status changes to 'done'. The watcher (now a layout effect) starts
+    // the move synchronously inside the rerender's commit.
     const newPanes = [makePane({ id: 'p1', status: 'done' })]
     await act(async () => {
       rerender(newPanes)
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve() // flush the microtask in the watch effect.
     })
 
     expect(result.current.movingCard).not.toBe(null)
@@ -161,15 +168,13 @@ describe('useKanbanCardMoves', () => {
 
   it('lands the card after durationMs, dropping the override', async () => {
     const panes = [makePane({ id: 'p1', status: 'awaiting-prompt' })]
-    const { result, cardRefs, rerender } = renderMovesHook(panes)
-    cardRefs.current.set('p1', makeRectEl({ left: 0, top: 0, width: 100, height: 50 }))
+    const { result, rerender } = renderMovesHook(panes, {
+      p1: { left: 0, top: 0, width: 100, height: 50 }
+    })
 
     const newPanes = [makePane({ id: 'p1', status: 'done' })]
     await act(async () => {
       rerender(newPanes)
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
     })
 
     const duration = result.current.movingCard?.durationMs ?? 0
@@ -191,9 +196,10 @@ describe('useKanbanCardMoves', () => {
       makePane({ id: 'p1', status: 'awaiting-prompt' }),
       makePane({ id: 'p2', status: 'awaiting-prompt' })
     ]
-    const { result, cardRefs, rerender } = renderMovesHook(panes)
-    cardRefs.current.set('p1', makeRectEl({ left: 0, top: 0, width: 100, height: 50 }))
-    cardRefs.current.set('p2', makeRectEl({ left: 0, top: 60, width: 100, height: 50 }))
+    const { result, rerender } = renderMovesHook(panes, {
+      p1: { left: 0, top: 0, width: 100, height: 50 },
+      p2: { left: 0, top: 60, width: 100, height: 50 }
+    })
 
     // p1: awaiting → working.
     await act(async () => {
@@ -201,8 +207,6 @@ describe('useKanbanCardMoves', () => {
         makePane({ id: 'p1', status: 'working' }),
         makePane({ id: 'p2', status: 'awaiting-prompt' })
       ])
-      await Promise.resolve()
-      await Promise.resolve()
     })
     expect(result.current.movingCard?.pane.id).toBe('p1')
 
@@ -212,8 +216,6 @@ describe('useKanbanCardMoves', () => {
         makePane({ id: 'p1', status: 'working' }),
         makePane({ id: 'p2', status: 'done' })
       ])
-      await Promise.resolve()
-      await Promise.resolve()
     })
     // Still p1 in flight (queue is serial).
     expect(result.current.movingCard?.pane.id).toBe('p1')
@@ -230,13 +232,12 @@ describe('useKanbanCardMoves', () => {
   it('respects prefers-reduced-motion: snaps without overlay', async () => {
     ;(window as unknown as { matchMedia: (q: string) => MediaQueryList }).matchMedia = makeMatchMedia(true)
     const panes = [makePane({ id: 'p1', status: 'awaiting-prompt' })]
-    const { result, cardRefs, rerender } = renderMovesHook(panes)
-    cardRefs.current.set('p1', makeRectEl({ left: 0, top: 0, width: 100, height: 50 }))
+    const { result, rerender } = renderMovesHook(panes, {
+      p1: { left: 0, top: 0, width: 100, height: 50 }
+    })
 
     await act(async () => {
       rerender([makePane({ id: 'p1', status: 'done' })])
-      await Promise.resolve()
-      await Promise.resolve()
     })
 
     expect(result.current.movingCard).toBe(null)
@@ -246,14 +247,13 @@ describe('useKanbanCardMoves', () => {
 
   it('mid-flight real-status drift queues a follow-up move', async () => {
     const panes = [makePane({ id: 'p1', status: 'awaiting-prompt' })]
-    const { result, cardRefs, rerender } = renderMovesHook(panes)
-    cardRefs.current.set('p1', makeRectEl({ left: 0, top: 0, width: 100, height: 50 }))
+    const { result, rerender } = renderMovesHook(panes, {
+      p1: { left: 0, top: 0, width: 100, height: 50 }
+    })
 
     // Start a move awaiting → working.
     await act(async () => {
       rerender([makePane({ id: 'p1', status: 'working' })])
-      await Promise.resolve()
-      await Promise.resolve()
     })
     expect(result.current.movingCard?.pane.id).toBe('p1')
 
@@ -262,8 +262,6 @@ describe('useKanbanCardMoves', () => {
     // working → done move is enqueued.
     await act(async () => {
       rerender([makePane({ id: 'p1', status: 'done' })])
-      await Promise.resolve()
-      await Promise.resolve()
     })
 
     const dur1 = result.current.movingCard?.durationMs ?? 0
@@ -282,5 +280,37 @@ describe('useKanbanCardMoves', () => {
     } else {
       expect(displayedNow?.status).toBe('done')
     }
+  })
+
+  it('uses source-column rect for fromRect and pre-arrival drop-target rect for toRect', async () => {
+    // Regression: previously fromRect/toRect were measured at processNext
+    // time, by which point React had already remounted the card into the
+    // destination column. The overlay then drifted vertically inside the
+    // destination column instead of crossing source → destination.
+    // Now: rects come from the previous render's snapshot, so fromRect is
+    // the source-column slot and toRect is the destination drop target as
+    // it sat before the card joined that column.
+    const panes = [makePane({ id: 'p1', status: 'awaiting-prompt' })]
+    // 'awaiting-prompt' drop target is at idx 0 → left=0, top=500 (per
+    // renderMovesHook seeding). 'done' drop target is at idx 3 → left=600,
+    // top=500. Card seeded at left=0, top=42 — clearly distinct from both.
+    const { result, rerender } = renderMovesHook(panes, {
+      p1: { left: 0, top: 42, width: 100, height: 50 }
+    })
+
+    await act(async () => {
+      rerender([makePane({ id: 'p1', status: 'done' })])
+    })
+
+    const moving = result.current.movingCard
+    expect(moving).not.toBe(null)
+    // fromRect = source slot (the seeded card position), NOT a position
+    // inside the destination column.
+    expect(moving?.fromRect.left).toBe(0)
+    expect(moving?.fromRect.top).toBe(42)
+    // toRect = destination column's drop target, at its pre-arrival
+    // position (the seeded value for 'done').
+    expect(moving?.toRect.left).toBe(600)
+    expect(moving?.toRect.top).toBe(500)
   })
 })

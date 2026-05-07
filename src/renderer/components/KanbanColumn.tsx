@@ -5,6 +5,7 @@ import type { RendererPane } from '../hooks/usePaneState'
 import { KanbanCard } from './KanbanCard'
 import { useFlipChildren } from '../lib/flip'
 import { KANBAN_COMPACT_MS } from '../lib/kanbanMotion'
+import { resolvePaneDisplayName } from '../../shared/pane-display'
 
 // Theme-aware text color for the column header. The hex STATUS_COLORS map is
 // dark-mode-tuned (working = near-white) and disappears on the cream
@@ -13,8 +14,8 @@ import { KANBAN_COMPACT_MS } from '../lib/kanbanMotion'
 // theme-appropriate shade (working = #2A2418 dark warm charcoal in light).
 const STATUS_TEXT_VAR: Record<PaneStatus, string> = {
   'awaiting-prompt': 'var(--color-status-awaiting)',
-  'planning':        'var(--color-status-needs-input)',
-  'plan-ready':      'var(--color-status-needs-input)',
+  'planning':        'var(--color-status-plan)',
+  'plan-ready':      'var(--color-status-plan)',
   'needs-input':     'var(--color-status-needs-input)',
   'working':         'var(--color-status-working)',
   'changes-ready':   'var(--color-status-done)',
@@ -112,55 +113,67 @@ export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, 
 
       <div className="kanban-column-viewport flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2">
         {panes.length === 0 ? (
-          <div
-            className="flex-1 flex items-center justify-center text-fg-muted text-xs select-none"
-            aria-hidden="true"
-          >
-            —
-          </div>
-        ) : (
-          panes.map((pane) => (
+          <>
+            {/* Drop-target FIRST so its rect anchors at top + padding —
+                exactly where the next card will be rendered when it
+                arrives. Putting it after a flex-1 placeholder pushes it
+                to the bottom of the viewport, which made cards moving
+                into empty columns animate to the wrong landing slot. */}
             <div
-              key={pane.id}
-              ref={(el) => {
-                // Register in both the local FLIP map and the parent-shared
-                // map (used by useKanbanCardMoves to measure the source rect
-                // when a move starts). On unmount, drop from local; for the
-                // shared registry only drop if it still points at our node
-                // (a remount in another column may already have overwritten).
-                const prevLocal = localRefs.current.get(pane.id) ?? null
-                if (el) {
-                  localRefs.current.set(pane.id, el)
-                  if (cardRefs) cardRefs.current.set(pane.id, el)
-                } else {
-                  localRefs.current.delete(pane.id)
-                  if (cardRefs && prevLocal && cardRefs.current.get(pane.id) === prevLocal) {
-                    cardRefs.current.delete(pane.id)
-                  }
-                }
-              }}
+              ref={dropTargetRef}
+              aria-hidden="true"
+              style={{ height: 0, flexShrink: 0 }}
+            />
+            <div
+              className="flex-1 flex items-center justify-center text-fg-muted text-xs select-none"
+              aria-hidden="true"
             >
-              <KanbanCard
-                pane={pane}
-                statusColor={color}
-                isActive={pane.id === activePaneId}
-                onClick={() => onCardClick(pane.id)}
-                onPillClick={onPillClick ? () => onPillClick(pane.id, pane.userName || pane.metrics.sessionTitle || pane.worktreeName) : undefined}
-                onClose={onCloseCard ? () => onCloseCard(pane.id) : undefined}
-                onResolveDirtyMain={onResolveDirtyMain ? () => onResolveDirtyMain(pane.id) : undefined}
-                onResolveConflict={onResolveConflict ? () => onResolveConflict(pane.id) : undefined}
-              />
+              —
             </div>
-          ))
+          </>
+        ) : (
+          <>
+            {panes.map((pane) => (
+              <div
+                key={pane.id}
+                ref={(el) => {
+                  // Register in both the local FLIP map and the parent-shared
+                  // map (used by useKanbanCardMoves to measure the source rect
+                  // when a move starts). On unmount, drop from local; for the
+                  // shared registry only drop if it still points at our node
+                  // (a remount in another column may already have overwritten).
+                  const prevLocal = localRefs.current.get(pane.id) ?? null
+                  if (el) {
+                    localRefs.current.set(pane.id, el)
+                    if (cardRefs) cardRefs.current.set(pane.id, el)
+                  } else {
+                    localRefs.current.delete(pane.id)
+                    if (cardRefs && prevLocal && cardRefs.current.get(pane.id) === prevLocal) {
+                      cardRefs.current.delete(pane.id)
+                    }
+                  }
+                }}
+              >
+                <KanbanCard
+                  pane={pane}
+                  statusColor={color}
+                  isActive={pane.id === activePaneId}
+                  onClick={() => onCardClick(pane.id)}
+                  onPillClick={onPillClick ? () => onPillClick(pane.id, resolvePaneDisplayName(pane)) : undefined}
+                  onClose={onCloseCard ? () => onCloseCard(pane.id) : undefined}
+                  onResolveDirtyMain={onResolveDirtyMain ? () => onResolveDirtyMain(pane.id) : undefined}
+                  onResolveConflict={onResolveConflict ? () => onResolveConflict(pane.id) : undefined}
+                />
+              </div>
+            ))}
+            {/* Drop target sits below the cards = "next slot" position. */}
+            <div
+              ref={dropTargetRef}
+              aria-hidden="true"
+              style={{ height: 0, flexShrink: 0 }}
+            />
+          </>
         )}
-        {/* Bottom drop-target: a zero-height marker the card-move overlay
-            measures to know where to land. Always present (even when the
-            column is empty) so a card can move into an empty column. */}
-        <div
-          ref={dropTargetRef}
-          aria-hidden="true"
-          style={{ height: 0, flexShrink: 0 }}
-        />
       </div>
     </section>
   )

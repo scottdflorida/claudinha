@@ -181,4 +181,44 @@ describe('useKanbanActiveTransition', () => {
     expect(result.current.slidingLayerPaneId).toBe(null)
     expect(rafQueue.length).toBe(0)
   })
+
+  it('disableTransitions=true: sequential changes snap, never animate', () => {
+    // Initial-spawn-overlay scenario: while disableTransitions is true, each
+    // activePaneId update from per-PANE_SPAWNED listeners must snap. When
+    // the overlay clears (disableTransitions → false) and the user later
+    // clicks a different pane, the next slide is the first real animation.
+    const { result, rerender } = renderHook(
+      ({ id, disabled }: { id: string | null; disabled: boolean }) =>
+        useKanbanActiveTransition(id, disabled),
+      { initialProps: { id: null as string | null, disabled: true } }
+    )
+
+    // Three sequential active-pane updates while disabled. Each must snap;
+    // none should ever populate slidingLayerPaneId.
+    act(() => { rerender({ id: 'p1', disabled: true }) })
+    expect(result.current.baseLayerPaneId).toBe('p1')
+    expect(result.current.slidingLayerPaneId).toBe(null)
+
+    act(() => { rerender({ id: 'p2', disabled: true }) })
+    expect(result.current.baseLayerPaneId).toBe('p2')
+    expect(result.current.slidingLayerPaneId).toBe(null)
+
+    act(() => { rerender({ id: 'p3', disabled: true }) })
+    expect(result.current.baseLayerPaneId).toBe('p3')
+    expect(result.current.slidingLayerPaneId).toBe(null)
+    // No RAF was scheduled across the entire disabled run.
+    expect(rafQueue.length).toBe(0)
+
+    // Overlay clears with the same activePaneId still selected. No
+    // animation should fire — baseRef already matches the latest input.
+    act(() => { rerender({ id: 'p3', disabled: false }) })
+    expect(result.current.baseLayerPaneId).toBe('p3')
+    expect(result.current.slidingLayerPaneId).toBe(null)
+    expect(rafQueue.length).toBe(0)
+
+    // The next user click is the first real animation.
+    act(() => { rerender({ id: 'p4', disabled: false }) })
+    expect(result.current.baseLayerPaneId).toBe('p3')
+    expect(result.current.slidingLayerPaneId).toBe('p4')
+  })
 })

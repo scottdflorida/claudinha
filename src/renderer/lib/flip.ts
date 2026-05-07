@@ -12,6 +12,12 @@
  *      previous position relative to the new one.
  *   4. (Play) transitioning that transform to identity over `durationMs`.
  *
+ * Animation gate: the FLIP pass runs ONLY when at least one previously-present
+ * key has been removed since the last render — i.e., the column had a card
+ * leave. Per the product rule, intra-column reorders, sibling-height changes,
+ * and other non-removal layout shifts must not animate. Skipping FLIP on those
+ * cases makes them snap instantly, which is the desired behavior.
+ *
  * `prefers-reduced-motion: reduce` short-circuits the play step so the CSS
  * transition never runs.
  */
@@ -21,11 +27,11 @@ import { prefersReducedMotion } from './reducedMotion'
 
 /**
  * Animate the children identified by `keys` whose positions changed between
- * the previous render and this one.
+ * the previous render and this one — but only when at least one key was
+ * removed. See header comment for the rationale.
  *
  * @param refMap   Map of stable key → DOM element (provided by callsite via ref callback).
- * @param keys     Stable, ordered list of keys present this render. Identity changes
- *                 (additions/removals/reorders) trigger the FLIP pass.
+ * @param keys     Stable, ordered list of keys present this render.
  * @param durationMs  How long each child takes to glide into place. Use a single
  *                    duration for the whole list so they move in sync.
  */
@@ -38,18 +44,29 @@ export function useFlipChildren(
 
   useLayoutEffect(() => {
     const prevRects = prevRectsRef.current
-    const newRects = new Map<string, DOMRect>()
 
-    // Measure new positions first.
+    // Detect whether a previously-present key disappeared from the current
+    // render. That's the sole trigger for FLIP — anything else (reorder,
+    // sibling height shift, addition) must NOT animate.
+    const newKeySet = new Set(keys)
+    let anyRemoved = false
+    for (const prevKey of prevRects.keys()) {
+      if (!newKeySet.has(prevKey)) {
+        anyRemoved = true
+        break
+      }
+    }
+
+    // Always capture this render's rects so the next render's comparison
+    // sees an accurate prev — independent of whether we animated this tick.
+    const newRects = new Map<string, DOMRect>()
     for (const key of keys) {
       const el = refMap.current.get(key)
       if (!el) continue
       newRects.set(key, el.getBoundingClientRect())
     }
 
-    const reduced = prefersReducedMotion()
-
-    if (!reduced) {
+    if (anyRemoved && !prefersReducedMotion()) {
       // For each key present in both old and new, apply the inverted transform.
       for (const key of keys) {
         const oldRect = prevRects.get(key)

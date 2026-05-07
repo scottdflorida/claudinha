@@ -13,8 +13,17 @@
  *     status changes for other panes wait their turn; mid-flight changes for
  *     the *currently moving* pane re-queue from the landed column to the new
  *     real column once the in-flight animation lands.
- *   - At the moment a move starts, measure `fromRect` from the card's DOM
- *     node and `toRect` from the destination column's bottom drop target.
+ *   - Rects are tracked FLIP-style: each render captures the live positions
+ *     of every card and drop target into a "current" map; the previous
+ *     render's map is shifted into "prev". When a move starts (in the same
+ *     layout-effect tick that detects the bucket change), `fromRect` reads
+ *     from prev — the card's position in its SOURCE column, before React
+ *     re-rendered it into the destination — and `toRect` reads the
+ *     destination column's drop-target position from before the card joined
+ *     it (i.e., the actual landing slot, not the slot below the card).
+ *     Measuring against the live refs at this point would put both rects
+ *     inside the destination column and the overlay would drift one
+ *     card-height instead of crossing source → destination.
  *     Distance → duration via computeMoveDuration so further moves take
  *     longer at constant speed.
  *   - During flight, the moving pane is omitted from `displayedPanes` (so it
@@ -26,7 +35,7 @@
  * Reduced-motion: skips overlay, instantly updates displayedColumn.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PaneStatus } from '../../shared/types'
 import type { RendererPane } from './usePaneState'
 import { computeMoveDuration } from '../lib/kanbanMotion'
@@ -105,10 +114,47 @@ export function useKanbanCardMoves(
   const displayedColumnRef = useRef<Record<string, PaneStatus>>({})
   displayedColumnRef.current = displayedColumn
 
+  // Rect snapshots, FLIP-style. We need fromRect to be the card's position in
+  // its SOURCE column (i.e., from the render BEFORE the bucket-changing
+  // panes update) and toRect to be the destination drop target's position
+  // BEFORE the moving card was inserted there. Measuring at processNext time
+  // is too late: by then React has already re-rendered the card into the
+  // destination column, so the live cardRef points at the destination wrapper
+  // and the live dropTargetRef sits below the card's new slot — which would
+  // make the overlay drift inside the destination column instead of
+  // crossing source → destination.
+  //
+  // Each layout-effect tick shifts current → prev, then captures fresh rects
+  // into current. By the end of render N's layout effect, prev = render N-1
+  // and current = render N. The watcher reads prev to get the source-column
+  // rects of the cards that just moved buckets.
+  const currentCardRectsRef = useRef<Map<string, DOMRect>>(new Map())
+  const prevCardRectsRef = useRef<Map<string, DOMRect>>(new Map())
+  const currentDropRectsRef = useRef<Map<PaneStatus, DOMRect>>(new Map())
+  const prevDropRectsRef = useRef<Map<PaneStatus, DOMRect>>(new Map())
+
+  useLayoutEffect(() => {
+    // Shift current → prev before capturing this render's rects.
+    prevCardRectsRef.current = currentCardRectsRef.current
+    prevDropRectsRef.current = currentDropRectsRef.current
+
+    const newCardRects = new Map<string, DOMRect>()
+    for (const [id, el] of refs.cardRefs.current.entries()) {
+      if (el) newCardRects.set(id, el.getBoundingClientRect())
+    }
+    currentCardRectsRef.current = newCardRects
+
+    const newDropRects = new Map<PaneStatus, DOMRect>()
+    for (const [status, el] of refs.dropTargetRefs.current.entries()) {
+      if (el) newDropRects.set(status, el.getBoundingClientRect())
+    }
+    currentDropRectsRef.current = newDropRects
+  })
+
   // ---------------------------------------------------------------------------
   // Watch real status changes -> enqueue moves
   // ---------------------------------------------------------------------------
-  useEffect(() => {
+  useLayoutEffect(() => {
     let touched = false
 
     // Drop bookkeeping for panes that have disappeared.
@@ -178,10 +224,13 @@ export function useKanbanCardMoves(
     }
 
     if (touched && !runningRef.current) {
-      // Schedule async so the layout has flushed (drop targets exist).
-      // Microtask is enough: by the time React's commit + browser paint
-      // happens, the refs are populated.
-      Promise.resolve().then(processNext)
+      // Layout effect: rect refs already captured this render (the
+      // capture useLayoutEffect runs before this one, since it appears
+      // first). processNext reads prev rects, which hold the previous
+      // render's positions — the source-column position of the card that
+      // just moved buckets. Calling synchronously means the overlay is
+      // set up inside the same React turn, before paint.
+      processNext()
     }
     // panes is the only meaningful input. We use refs for everything else.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -239,13 +288,20 @@ export function useKanbanCardMoves(
       return
     }
 
-    // Measure source/destination rects.
-    const cardEl = refs.cardRefs.current.get(pane.id) ?? null
-    const dropEl = refs.dropTargetRefs.current.get(toBucket) ?? null
+    // Source-column rects from the previous render: where the card was
+    // sitting before this render moved it to its real (destination) bucket,
+    // and where the destination's drop target sat before the card joined
+    // its column. Live refs would point at the destination column for both
+    // (the card's wrapper has just been remounted there, and the drop
+    // target sits below the card's new slot), so we MUST use the prev
+    // snapshot for the overlay to cross columns instead of drifting
+    // inside the destination column.
+    const fromRect = prevCardRectsRef.current.get(pane.id) ?? null
+    const toRect = prevDropRectsRef.current.get(toBucket) ?? null
 
-    if (!cardEl || !dropEl || prefersReducedMotion()) {
-      // Can't measure (refs missing — shouldn't happen in steady state) or
-      // user opted out of motion. Snap.
+    if (!fromRect || !toRect || prefersReducedMotion()) {
+      // Prev rect missing (first render, or pane / column wasn't in the DOM
+      // last paint) or user opted out of motion. Snap.
       setDisplayedColumn((prev) => {
         // If the move lands on real bucket, drop the override entirely.
         const realBucket = bucketFor(pane)
@@ -259,9 +315,6 @@ export function useKanbanCardMoves(
       processNext()
       return
     }
-
-    const fromRect = cardEl.getBoundingClientRect()
-    const toRect = dropEl.getBoundingClientRect()
     const dx = toRect.left - fromRect.left
     const dy = toRect.top - fromRect.top
     const distance = Math.sqrt(dx * dx + dy * dy)

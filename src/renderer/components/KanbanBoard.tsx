@@ -9,6 +9,7 @@ import { ConflictResolveModal } from './ConflictResolveModal'
 import { ChangesReadyModal } from './ChangesReadyModal'
 import { useStrings } from '../lib/strings'
 import { useKanbanCardMoves } from '../hooks/useKanbanCardMoves'
+import { useColumnOrder } from '../hooks/useColumnOrder'
 import { KanbanOverlayCard } from './KanbanOverlayCard'
 
 interface KanbanBoardProps {
@@ -76,17 +77,13 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
     dropTargetRefs
   })
 
-  const grouped: Record<PaneStatus, RendererPane[]> = {
-    'awaiting-prompt': [],
-    'planning': [],
-    'plan-ready': [],
-    'needs-input': [],
-    'working': [],
-    'changes-ready': []
-  }
-  for (const pane of displayedPanes) {
-    grouped[bucketFor(pane)].push(pane)
-  }
+  // Sticky column ordering: panes that stayed in their column keep their
+  // slot; panes whose bucket just changed are appended to the bottom of
+  // their new column. Without this, panes-array order leaks through and a
+  // card moving into a column with an existing card can stack ABOVE that
+  // card (apparent "swap"), and the brief slot shift on the resident card
+  // makes FLIP animate it on the surrounding renders.
+  const grouped = useColumnOrder(displayedPanes, COLUMN_STATUSES, bucketFor)
 
   // FLIP helper in KanbanColumn syncs its compaction duration to the
   // currently in-flight move (so the source column closes its gap at the
