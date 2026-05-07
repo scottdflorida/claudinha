@@ -119,6 +119,7 @@
 
   --color-status-awaiting:    #9A938A;
   --color-status-working:     #EDE8DC;
+  --color-status-plan:        #47978c;
   --color-status-needs-input: #b0b9f9;
   --color-status-done:        #D6A240;
   --color-status-lost:        #D95E47;
@@ -267,6 +268,7 @@
     --color-brand-soft-fg: #18150F;
     --color-status-awaiting:    #9A938A;
     --color-status-working:     #EDE8DC;
+    --color-status-plan:        #47978c;
     --color-status-needs-input: #b0b9f9;
     --color-status-done:        #D6A240;
     --color-status-lost:        #D95E47;
