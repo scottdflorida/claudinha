@@ -147,6 +147,17 @@ export class HookListener {
   }
 
   /**
+   * Provide a callback fired AFTER Stop / StopFailure routing completes.
+   * Used by the v2 turn-recorder to fire auto-commit. The callback runs
+   * fire-and-forget — never awaited — so a slow Haiku summary doesn't
+   * delay the next hook event.
+   */
+  private onStopProcessed: ((paneId: string) => void) | null = null
+  setOnStopProcessed(cb: (paneId: string) => void): void {
+    this.onStopProcessed = cb
+  }
+
+  /**
    * Wired after construction so each status emit also fans out a manager
    * window refresh (active-pane cards live-update). Held nullable so unit
    * tests don't have to satisfy the dependency.
@@ -340,6 +351,11 @@ export class HookListener {
       // the same state we just used to route. Otherwise the kanban tile's
       // next-step pill could lag behind the column placement.
       this.gitStatusPoller?.triggerCheck(paneId)
+      // Fire-and-forget the v2 turn-recorder. It checks the working-tree
+      // state itself and no-ops on clean trees / non-worktree panes / when
+      // the per-session toggle is off. Never await — the auto-commit and
+      // its async Haiku summary must not delay subsequent hook events.
+      this.onStopProcessed?.(paneId)
     }
 
     if (!newStatus) return // Unknown event — ignore

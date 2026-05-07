@@ -48,6 +48,7 @@ import { WorkspaceManager } from './workspace-manager'
 import { migrateLegacyKeys, migrateCompletionActionsV2 } from './workspace-store'
 import { GitStatusPoller } from './git-status-poller'
 import { CompletionExecutor } from './completion-executor'
+import { TurnRecorder } from './turn-recorder'
 import { InspectorService } from './inspector'
 import { PlanApprovalSequencer } from './plan-approval-sequencer'
 import { getGlobalCompletionPolicy } from './completion-policy-store'
@@ -122,6 +123,10 @@ export const completionExecutor = new CompletionExecutor(
 )
 export const inspector = new InspectorService(sessionRegistry, workspaceManager, windowManager)
 export const planApprovalSequencer = new PlanApprovalSequencer(sessionRegistry, ptyPool)
+// Completion-actions v2 — fires auto-commit on Stop hooks for worktree
+// panes. Wired into hook-listener via `setOnStopProcessed` below; never
+// blocks the hook path because Haiku summaries can take a few seconds.
+export const turnRecorder = new TurnRecorder(sessionRegistry, windowManager)
 
 // Wire the bidirectional references that have to be set after
 // construction to avoid a circular dep in the DI graph:
@@ -316,6 +321,11 @@ app.whenReady().then(() => {
   hookListener.setStatusDetector(statusDetector)
   // Wire git status trigger: immediate check when terminal status changes to done/awaiting-prompt
   hookListener.setGitStatusPoller(gitStatusPoller)
+  // Wire completion-actions v2 turn-recorder: fires auto-commit after Stop
+  // routing. Fire-and-forget; turn-recorder.handleStop never throws.
+  hookListener.setOnStopProcessed((paneId) => {
+    void turnRecorder.handleStop(paneId)
+  })
 
   hookListener.start()
   // Recover workspace state from any prior crash (active workspaces with no window → dormant)

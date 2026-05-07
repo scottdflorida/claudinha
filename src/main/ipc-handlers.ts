@@ -143,7 +143,17 @@ import type { GitStatusPoller } from './git-status-poller'
 import type { CompletionExecutor } from './completion-executor'
 import type { InspectorService } from './inspector'
 import type { PlanApprovalSequencer } from './plan-approval-sequencer'
-import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff, gitCommitAll, getPaneCommitLog, gitRewordCommit, listBranches } from './git-status'
+import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff, gitCommitAll, getPaneCommitLog, gitRewordCommit, listBranches, detectMainBranch, getCurrentBranch } from './git-status'
+import { projectTurnsForPane, broadcastTurnsUpdated } from './turn-projection'
+import { squashAndPublish } from './publish-engine'
+import type {
+  TurnsGetPayload,
+  TurnsGetResult,
+  TurnPublishSquashPayload,
+  TurnAutoCommitTogglePayload,
+  TurnActionResult
+} from '../shared/ipc-channels'
+import type { TurnPendingAction as TurnPendingActionType } from '../shared/types'
 import {
   commitDirtyMain,
   stashDirtyMain,
@@ -3058,5 +3068,90 @@ export function registerIpcHandlers(
     if (!action) return
     if (!ALLOWED_SHORTCUT_ACTIONS.has(action)) return
     trackKeyboardShortcutUsed(action)
+  })
+
+  // -------------------------------------------------------------------------
+  // Completion Actions v2 — turn-as-commit handlers
+  // -------------------------------------------------------------------------
+
+  // Fetch the current turn projection for a pane. Used by useTurns on
+  // mount + after window reload (renderer state otherwise empty).
+  ipcMain.handle(IPC.TURNS_GET, async (_event, payload: TurnsGetPayload): Promise<TurnsGetResult> => {
+    const pane = sessionRegistry.getPane(payload.paneId)
+    if (!pane) {
+      return {
+        error: 'pane not found',
+        turns: [],
+        pendingAction: null,
+        autoCommitEnabled: true
+      }
+    }
+    if (!pane.isWorktree) {
+      return { error: null, turns: [], pendingAction: null, autoCommitEnabled: false }
+    }
+    const baseBranch = await detectMainBranch(pane.worktreePath)
+    const currentBranch = await getCurrentBranch(pane.worktreePath)
+    if (!baseBranch || !currentBranch) {
+      return {
+        error: null,
+        turns: [],
+        pendingAction: null,
+        autoCommitEnabled: ((pane as { autoCommitEnabled?: boolean }).autoCommitEnabled !== false)
+      }
+    }
+    const turns = await projectTurnsForPane(pane.worktreePath, payload.paneId, baseBranch, currentBranch)
+    const paneExt = pane as {
+      autoCommitEnabled?: boolean
+      pendingAction?: TurnPendingActionType | null
+    }
+    return {
+      error: null,
+      turns,
+      pendingAction: paneExt.pendingAction ?? null,
+      autoCommitEnabled: paneExt.autoCommitEnabled !== false
+    }
+  })
+
+  // Run squash + publish for a contiguous selection of turns. M1 only
+  // supports `path: 'push-branch'`.
+  ipcMain.handle(IPC.TURN_PUBLISH_SQUASH, async (_event, payload: TurnPublishSquashPayload): Promise<TurnActionResult> => {
+    const pane = sessionRegistry.getPane(payload.paneId)
+    if (!pane) return { error: 'pane not found' }
+    const result = await squashAndPublish({
+      worktreePath: pane.worktreePath,
+      paneId: payload.paneId,
+      windowId: pane.windowId,
+      windowManager,
+      sessionRegistry,
+      turnIds: payload.turnIds,
+      message: payload.message,
+      path: payload.path
+    })
+    return { error: result.ok ? null : (result.error ?? 'unknown error') }
+  })
+
+  // Per-session auto-commit toggle. Persists on the in-memory PaneState so
+  // it survives subsequent Stop hooks but resets on app restart (per
+  // research §6 decision — toggle is session-scoped, not workspace-scoped).
+  ipcMain.handle(IPC.TURN_AUTO_COMMIT_TOGGLE, async (_event, payload: TurnAutoCommitTogglePayload): Promise<TurnActionResult> => {
+    const pane = sessionRegistry.getPane(payload.paneId)
+    if (!pane) return { error: 'pane not found' }
+    ;(pane as { autoCommitEnabled?: boolean }).autoCommitEnabled = payload.enabled
+    // Push a fresh projection so any open TurnsModal updates its toggle.
+    if (pane.isWorktree) {
+      const baseBranch = await detectMainBranch(pane.worktreePath)
+      const currentBranch = await getCurrentBranch(pane.worktreePath)
+      if (baseBranch && currentBranch) {
+        const paneExt = pane as { pendingAction?: TurnPendingActionType | null }
+        await broadcastTurnsUpdated(windowManager, pane.windowId, payload.paneId, {
+          worktreePath: pane.worktreePath,
+          baseBranch,
+          currentBranch,
+          autoCommitEnabled: payload.enabled,
+          pendingAction: paneExt.pendingAction ?? null
+        })
+      }
+    }
+    return { error: null }
   })
 }
