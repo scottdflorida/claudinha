@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 //
-// KanbanRepoCard — Phase 5: rollups display, status-dot breakdown,
-// per-repo collapsible session list (default expanded), and that the
-// bulk-action buttons are present-but-disabled until Phase 6.
+// KanbanRepoCard — header, claude.md pencil affordance, and per-repo
+// collapsible session list (default expanded). Bulk-action buttons and
+// the rollup row were removed; the new completion-actions design will
+// rebuild that surface from scratch.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, fireEvent, within } from '@testing-library/react'
@@ -42,18 +43,16 @@ function makePane(overrides: Partial<ReadyPaneEntry> = {}): ReadyPaneEntry {
 }
 
 describe('KanbanRepoCard', () => {
-  it('renders the repo label and rollup line counts', () => {
-    const { getByText, container } = render(
+  it('renders the repo label', () => {
+    const { getByText } = render(
       <KanbanRepoCard
-        rollup={makeRollup({ repoLabel: 'claudinha', totalLinesAdded: 12, totalLinesRemoved: 3 })}
+        rollup={makeRollup({ repoLabel: 'claudinha' })}
         panes={[makePane({ paneId: 'p1' }), makePane({ paneId: 'p2' })]}
         activePaneId={null}
         onSelectSession={() => {}}
       />
     )
     expect(getByText('claudinha')).toBeTruthy()
-    expect(within(container).getByText('+12')).toBeTruthy()
-    expect(within(container).getByText('−3')).toBeTruthy()
   })
 
   it('defaults to expanded session list (concept doc decision 2)', () => {
@@ -72,7 +71,7 @@ describe('KanbanRepoCard', () => {
     expect(getByText('agent-B')).toBeTruthy()
   })
 
-  it('chevron toggles the session list and the bulk-action buttons together', () => {
+  it('chevron toggles the session list visibility', () => {
     const { getByLabelText, queryByText } = render(
       <KanbanRepoCard
         rollup={makeRollup()}
@@ -81,22 +80,13 @@ describe('KanbanRepoCard', () => {
         onSelectSession={() => {}}
       />
     )
-    // Expanded default: both the session row AND the bulk actions are visible.
     expect(queryByText('agent-A')).not.toBeNull()
-    expect(queryByText('Merge')).not.toBeNull()
-    expect(queryByText('Create PR')).not.toBeNull()
 
-    // Collapse: both disappear.
     fireEvent.click(getByLabelText('Collapse session list'))
     expect(queryByText('agent-A')).toBeNull()
-    expect(queryByText('Merge')).toBeNull()
-    expect(queryByText('Create PR')).toBeNull()
 
-    // Re-expand: both come back.
     fireEvent.click(getByLabelText('Expand session list'))
     expect(queryByText('agent-A')).not.toBeNull()
-    expect(queryByText('Merge')).not.toBeNull()
-    expect(queryByText('Create PR')).not.toBeNull()
   })
 
   it('clicking a session row invokes onSelectSession with that pane id', () => {
@@ -111,38 +101,6 @@ describe('KanbanRepoCard', () => {
     )
     fireEvent.click(getByText('agent-X'))
     expect(onSelect).toHaveBeenCalledWith('pane-X')
-  })
-
-  it('leaves Merge / Push / Merge + push / Create PR disabled when no handlers are provided', () => {
-    const { getByText } = render(
-      <KanbanRepoCard
-        rollup={makeRollup()}
-        panes={[makePane()]}
-        activePaneId={null}
-        onSelectSession={() => {}}
-      />
-    )
-    for (const label of ['Merge', 'Push', 'Merge + push', 'Create PR']) {
-      const btn = getByText(label)
-      expect((btn as HTMLButtonElement).disabled).toBe(true)
-    }
-  })
-
-  it('Create PR is enabled and fires onCreatePr when the handler is provided', () => {
-    const onCreatePr = vi.fn()
-    const { getByText } = render(
-      <KanbanRepoCard
-        rollup={makeRollup()}
-        panes={[makePane()]}
-        activePaneId={null}
-        onSelectSession={() => {}}
-        onCreatePr={onCreatePr}
-      />
-    )
-    const btn = getByText('Create PR') as HTMLButtonElement
-    expect(btn.disabled).toBe(false)
-    fireEvent.click(btn)
-    expect(onCreatePr).toHaveBeenCalledTimes(1)
   })
 
   it('CLAUDE.md pencil is disabled when no onEditClaudeMd handler is provided', () => {

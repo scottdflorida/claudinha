@@ -247,13 +247,6 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
           // Enable predicates per concept doc:
           //   Merge        — readyCount > 0
           //   Push         — baseAheadOfOrigin > 0 AND ≥1 pane past awaiting-prompt
-          //   Merge + push — readyCount > 0 (after merge there's something to push)
-          // Push's second clause keeps the button dim in a freshly-spawned
-          // workspace where main happens to be ahead of origin from prior
-          // unrelated work. See computeCanPush above for the rationale.
-          const canMerge = rollup.readyCount > 0
-          const canPush = computeCanPush(rollup, repoPanes)
-          const canMergeAndPush = canMerge // post-merge there will be commits to push
           return (
             <KanbanRepoCard
               key={rollup.repoPath}
@@ -261,10 +254,6 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
               panes={repoPanes}
               activePaneId={activePaneId}
               onSelectSession={onSelectSession}
-              onMerge={canMerge ? () => triggerMerge(rollup.repoPath) : undefined}
-              onPush={canPush ? () => triggerPush(rollup.repoPath) : undefined}
-              onMergeAndPush={canMergeAndPush ? () => triggerMergeAndPush(rollup.repoPath) : undefined}
-              onCreatePr={canMerge ? () => triggerCreatePr(rollup.repoPath) : undefined}
               onEditClaudeMd={() =>
                 setEditingRepo({ repoPath: rollup.repoPath, repoLabel: rollup.repoLabel })
               }

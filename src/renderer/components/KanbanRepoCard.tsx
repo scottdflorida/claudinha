@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight, FileText } from 'lucide-react'
-import type { PaneStatus, ReadyPaneEntry, RepoRollup } from '../../shared/types'
-import { STATUS_COLORS } from '../lib/constants'
+import type { ReadyPaneEntry, RepoRollup } from '../../shared/types'
 import { KanbanRepoSessionRow } from './KanbanRepoSessionRow'
 import { useStrings } from '../lib/strings'
 
@@ -13,12 +12,6 @@ interface KanbanRepoCardProps {
   activePaneId: string | null
   /** Click handler for a session row → set active pane. */
   onSelectSession: (paneId: string) => void
-  /** Phase 6 will wire these. Phase 5 leaves them all disabled. */
-  onMerge?: () => void
-  onPush?: () => void
-  onMergeAndPush?: () => void
-  /** Opens one regular (non-draft) PR per ready tree in this repo. */
-  onCreatePr?: () => void
   /** Phase 7 will wire this. Phase 5 disables. */
   onEditClaudeMd?: () => void
   /**
@@ -37,43 +30,18 @@ interface KanbanRepoCardProps {
 }
 
 /**
- * Group the repo's panes by status to render the small "status dot" row in
- * the card header.
- */
-function statusBreakdown(panes: ReadyPaneEntry[]): Array<{ status: PaneStatus; count: number }> {
-  const counts: Record<PaneStatus, number> = {
-    'awaiting-prompt': 0,
-    'planning': 0,
-    'plan-ready': 0,
-    'working': 0,
-    'needs-input': 0,
-    'changes-ready': 0
-  }
-  for (const p of panes) counts[p.paneStatus] = (counts[p.paneStatus] ?? 0) + 1
-  return (Object.entries(counts) as [PaneStatus, number][])
-    .filter(([, count]) => count > 0)
-    .map(([status, count]) => ({ status, count }))
-}
-
-/**
  * One repo card in the Kanban repo rail.
  *
- * Header: repo name + base branch + line rollup + status dots.
- * Body: bulk-action button row (Merge / Push / Merge + push) + collapsible
- *       session list (default expanded — concept doc decision 2).
- *
- * Phase 5 stubs the bulk-action handlers. Phase 6 wires them with their
- * enable predicates and IPC plumbing.
+ * Header: repo name + base branch + claude.md edit affordance.
+ * Body: collapsible session list (default expanded — concept doc decision 2),
+ *       plus narrow recovery affordances (approve-in-sequence, retry-failed-
+ *       merges) that surface only when their conditions hold.
  */
 export function KanbanRepoCard({
   rollup,
   panes,
   activePaneId,
   onSelectSession,
-  onMerge,
-  onPush,
-  onMergeAndPush,
-  onCreatePr,
   onEditClaudeMd,
   onApprovePlansInSequence,
   onStopPlanSequence,
@@ -81,15 +49,9 @@ export function KanbanRepoCard({
 }: KanbanRepoCardProps): React.JSX.Element {
   const t = useStrings()
   const [expanded, setExpanded] = useState(true) // default expanded (decision 2)
-  const breakdown = statusBreakdown(panes)
   const baseBranch =
     panes.find((p) => p.branchName === 'main' || p.branchName === 'master')?.branchName ?? null
 
-  // Phase 5 leaves bulk actions disabled — Phase 6 supplies real predicates.
-  const mergeDisabled = !onMerge
-  const pushDisabled = !onPush
-  const mergePushDisabled = !onMergeAndPush
-  const createPrDisabled = !onCreatePr
   const editDisabled = !onEditClaudeMd
 
   // "Approve plans in sequence" row — only visible when either the sequencer
@@ -155,70 +117,11 @@ export function KanbanRepoCard({
         </button>
       </header>
 
-      {/* Rollup line: pane count · +N -M · status dots */}
-      <div className="shrink-0 px-3 py-1.5 flex items-center gap-3 text-[11px] text-fg-muted tabular-nums border-b border-[var(--color-border-subtle)]">
-        <span>{rollup.paneCount} {t.kanban.agentsPlural(rollup.paneCount)}</span>
-        {(rollup.totalLinesAdded > 0 || rollup.totalLinesRemoved > 0) && (
-          <span>
-            <span className="text-success-fg">+{rollup.totalLinesAdded}</span>
-            {' '}
-            <span className="text-danger-fg">−{rollup.totalLinesRemoved}</span>
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-1.5">
-          {breakdown.map(({ status, count }) => (
-            <span
-              key={status}
-              className="inline-flex items-center gap-1"
-              title={`${count} ${status}`}
-            >
-              <span
-                aria-hidden="true"
-                className="inline-block rounded-full"
-                style={{ width: 6, height: 6, background: STATUS_COLORS[status] }}
-              />
-              <span>{count}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Bulk-action buttons — two rows of two. Each button is enabled only
-          when its action would have effect (concept doc — decision 4).
-          Disabled tooltips explain why. Four text buttons don't fit cleanly
-          on one row in the 280 px rail, so row 1 is Merge / Push and row 2
-          is Merge + push / Create PR. Collapses with the repo chevron so a
-          collapsed card shrinks to header + rollup only. */}
-      {expanded && (
+      {/* Recovery affordances — only render when their narrow conditions
+          hold (a plan-approval pile-up, or one or more trees in a failed
+          merge state). Collapses with the repo chevron. */}
+      {expanded && (showApproveInSequenceRow || showRetryFailedRow) && (
         <div className="shrink-0 px-3 py-2 flex flex-col gap-1.5 border-b border-[var(--color-border-subtle)]">
-          <div className="flex items-center gap-1.5">
-            <ActionButton
-              label={t.kanban.mergeAction}
-              disabled={mergeDisabled}
-              tooltip={mergeDisabled ? t.kanban.mergeNoneReady : `${t.kanban.mergeReady} ${t.merge.autoCommitNote}`}
-              onClick={onMerge}
-            />
-            <ActionButton
-              label={t.kanban.pushAction}
-              disabled={pushDisabled}
-              tooltip={pushDisabled ? t.kanban.pushNothing : t.kanban.pushReady}
-              onClick={onPush}
-            />
-          </div>
-          <div className="flex items-center gap-1.5">
-            <ActionButton
-              label={t.kanban.mergePushAction}
-              disabled={mergePushDisabled}
-              tooltip={mergePushDisabled ? t.kanban.mergePushNothing : `${t.kanban.mergePushReady} ${t.merge.autoCommitNote}`}
-              onClick={onMergeAndPush}
-            />
-            <ActionButton
-              label={t.kanban.createPrAction}
-              disabled={createPrDisabled}
-              tooltip={createPrDisabled ? t.kanban.createPrNone : t.kanban.createPrReady}
-              onClick={onCreatePr}
-            />
-          </div>
           {showApproveInSequenceRow && (
             <div className="flex items-center gap-1.5">
               {rollup.planSequencerRunning ? (
