@@ -1,4 +1,5 @@
 import path from 'path'
+import { execFileSync } from 'child_process'
 
 /**
  * Derive the repo root from a pane's worktree path.
@@ -37,4 +38,23 @@ export function normaliseRepoPath(repoPath: string): string {
  */
 export function repoNameFromWorktreePath(worktreePath: string): string {
   return path.basename(worktreePathToRepoPath(worktreePath))
+}
+
+/**
+ * Read the currently-checked-out branch in a repo. Used as the agent label
+ * for "On main" panes — they don't have a fabricated `wt-xxx` branch name
+ * to show. Returns `'main'` if the lookup fails or HEAD is detached.
+ */
+export function currentBranchName(repoRoot: string): string {
+  try {
+    const out = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: repoRoot,
+      timeout: 5_000,
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).toString().trim()
+    if (!out || out === 'HEAD') return 'main'
+    return out
+  } catch {
+    return 'main'
+  }
 }

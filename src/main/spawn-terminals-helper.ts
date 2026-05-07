@@ -34,7 +34,7 @@ import type {
 } from '../shared/ipc-channels'
 import type { PaneState, EffortLevel, Model } from '../shared/types'
 import { addSessionHistoryEntry } from './session-history-store'
-import { repoNameFromWorktreePath, normaliseRepoPath } from './repo-path'
+import { repoNameFromWorktreePath, normaliseRepoPath, currentBranchName } from './repo-path'
 import {
   trackPaneSpawned
 } from './analytics/usage-instrumentation'
@@ -292,6 +292,14 @@ export function spawnTerminalsIntoWorkspace(
         if (worktreeMode === 'shared' && !perTree && i === 0) {
           sharedWorktreePath = wtPath
         }
+      } else if (effectiveModeForThisPane === 'main') {
+        // 'On main': the resolved path IS the repo root, so `repoNameFromWorktreePath`
+        // would step up one level and return the repo's parent dir as the
+        // repo name — wrong. Derive the names directly from the repo root and
+        // the current branch instead.
+        resolvedWorktreePath = spawnPayload.worktreePath!
+        repoName = path.basename(droneRepoPath)
+        worktreeName = currentBranchName(droneRepoPath)
       } else {
         resolvedWorktreePath = spawnPayload.worktreePath!
         repoName = repoNameFromWorktreePath(resolvedWorktreePath)

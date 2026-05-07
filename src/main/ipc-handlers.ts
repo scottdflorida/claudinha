@@ -149,7 +149,7 @@ import {
   stashDirtyMain,
   discardDirtyMain
 } from './git-dirty-main'
-import { worktreePathToRepoPath, normaliseRepoPath, repoNameFromWorktreePath } from './repo-path'
+import { worktreePathToRepoPath, normaliseRepoPath, repoNameFromWorktreePath, currentBranchName } from './repo-path'
 import { readClaudeMd, writeAndCommitClaudeMd } from './repo-claude-md'
 import {
   getGlobalCompletionPolicy,
@@ -359,6 +359,7 @@ export function registerIpcHandlers(
     // Resolve working directory from the payload mode
     const { repoPath } = payload
     let { mode, worktreePath } = payload
+    let mainModeRepoRoot: string | null = null
 
     // Per-repo "main mode" inheritance: if the caller asked for a fresh
     // worktree but this workspace already has a pane running directly in the
@@ -373,6 +374,7 @@ export function registerIpcHandlers(
       if (wsId && isMainModeForRepoInWorkspace(wsId, candidateRepo, sessionRegistry, workspaceManager)) {
         mode = 'manual-path'
         worktreePath = candidateRepo
+        mainModeRepoRoot = candidateRepo
       }
     }
 
@@ -452,8 +454,16 @@ export function registerIpcHandlers(
         return { error: 'Working directory path is required.' }
       }
       resolvedWorktreePath = worktreePath
-      repoName = repoNameFromWorktreePath(worktreePath)
-      worktreeName = path.basename(worktreePath)
+      if (mainModeRepoRoot) {
+        // Main-mode inheritance kicked in: the resolved path IS the repo root,
+        // so derive names directly instead of letting `repoNameFromWorktreePath`
+        // step up one level and return the repo's parent dir.
+        repoName = path.basename(mainModeRepoRoot)
+        worktreeName = currentBranchName(mainModeRepoRoot)
+      } else {
+        repoName = repoNameFromWorktreePath(worktreePath)
+        worktreeName = path.basename(worktreePath)
+      }
     } else {
       return { error: `Unknown spawn mode: ${mode}` }
     }
@@ -2669,6 +2679,13 @@ export function registerIpcHandlers(
             if (effectiveWorktreeMode === 'shared' && i === 0) {
               sharedWorktreePath = wtPath
             }
+          } else if (effectiveWorktreeMode === 'main') {
+            // 'On main': resolved path IS the repo root; derive names directly
+            // from the repo so the Kanban card shows "<repo> <branch>" instead
+            // of "<parent-dir> <repo>".
+            resolvedWorktreePath = spawnPayload.worktreePath!
+            repoName = path.basename(droneRepoPath)
+            worktreeName = currentBranchName(droneRepoPath)
           } else {
             resolvedWorktreePath = spawnPayload.worktreePath!
             repoName = repoNameFromWorktreePath(resolvedWorktreePath)
