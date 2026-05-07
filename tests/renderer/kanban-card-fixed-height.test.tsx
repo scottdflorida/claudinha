@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 //
-// KanbanCard renders at a fixed 34px height across statuses so the in-flight
+// KanbanCard renders at a fixed 52px height across statuses so the in-flight
 // overlay never shrinks or grows mid-move (the source column's two-line
-// content rarely matches the destination's, and an unfixed shell would
-// visibly resize). jsdom doesn't run real layout, so we assert on the
-// element's inline `height` style rather than the rendered rect.
+// content rarely matches the destination's one-line content, and an unfixed
+// shell would visibly resize). jsdom doesn't run real layout, so we assert
+// on the element's inline `height` style rather than the rendered rect.
 
 import { describe, it, expect, vi } from 'vitest'
 
@@ -82,7 +82,7 @@ describe('KanbanCard — fixed height', () => {
   }
 
   it('one-line tile (awaiting-prompt) has 34px height', () => {
-    expect(rootHeightOf(makePane({ status: 'awaiting-prompt' }))).toBe('34px')
+    expect(rootHeightOf(makePane({ status: 'awaiting-prompt' }))).toBe('52px')
   })
 
   it('two-line tile (working with active tool) has 34px height', () => {
@@ -93,7 +93,7 @@ describe('KanbanCard — fixed height', () => {
           activeToolName: 'Edit'
         })
       )
-    ).toBe('34px')
+    ).toBe('52px')
   })
 
   it('two-line tile (changes-ready with uncommitted changes) has 34px height', () => {
@@ -124,6 +124,6 @@ describe('KanbanCard — fixed height', () => {
           }
         })
       )
-    ).toBe('34px')
+    ).toBe('52px')
   })
 })

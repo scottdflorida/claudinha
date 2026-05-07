@@ -6,7 +6,6 @@ import { ipcInvoke, ipcSend } from '../hooks/useIpc'
 import { KanbanColumn } from './KanbanColumn'
 import { DirtyMainModal } from './DirtyMainModal'
 import { ConflictResolveModal } from './ConflictResolveModal'
-import { ChangesReadyModal } from './ChangesReadyModal'
 import { useStrings } from '../lib/strings'
 import { useKanbanCardMoves } from '../hooks/useKanbanCardMoves'
 import { useColumnOrder } from '../hooks/useColumnOrder'
@@ -15,9 +14,9 @@ import { KanbanOverlayCard } from './KanbanOverlayCard'
 interface KanbanBoardProps {
   panes: RendererPane[]
   activePaneId: string | null
-  /** Workspace owning these panes — passed to ChangesReadyModal so it can
-   *  invoke per-repo composite IPCs (Merge+Push). Null in workspace-less
-   *  contexts (legacy or transient). */
+  /** Workspace owning these panes. Currently unused at this layer; left
+   *  in the prop set so call sites that thread workspace context don't
+   *  need to be touched when the new completion-actions surfaces wire in. */
   workspaceId?: string | null
   onCardClick: (paneId: string) => void
   /** Routes the card-level X through the shared close-pane flow. */
@@ -90,15 +89,6 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
   // same time the moving overlay lands). When no move is in flight, the
   // column uses its fallback constant.
   const compactionDurationMs = movingCard?.durationMs ?? null
-
-  // ChangesReadyModal state lives at the board level so the modal overlays the
-  // entire window regardless of which card opened it. Replaces the old
-  // diff-chip-driven DiffViewerModal — the diff viewer is now a sub-modal
-  // inside ChangesReadyModal.
-  const [pillPane, setPillPane] = useState<{ paneId: string; paneName: string } | null>(null)
-  const onPillClick = useCallback((paneId: string, paneName: string) => {
-    setPillPane({ paneId, paneName })
-  }, [])
 
   // Dirty-main resolution modal state. The board owns it (not each card) so
   // the dialog overlays the entire Kanban view regardless of which column the
@@ -207,7 +197,6 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
             panes={grouped[status]}
             activePaneId={activePaneId}
             onCardClick={onCardClick}
-            onPillClick={onPillClick}
             onCloseCard={onCloseCard}
             onResolveDirtyMain={onResolveDirtyMain}
             onResolveConflict={onResolveConflict}
@@ -221,14 +210,6 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
         ))}
       </div>
       {movingCard && <KanbanOverlayCard moving={movingCard} />}
-      {pillPane && (
-        <ChangesReadyModal
-          paneId={pillPane.paneId}
-          paneName={pillPane.paneName}
-          workspaceId={workspaceId ?? null}
-          onClose={() => setPillPane(null)}
-        />
-      )}
       {dirtyMainPane && (
         <DirtyMainModal
           pane={dirtyMainPane}

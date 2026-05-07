@@ -14,18 +14,12 @@ interface KanbanCardProps {
   /** Whether this card is the currently focused active terminal in Kanban view. */
   isActive: boolean
   onClick: () => void
-  /** Click on the next-step pill (changes-ready tiles only) — opens
-   *  the ChangesReadyModal. The diff chip is gone in the new design;
-   *  the pill is the single CTA. */
-  onPillClick?: () => void
   /** Click on the X — routes to the shared close-pane flow. */
   onClose?: () => void
   /** Click on the "Main dirty" chip — opens the resolution modal. */
   onResolveDirtyMain?: () => void
   /** Click on the "Conflict" chip — opens the conflict resolution modal. */
   onResolveConflict?: () => void
-  /** Click on the "Action failed" chip — opens the error details modal. */
-  onShowError?: () => void
 }
 
 /**
@@ -39,46 +33,11 @@ function activityFor(pane: RendererPane, t: Strings): string | null {
   return pane.activeToolName ? formatToolActivity(pane.activeToolName) : t.kanban.working
 }
 
-/**
- * Single "next step" pill rendered on changes-ready tiles. Precedence:
- *   1. uncommitted edits           → `+N/-M to commit`
- *   2. branch commits not on base  → `N to merge`
- *   3. base ahead of origin/<base> → `↑N to push` (post local-merge)
- *   4. open PR                     → `PR #N open` (deferred — needs gh probe)
- *   5. otherwise                   → null (tile shouldn't be in this column).
- *
- * Renders nothing on tiles outside `changes-ready`.
- */
-function nextStepPill(pane: RendererPane, t: Strings): { label: string; tone: 'good' | 'neutral' | 'warn' } | null {
-  if (pane.status !== 'changes-ready') return null
-  const linesAdded = pane.metrics.linesAdded ?? 0
-  const linesRemoved = pane.metrics.linesRemoved ?? 0
-  const gs = pane.gitStatus
-  if (gs?.hasUncommittedChanges) {
-    return { label: t.kanban.nextStepCommit(linesAdded, linesRemoved), tone: 'warn' }
-  }
-  if (gs && gs.commitsAhead > 0) {
-    return { label: t.kanban.nextStepMerge(gs.commitsAhead), tone: 'neutral' }
-  }
-  if (gs && (gs.baseBranchAheadOfRemote ?? 0) > 0) {
-    return { label: t.kanban.nextStepPush(gs.baseBranchAheadOfRemote ?? 0), tone: 'neutral' }
-  }
-  // PR # display deferred — requires the gh PR-association probe.
-  return null
-}
-
-const PILL_TONE_CLASSES: Record<'good' | 'neutral' | 'warn', string> = {
-  good: 'text-success-fg border-success-fg/60 hover:bg-success-fg/10',
-  neutral: 'text-fg-primary border-[var(--color-border-strong)] hover:bg-overlay',
-  warn: 'text-warning-fg border-warning-fg/60 hover:bg-warning-fg/10'
-}
-
 export function KanbanCard({
   pane,
   statusColor,
   isActive,
   onClick,
-  onPillClick,
   onClose,
   onResolveDirtyMain,
   onResolveConflict
@@ -86,9 +45,10 @@ export function KanbanCard({
   const t = useStrings()
   const agentName = resolvePaneDisplayName(pane)
   const activity = activityFor(pane, t)
-  const pill = nextStepPill(pane, t)
-  // Surface action-state errors / conflicts / dirty-main on the tile so the
-  // user can route them without opening the changes-ready modal.
+  // Surface conflict / dirty-main on the tile so the user can route them
+  // without opening a modal. Error state is shown as a non-clickable
+  // indicator — the new completion-actions design will rebuild error
+  // recovery from scratch.
   const completionState = pane.completionStatus?.state
   const showActionWarn =
     completionState === 'conflict' ||
@@ -131,11 +91,6 @@ export function KanbanCard({
     onClick()
   }, [isEditingName, onClick])
 
-  const handlePillClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    onPillClick?.()
-  }, [onPillClick])
-
   const handleCloseClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     onClose?.()
@@ -145,8 +100,8 @@ export function KanbanCard({
     e.stopPropagation()
     if (completionState === 'conflict') onResolveConflict?.()
     else if (completionState === 'dirty-main') onResolveDirtyMain?.()
-    else onPillClick?.()
-  }, [completionState, onResolveConflict, onResolveDirtyMain, onPillClick])
+    // 'error' has no resolver action — the tile shows the indicator only.
+  }, [completionState, onResolveConflict, onResolveDirtyMain])
 
   const baseBg = isActive ? 'bg-overlay' : 'bg-raised'
 
@@ -173,11 +128,12 @@ export function KanbanCard({
       `}
       style={{
         // Fixed height so the in-flight overlay never shrinks/expands when
-        // the source column's two-line content (working with active tool,
-        // changes-ready with diff) doesn't match the destination's. Every
-        // card is the same 34px shell; one-line content centers,
-        // two-line content groups tightly.
-        height: 34,
+        // the source column's two-line content (working with active tool)
+        // doesn't match the destination's one-line content. Every card is
+        // the same 52px shell; one-line content centers vertically,
+        // two-line content groups tightly with breathing room above and
+        // below.
+        height: 52,
         // Red left-border when the pane is in any error condition: PTY
         // terminated OR a transient action failure (mirrors PaneBorder's
         // hasError treatment in Wall mode).
@@ -273,27 +229,6 @@ export function KanbanCard({
       {activity && (
         <div className="text-[11px] text-fg-secondary truncate" title={activity}>
           {activity}
-        </div>
-      )}
-
-      {/* Next-step pill — only on changes-ready tiles. The pill is the
-          modal-opening CTA; the old separate diff chip + sync glyph are
-          collapsed into this one slot. */}
-      {pill && (
-        <div className="flex items-center min-w-0">
-          <button
-            type="button"
-            onClick={handlePillClick}
-            disabled={!onPillClick}
-            className={`
-              inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] tabular-nums
-              transition-colors duration-[80ms]
-              disabled:cursor-default
-              ${PILL_TONE_CLASSES[pill.tone]}
-            `}
-          >
-            {pill.label}
-          </button>
         </div>
       )}
     </div>

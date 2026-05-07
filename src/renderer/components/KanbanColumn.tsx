@@ -5,7 +5,6 @@ import type { RendererPane } from '../hooks/usePaneState'
 import { KanbanCard } from './KanbanCard'
 import { useFlipChildren } from '../lib/flip'
 import { KANBAN_COMPACT_MS } from '../lib/kanbanMotion'
-import { resolvePaneDisplayName } from '../../shared/pane-display'
 
 // Theme-aware text color for the column header. The hex STATUS_COLORS map is
 // dark-mode-tuned (working = near-white) and disappears on the cream
@@ -27,8 +26,6 @@ interface KanbanColumnProps {
   panes: RendererPane[]
   activePaneId: string | null
   onCardClick: (paneId: string) => void
-  /** Optional: forwarded to each KanbanCard for the next-step pill click. */
-  onPillClick?: (paneId: string, paneName: string) => void
   /** Optional: forwarded to each KanbanCard's X button. */
   onCloseCard?: (paneId: string) => void
   /** Optional: forwarded to each KanbanCard for the "Main dirty" chip click. */
@@ -64,7 +61,7 @@ interface KanbanColumnProps {
  * fixtures must stay visible so users can tell "no agents in this state" from
  * "the column is broken."
  */
-export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onPillClick, onCloseCard, onResolveDirtyMain, onResolveConflict, cardRefs, dropTargetRef, compactionDurationMs }: KanbanColumnProps): React.JSX.Element {
+export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onCloseCard, onResolveDirtyMain, onResolveConflict, cardRefs, dropTargetRef, compactionDurationMs }: KanbanColumnProps): React.JSX.Element {
   const color = STATUS_COLORS[status]
   const count = panes.length
   // Error column was removed in the new design — error highlight now lives on
@@ -159,7 +156,6 @@ export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, 
                   statusColor={color}
                   isActive={pane.id === activePaneId}
                   onClick={() => onCardClick(pane.id)}
-                  onPillClick={onPillClick ? () => onPillClick(pane.id, resolvePaneDisplayName(pane)) : undefined}
                   onClose={onCloseCard ? () => onCloseCard(pane.id) : undefined}
                   onResolveDirtyMain={onResolveDirtyMain ? () => onResolveDirtyMain(pane.id) : undefined}
                   onResolveConflict={onResolveConflict ? () => onResolveConflict(pane.id) : undefined}
