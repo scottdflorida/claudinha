@@ -344,7 +344,7 @@ app.whenReady().then(() => {
     healStaleWorktreeSettings(permissionsManager, worktreePaths)
   }
 
-  registerIpcHandlers(windowManager, sessionRegistry, ptyPool, hookListener, permissionsManager, statusDetector, metricsCollector, transitionBuffer, workspaceManager, gitStatusPoller, completionExecutor, inspector, planApprovalSequencer)
+  registerIpcHandlers(windowManager, sessionRegistry, ptyPool, hookListener, permissionsManager, statusDetector, metricsCollector, transitionBuffer, workspaceManager, gitStatusPoller, completionExecutor, inspector, planApprovalSequencer, turnRecorder)
 
   // Build application menu bar (B-066)
   buildMenu(windowManager, sessionRegistry, workspaceManager)

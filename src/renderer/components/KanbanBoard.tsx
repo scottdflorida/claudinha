@@ -5,6 +5,8 @@ import { IPC } from '../../shared/ipc-channels'
 import { ipcInvoke, ipcSend } from '../hooks/useIpc'
 import { KanbanColumn } from './KanbanColumn'
 import { ConflictResolveModal } from './ConflictResolveModal'
+import { TurnsModal } from './TurnsModal'
+import { resolvePaneDisplayName } from '../../shared/pane-display'
 import { useStrings } from '../lib/strings'
 import { useKanbanCardMoves } from '../hooks/useKanbanCardMoves'
 import { useColumnOrder } from '../hooks/useColumnOrder'
@@ -94,6 +96,16 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
   // and so cannot land in dirty-main. Anything previously routed through
   // DirtyMainModal goes away with completion-actions v1.)
 
+  // TurnsModal launcher — kanban-card pill on changes-ready cards opens
+  // the per-pane modal. Mirrors the wall-mode CTA's behavior so users in
+  // either chrome have a one-click way to reach the new turn surface.
+  // M0 removed the legacy ChangesReadyModal launcher; M1 wired the wall
+  // path; this restores kanban access.
+  const [turnsModalPane, setTurnsModalPane] = useState<{ paneId: string; paneName: string } | null>(null)
+  const onPillClick = useCallback((paneId: string, paneName: string) => {
+    setTurnsModalPane({ paneId, paneName })
+  }, [])
+
   // Auto-open / click-to-reopen pattern for the conflict state. Conflict
   // is the only completion-state that auto-opens a modal in v2 — dirty-
   // main went away with side-clone merges. M5 will extend
@@ -154,6 +166,7 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
             onCardClick={onCardClick}
             onCloseCard={onCloseCard}
             onResolveConflict={onResolveConflict}
+            onPillClick={onPillClick}
             cardRefs={cardRefs}
             dropTargetRef={(el) => {
               if (el) dropTargetRefs.current.set(status, el)
@@ -168,6 +181,14 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
         <ConflictResolveModal
           pane={conflictPane}
           onClose={() => setConflictPaneId(null)}
+        />
+      )}
+      {turnsModalPane && (
+        <TurnsModal
+          paneId={turnsModalPane.paneId}
+          paneName={turnsModalPane.paneName}
+          workspaceId={workspaceId ?? null}
+          onClose={() => setTurnsModalPane(null)}
         />
       )}
     </>

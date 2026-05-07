@@ -5,6 +5,7 @@ import type { RendererPane } from '../hooks/usePaneState'
 import { KanbanCard } from './KanbanCard'
 import { useFlipChildren } from '../lib/flip'
 import { KANBAN_COMPACT_MS } from '../lib/kanbanMotion'
+import { resolvePaneDisplayName } from '../../shared/pane-display'
 
 // Theme-aware text color for the column header. The hex STATUS_COLORS map is
 // dark-mode-tuned (working = near-white) and disappears on the cream
@@ -28,6 +29,8 @@ interface KanbanColumnProps {
   onCardClick: (paneId: string) => void
   /** Optional: forwarded to each KanbanCard's X button. */
   onCloseCard?: (paneId: string) => void
+  /** Optional: forwarded to each KanbanCard for the next-step pill click. */
+  onPillClick?: (paneId: string, paneName: string) => void
   /** Optional: forwarded to each KanbanCard for the "Main dirty" chip click. */
   /** Optional: forwarded to each KanbanCard for the "Conflict" chip click. */
   onResolveConflict?: (paneId: string) => void
@@ -60,7 +63,7 @@ interface KanbanColumnProps {
  * fixtures must stay visible so users can tell "no agents in this state" from
  * "the column is broken."
  */
-export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onCloseCard, onResolveConflict, cardRefs, dropTargetRef, compactionDurationMs }: KanbanColumnProps): React.JSX.Element {
+export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, onCloseCard, onResolveConflict, onPillClick, cardRefs, dropTargetRef, compactionDurationMs }: KanbanColumnProps): React.JSX.Element {
   const color = STATUS_COLORS[status]
   const count = panes.length
   // Error column was removed in the new design — error highlight now lives on
@@ -157,6 +160,7 @@ export function KanbanColumn({ status, title, panes, activePaneId, onCardClick, 
                   onClick={() => onCardClick(pane.id)}
                   onClose={onCloseCard ? () => onCloseCard(pane.id) : undefined}
                   onResolveConflict={onResolveConflict ? () => onResolveConflict(pane.id) : undefined}
+                  onPillClick={onPillClick ? () => onPillClick(pane.id, resolvePaneDisplayName(pane)) : undefined}
                 />
               </div>
             ))}

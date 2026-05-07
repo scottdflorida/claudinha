@@ -18,6 +18,10 @@ interface KanbanCardProps {
   onClose?: () => void
   /** Click on the "Conflict" chip — opens the conflict resolution modal. */
   onResolveConflict?: () => void
+  /** Click on the next-step pill (changes-ready cards) — opens the
+   *  per-terminal TurnsModal. The kanban-mode access point that mirrors
+   *  the wall-mode "Changes ready" CTA. */
+  onPillClick?: () => void
 }
 
 /**
@@ -37,7 +41,8 @@ export function KanbanCard({
   isActive,
   onClick,
   onClose,
-  onResolveConflict
+  onResolveConflict,
+  onPillClick
 }: KanbanCardProps): React.JSX.Element {
   const t = useStrings()
   const agentName = resolvePaneDisplayName(pane)
@@ -222,6 +227,24 @@ export function KanbanCard({
       {activity && (
         <div className="text-[11px] text-fg-secondary truncate" title={activity}>
           {activity}
+        </div>
+      )}
+
+      {/* Next-step pill — only on changes-ready cards. Opens the per-
+          terminal TurnsModal. Mirrors the wall-mode "Changes ready" CTA. */}
+      {pane.status === 'changes-ready' && onPillClick && (
+        <div className="flex items-center min-w-0">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onPillClick() }}
+            className="
+              inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] tabular-nums
+              text-warning-fg border-warning-fg/60 hover:bg-warning-fg/10
+              transition-colors duration-[80ms]
+            "
+          >
+            {t.turnsModal.pillIdle}
+          </button>
         </div>
       )}
     </div>

@@ -45,7 +45,7 @@ interface TurnsModalProps {
 export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModalProps): React.JSX.Element {
   const t = useStrings()
   const dialogRef = useRef<HTMLDialogElement>(null)
-  const { turns, pendingAction, autoCommitEnabled, loading, error, refresh } = useTurns(paneId)
+  const { turns, pendingAction, autoCommitEnabled, loading, error, diagnostic, refresh } = useTurns(paneId)
 
   // Selection state — Set of turn ids. Cleared on every refresh-clearing
   // action (publish success). The user can toggle individual rows.
@@ -260,7 +260,7 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
         ) : error ? (
           <div className="px-5 py-8 text-center text-[12px] text-danger-fg">{error}</div>
         ) : turns.length === 0 ? (
-          <div className="px-5 py-8 text-center text-[12px] text-fg-muted">{t.turnsModal.emptyState}</div>
+          <EmptyTurnsState diagnostic={diagnostic} fallback={t.turnsModal.emptyState} />
         ) : (
           <ul className="divide-y divide-[var(--color-border-subtle)]">
             {displayTurns.map((turn) => (
@@ -344,6 +344,65 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
         />
       )}
     </dialog>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// EmptyTurnsState — diagnostic-aware empty state.
+// ----------------------------------------------------------------------------
+//
+// The recorder has several skip paths (non-worktree, on-base-branch,
+// branch-detection-failed, auto-commit-off, only-infrastructure-changes,
+// clean-tree). When the modal shows zero turns, this component reads the
+// `diagnostic` field from TURNS_GET and tells the user the actual reason
+// — otherwise the empty state is silent and the user is left guessing.
+
+interface EmptyTurnsStateProps {
+  diagnostic: import('../../shared/ipc-channels').TurnsBranchDiagnostic | null
+  fallback: string
+}
+
+function EmptyTurnsState({ diagnostic, fallback }: EmptyTurnsStateProps): React.JSX.Element {
+  // Specific reason from the recorder takes precedence; fall through to a
+  // best-guess from the static branch context if no Stop has fired yet.
+  let headline = fallback
+  let detail: string | null = null
+
+  if (diagnostic) {
+    const skip = diagnostic.lastSkipReason
+    if (skip === 'non-worktree' || diagnostic.isWorktree === false) {
+      headline = 'This pane is running in the main repo, not a worktree.'
+      detail = 'Auto-commit only fires on worktree panes. Open a new worktree pane (or convert this one) to record turns.'
+    } else if (skip === 'on-base-branch' || diagnostic.currentBranch === diagnostic.baseBranch) {
+      headline = `This pane is on the base branch (${diagnostic.baseBranch ?? 'main'}).`
+      detail = "Auto-commit only fires on a non-base branch so wip-commits don't accidentally land on main. Switch to a worktree branch to start recording turns."
+    } else if (skip === 'branch-detection-failed') {
+      headline = 'Could not detect the base branch for this worktree.'
+      detail = 'Claudinha looks for `main` or `master` (in that order). If your repo uses a different default, the recorder skips. Tell us what it should look for.'
+    } else if (skip === 'auto-commit-off') {
+      headline = 'Auto-commit is off.'
+      detail = 'Toggle it back on (top-right) and the next Stop will record a turn.'
+    } else if (skip === 'only-infrastructure-changes') {
+      headline = 'Last Stop only modified Claudinha infrastructure paths.'
+      detail = '.claude/ and .worktrees/ changes are excluded from turns. The next Stop with user-file changes will record a turn.'
+    } else if (skip === 'clean-tree') {
+      headline = 'No edits since the last Stop.'
+      detail = 'Auto-commit fires only when the working tree is dirty. Make a change and let the agent stop.'
+    } else if (typeof skip === 'string' && skip.startsWith('error:')) {
+      headline = 'The last auto-commit attempt failed.'
+      detail = skip
+    } else {
+      // No skip reason yet — recorder hasn't run for this pane.
+      headline = 'No turns yet on ' + (diagnostic.currentBranch ?? 'this branch') + '.'
+      detail = 'Auto-commit fires when the agent stops with file changes.'
+    }
+  }
+
+  return (
+    <div className="px-5 py-8 text-center flex flex-col items-center gap-2">
+      <p className="text-[12px] text-fg-secondary">{headline}</p>
+      {detail && <p className="text-[11px] text-fg-muted max-w-[480px]">{detail}</p>}
+    </div>
   )
 }
 

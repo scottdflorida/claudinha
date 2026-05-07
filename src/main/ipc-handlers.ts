@@ -147,6 +147,7 @@ import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff, gitCommi
 import { projectTurnsForPane, broadcastTurnsUpdated } from './turn-projection'
 import { squashAndPublish } from './publish-engine'
 import { discardTurn } from './discard-engine'
+import type { TurnRecorder } from './turn-recorder'
 import type {
   TurnsGetPayload,
   TurnsGetResult,
@@ -356,7 +357,8 @@ export function registerIpcHandlers(
   gitStatusPoller: GitStatusPoller,
   completionExecutor: CompletionExecutor,
   inspector: InspectorService,
-  planApprovalSequencer: PlanApprovalSequencer
+  planApprovalSequencer: PlanApprovalSequencer,
+  turnRecorder: TurnRecorder
 ): void {
   // -------------------------------------------------------------------------
   // pane:spawn — create a new Claude Code pane
@@ -3088,29 +3090,53 @@ export function registerIpcHandlers(
         autoCommitEnabled: true
       }
     }
+    const lastSkipReason = turnRecorder.getLastSkipReason(payload.paneId)
     if (!pane.isWorktree) {
-      return { error: null, turns: [], pendingAction: null, autoCommitEnabled: false }
+      return {
+        error: null,
+        turns: [],
+        pendingAction: null,
+        autoCommitEnabled: false,
+        diagnostic: {
+          isWorktree: false,
+          currentBranch: null,
+          baseBranch: null,
+          lastSkipReason
+        }
+      }
     }
     const baseBranch = await detectMainBranch(pane.worktreePath)
     const currentBranch = await getCurrentBranch(pane.worktreePath)
+    const paneExt = pane as {
+      autoCommitEnabled?: boolean
+      pendingAction?: TurnPendingActionType | null
+    }
     if (!baseBranch || !currentBranch) {
       return {
         error: null,
         turns: [],
         pendingAction: null,
-        autoCommitEnabled: ((pane as { autoCommitEnabled?: boolean }).autoCommitEnabled !== false)
+        autoCommitEnabled: paneExt.autoCommitEnabled !== false,
+        diagnostic: {
+          isWorktree: true,
+          currentBranch: currentBranch ?? null,
+          baseBranch: baseBranch ?? null,
+          lastSkipReason
+        }
       }
     }
     const turns = await projectTurnsForPane(pane.worktreePath, payload.paneId, baseBranch, currentBranch)
-    const paneExt = pane as {
-      autoCommitEnabled?: boolean
-      pendingAction?: TurnPendingActionType | null
-    }
     return {
       error: null,
       turns,
       pendingAction: paneExt.pendingAction ?? null,
-      autoCommitEnabled: paneExt.autoCommitEnabled !== false
+      autoCommitEnabled: paneExt.autoCommitEnabled !== false,
+      diagnostic: {
+        isWorktree: true,
+        currentBranch,
+        baseBranch,
+        lastSkipReason
+      }
     }
   })
 

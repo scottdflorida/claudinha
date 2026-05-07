@@ -16,7 +16,8 @@ import type {
   TurnRecordedPayload,
   TurnsUpdatedPayload,
   TurnPendingActionPayload,
-  TurnsGetResult
+  TurnsGetResult,
+  TurnsBranchDiagnostic
 } from '../../shared/ipc-channels'
 import type { Turn, TurnPendingAction } from '../../shared/types'
 import { ipcInvoke, useIpcListener } from './useIpc'
@@ -27,6 +28,10 @@ export interface UseTurnsResult {
   autoCommitEnabled: boolean
   loading: boolean
   error: string | null
+  /** Branch / recorder context for the empty-state UI. Populated by
+   *  TURNS_GET; the broadcast IPCs (TURN_RECORDED / TURNS_UPDATED) don't
+   *  re-send this so the most recent value sticks. */
+  diagnostic: TurnsBranchDiagnostic | null
   /** Force a fresh TURNS_GET. Idempotent. */
   refresh: () => void
 }
@@ -37,6 +42,7 @@ export function useTurns(paneId: string): UseTurnsResult {
   const [autoCommitEnabled, setAutoCommitEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [diagnostic, setDiagnostic] = useState<TurnsBranchDiagnostic | null>(null)
   const fetchTokenRef = useRef(0)
 
   const refresh = useCallback(() => {
@@ -54,6 +60,7 @@ export function useTurns(paneId: string): UseTurnsResult {
           setTurns(result.turns)
           setPendingAction(result.pendingAction)
           setAutoCommitEnabled(result.autoCommitEnabled)
+          setDiagnostic(result.diagnostic ?? null)
         }
       })
       .catch((err) => {
@@ -103,5 +110,5 @@ export function useTurns(paneId: string): UseTurnsResult {
     setPendingAction(payload.pendingAction)
   })
 
-  return { turns, pendingAction, autoCommitEnabled, loading, error, refresh }
+  return { turns, pendingAction, autoCommitEnabled, loading, error, diagnostic, refresh }
 }

@@ -77,10 +77,26 @@ export interface AutoCommitResult {
  * SessionRegistry.PaneState.
  */
 export class TurnRecorder {
+  /**
+   * Per-pane "last skip reason." Populated on every `handleStop` invocation
+   * (`null` on commit success). Read by the TURNS_GET handler so the modal's
+   * empty state can tell the user *why* no turns were recorded — the most
+   * common failure modes (`non-worktree`, `on-base-branch`,
+   * `branch-detection-failed`) are silent in production logs but very
+   * confusing in the UI.
+   */
+  private readonly lastSkipReason = new Map<string, string | null>()
+
   constructor(
     private readonly sessionRegistry: SessionRegistry,
     private readonly windowManager: WindowManager
   ) {}
+
+  /** Returns the most recent skip reason for a pane, or null if the last
+   *  invocation succeeded / no invocation has happened yet. */
+  getLastSkipReason(paneId: string): string | null {
+    return this.lastSkipReason.get(paneId) ?? null
+  }
 
   /**
    * Handle a Stop hook for the given pane. Fire-and-forget from the
@@ -88,10 +104,25 @@ export class TurnRecorder {
    */
   async handleStop(paneId: string): Promise<AutoCommitResult> {
     try {
-      return await this.handleStopInner(paneId)
+      const result = await this.handleStopInner(paneId)
+      // Always log a one-liner so the main-process log shows what
+      // happened. Skipped reasons are silent in production but the
+      // log is the only diagnostic surface when the modal mysteriously
+      // shows no turns. Errors get a louder warn.
+      if (result.outcome === 'committed') {
+        this.lastSkipReason.set(paneId, null)
+        console.log(`[turn-recorder] paneId=${paneId} committed turn ${result.turn?.index} (${result.turn?.commitSha?.slice(0, 8)})`)
+      } else if (result.outcome === 'skipped') {
+        this.lastSkipReason.set(paneId, result.reason ?? 'unknown')
+        console.log(`[turn-recorder] paneId=${paneId} skipped: ${result.reason}`)
+      } else {
+        this.lastSkipReason.set(paneId, `error: ${result.error ?? 'unknown'}`)
+        console.warn(`[turn-recorder] paneId=${paneId} error: ${result.error}`)
+      }
+      return result
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.warn(`[turn-recorder] handleStop(${paneId}) failed:`, msg)
+      console.warn(`[turn-recorder] paneId=${paneId} threw:`, msg)
       return { outcome: 'error', error: msg }
     }
   }

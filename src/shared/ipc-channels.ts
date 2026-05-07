@@ -1634,11 +1634,27 @@ export interface TurnsGetPayload {
   paneId: string
 }
 
+/**
+ * Diagnostic context the renderer surfaces in the empty-state UI when no
+ * turns are present. Helps users understand WHY auto-commit isn't producing
+ * turns — the most common reasons are: pane isn't a worktree, currently on
+ * the base branch (worktree branch == main), or branch detection failed.
+ */
+export interface TurnsBranchDiagnostic {
+  isWorktree: boolean
+  currentBranch: string | null
+  baseBranch: string | null
+  /** Reason the last `turn-recorder.handleStop` skipped, if any. Populated
+   *  by main and read by the modal's empty state. */
+  lastSkipReason?: string | null
+}
+
 export interface TurnsGetResult {
   error: string | null
   turns: Turn[]
   pendingAction: TurnPendingAction | null
   autoCommitEnabled: boolean
+  diagnostic?: TurnsBranchDiagnostic
 }
 
 /** renderer → main invoke: squash + publish via the chosen path. */
