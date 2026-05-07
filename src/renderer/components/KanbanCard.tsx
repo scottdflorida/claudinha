@@ -16,8 +16,6 @@ interface KanbanCardProps {
   onClick: () => void
   /** Click on the X — routes to the shared close-pane flow. */
   onClose?: () => void
-  /** Click on the "Main dirty" chip — opens the resolution modal. */
-  onResolveDirtyMain?: () => void
   /** Click on the "Conflict" chip — opens the conflict resolution modal. */
   onResolveConflict?: () => void
 }
@@ -39,20 +37,18 @@ export function KanbanCard({
   isActive,
   onClick,
   onClose,
-  onResolveDirtyMain,
   onResolveConflict
 }: KanbanCardProps): React.JSX.Element {
   const t = useStrings()
   const agentName = resolvePaneDisplayName(pane)
   const activity = activityFor(pane, t)
-  // Surface conflict / dirty-main on the tile so the user can route them
+  // Surface conflict on the tile so the user can route to the resolver
   // without opening a modal. Error state is shown as a non-clickable
-  // indicator — the new completion-actions design will rebuild error
-  // recovery from scratch.
+  // indicator. (Dirty-main was removed in completion-actions v2 — side-
+  // clone merges never touch the user's working tree.)
   const completionState = pane.completionStatus?.state
   const showActionWarn =
     completionState === 'conflict' ||
-    completionState === 'dirty-main' ||
     completionState === 'error'
 
   const { setUserName } = usePaneState()
@@ -99,9 +95,8 @@ export function KanbanCard({
   const handleActionWarnClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     if (completionState === 'conflict') onResolveConflict?.()
-    else if (completionState === 'dirty-main') onResolveDirtyMain?.()
     // 'error' has no resolver action — the tile shows the indicator only.
-  }, [completionState, onResolveConflict, onResolveDirtyMain])
+  }, [completionState, onResolveConflict])
 
   const baseBg = isActive ? 'bg-overlay' : 'bg-raised'
 
@@ -192,8 +187,8 @@ export function KanbanCard({
             <span className="flex-1" aria-hidden="true" />
           </>
         )}
-        {/* Action-state warn glyph (conflict / dirty-main / failed) — clickable
-            shortcut to the matching resolver. */}
+        {/* Action-state warn glyph (conflict / failed) — clickable
+            shortcut to the resolver, or non-clickable indicator on `error`. */}
         {showActionWarn && (
           <button
             type="button"
@@ -202,16 +197,12 @@ export function KanbanCard({
             title={
               completionState === 'conflict'
                 ? t.kanban.actionConflictResolve
-                : completionState === 'dirty-main'
-                  ? t.kanban.actionMainDirtyResolve
-                  : t.kanban.actionFailed
+                : t.kanban.actionFailed
             }
           >
             {completionState === 'conflict'
               ? t.kanban.actionConflict
-              : completionState === 'dirty-main'
-                ? t.kanban.actionMainDirty
-                : t.kanban.actionFailed}
+              : t.kanban.actionFailed}
           </button>
         )}
         {onClose && (

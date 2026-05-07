@@ -45,7 +45,7 @@ import { registerIpcHandlers, checkClaudeInstalled } from './ipc-handlers'
 import { buildMenu } from './menu'
 import { getMenuStrings } from './menu-strings'
 import { WorkspaceManager } from './workspace-manager'
-import { migrateLegacyKeys } from './workspace-store'
+import { migrateLegacyKeys, migrateCompletionActionsV2 } from './workspace-store'
 import { GitStatusPoller } from './git-status-poller'
 import { CompletionExecutor } from './completion-executor'
 import { InspectorService } from './inspector'
@@ -82,11 +82,17 @@ if (!gotTheLock) {
 }
 
 // ---------------------------------------------------------------------------
-// One-time migration from electron-store keys. Must run before any
-// consumer of workspace-store constructs (WorkspaceManager reads in ctor).
+// One-time migrations. Must run before any consumer of workspace-store
+// constructs (WorkspaceManager reads in ctor).
+//
+// `migrateLegacyKeys`: copies pre-Claudinha-rename `hives.*` keys forward.
+// `migrateCompletionActionsV2`: strips deprecated `completionPolicy` field
+//   from persisted workspaces and backfills `defaultPublishPath` (M0 of the
+//   turn-as-commit completion-actions plan). Idempotent.
 // ---------------------------------------------------------------------------
 
 migrateLegacyKeys()
+migrateCompletionActionsV2()
 
 // ---------------------------------------------------------------------------
 // Module-level singletons — created once, shared by all IPC handlers

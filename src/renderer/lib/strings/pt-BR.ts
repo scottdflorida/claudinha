@@ -785,6 +785,67 @@ export const ptBR: Strings = {
     bodyHeader: 'O Claude relatou o seguinte:'
   },
 
+  turnsModal: {
+    titleFmt: (paneName: string): string => `Turnos · ${paneName}`,
+    subtitle: 'Cada turno do agente é auto-confirmado e mostrado aqui. Escolha turnos para publicar, dividir ou descartar.',
+    closeAria: 'Fechar modal de turnos',
+    closeButton: 'Fechar',
+    comingSoon: 'Ações de turno chegam em breve.',
+    comingSoonBody:
+      'M0 entrega a fundação. Auto-commit no Stop, lista de turnos, publicar/squash/dividir/descartar e merges via clone lateral chegam nos próximos marcos.',
+    autoCommitToggle: 'Auto-commit no Stop',
+    autoCommitToggleEnabled: 'Ligado',
+    autoCommitToggleDisabled: 'Desligado',
+    sectionJustLanded: 'Acabou de chegar',
+    sectionPending: 'Pendentes',
+    sectionAlreadyPublished: 'Já publicados',
+    turnNumberFmt: (n: number): string => `Turno ${n}`,
+    turnRenumberedFmt: (current: number, original: number): string =>
+      `Turno ${current} (era ${original})`,
+    turnFilesAndLinesFmt: (files: number, added: number, removed: number): string =>
+      `${files === 1 ? '1 arquivo' : `${files} arquivos`}  +${added}/-${removed}`,
+    publishMenuLabel: 'Publicar',
+    publishSquashAndPush: 'Squash + push branch',
+    publishSquashAndMerge: 'Squash + merge direto',
+    publishSquashAndPr: 'Squash + abrir PR',
+    publishSquashAndDraftPr: 'Squash + abrir draft PR',
+    publishIndividual: 'Publicar cada turno individualmente',
+    publishSplit: 'Dividir um turno…',
+    discardAction: 'Descartar',
+    discardConfirmTitle: 'Descartar este turno?',
+    discardConfirmBodyFmt: (turn: number): string =>
+      `O turno ${turn} será removido do branch da worktree. O reflog ainda mantém por ~30 dias, mas o Claudinha não vai mostrar de novo.`,
+    discardCascadeWarningFmt: (count: number): string =>
+      count === 1
+        ? `1 turno posterior depende deste. Descartar fará rebase desse turno sobre o pai anterior.`
+        : `${count} turnos posteriores dependem deste. Descartar fará rebase deles sobre o pai anterior.`,
+    discardConfirmButton: 'Descartar',
+    discardCancelButton: 'Cancelar',
+    splitTitleFmt: (turn: number): string => `Dividir turno ${turn}`,
+    splitBodyHint:
+      'Selecione quais hunks vão para o PRIMEIRO commit. O resto vai para o SEGUNDO.',
+    splitLeftMessageLabel: 'Mensagem do primeiro commit',
+    splitRightMessageLabel: 'Mensagem do segundo commit',
+    splitConfirmButton: 'Dividir',
+    splitCancelButton: 'Cancelar',
+    pendingActionLabel: 'Trabalhando…',
+    publishingSquashFmt: (count: number): string =>
+      count === 1 ? 'Squashing 1 turno…' : `Squashing ${count} turnos…`,
+    publishingIndividualFmt: (count: number): string =>
+      count === 1 ? 'Publicando 1 turno…' : `Publicando ${count} turnos…`,
+    splitting: 'Dividindo…',
+    discarding: 'Descartando…',
+    merging: 'Mergindo…',
+    openingPr: 'Abrindo PR…',
+    publishPathDirectMerge: 'Merge direto',
+    publishPathPr: 'Pull request',
+    publishPathBoth: 'Ambos',
+    pillIdle: 'Ver turnos',
+    pillCountFmt: (n: number): string => (n === 1 ? '1 turno' : `${n} turnos`),
+    emptyState: 'Nenhum turno ainda. Auto-commit roda quando o agente para com mudanças no arquivo.',
+    autoCommitToggleAria: 'Alternar auto-commit no Stop'
+  },
+
   changesReadyModal: {
     title: 'Mudanças prontas',
     closeAria: 'Fechar',

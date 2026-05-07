@@ -33,6 +33,9 @@ const SEND_CHANNELS = new Set<IpcChannel>([
   IPC.COMPLETION_CLEAR_STATE,
   // Analytics — renderer-originated event signals (fire-and-forget)
   IPC.ANALYTICS_TRACK_SHORTCUT
+  // Note: Completion v2 channels (TURN_*, BULK_*, REPO_PUBLISH_PATH_*,
+  // WORKSPACE_DEFAULT_PATH_*, MERGE_CONFLICT_RESOLVE) are all invoke-style;
+  // see INVOKE_CHANNELS below.
 ])
 
 /** Channels the renderer may INVOKE on main (request/reply) */
@@ -98,6 +101,20 @@ const INVOKE_CHANNELS = new Set<IpcChannel>([
   IPC.GIT_REWORD_COMMIT,
   IPC.GIT_LIST_BRANCHES,
   IPC.GH_CLI_CHECK,
+  // Completion actions v2 — turn-as-commit (Option B)
+  IPC.TURNS_GET,
+  IPC.TURN_PUBLISH_SQUASH,
+  IPC.TURN_PUBLISH_INDIVIDUAL,
+  IPC.TURN_SPLIT,
+  IPC.TURN_DISCARD,
+  IPC.TURN_AUTO_COMMIT_TOGGLE,
+  IPC.REPO_PUBLISH_PATH_GET,
+  IPC.REPO_PUBLISH_PATH_SET,
+  IPC.WORKSPACE_DEFAULT_PATH_GET,
+  IPC.WORKSPACE_DEFAULT_PATH_SET,
+  IPC.BULK_RUN,
+  IPC.BULK_CANCEL,
+  IPC.MERGE_CONFLICT_RESOLVE,
   // App config
   IPC.APP_CONFIG_GET,
   IPC.APP_CONFIG_SET,
@@ -148,6 +165,12 @@ const RECEIVE_CHANNELS = new Set<IpcChannel>([
   IPC.PANE_RESOLVING_CONFLICT,
   IPC.COMPLETION_POLICY_GLOBAL_CHANGED,
   IPC.COMPLETION_POLICY_WORKSPACE_CHANGED,
+  // Completion actions v2 — turn-as-commit broadcasts
+  IPC.TURN_RECORDED,
+  IPC.TURNS_UPDATED,
+  IPC.TURN_PENDING_ACTION,
+  IPC.BULK_PROGRESS,
+  IPC.BULK_COMPLETED,
   // App config
   IPC.APP_CONFIG_CHANGED,
   // Inspector

@@ -37,7 +37,8 @@ import {
   getNextWorkspaceNumber,
   peekNextWorkspaceNumber,
   setNextWorkspaceNumber,
-  migrateLegacyKeys
+  migrateLegacyKeys,
+  migrateCompletionActionsV2
 } from '../src/main/workspace-store'
 import type { Workspace, TerminalSnapshot } from '../src/shared/types'
 
@@ -128,6 +129,94 @@ describe('WorkspaceStore', () => {
       migrateLegacyKeys()
       expect(getAllWorkspaces()).toEqual([])
       expect(peekNextWorkspaceNumber()).toBe(1)
+    })
+  })
+
+  describe('migrateCompletionActionsV2', () => {
+    it('strips deprecated completionPolicy fields from every workspace', () => {
+      const ws1 = {
+        ...makeWorkspace({ id: 'ws-1' }),
+        completionPolicy: { action: 'auto-merge', mergeStrategy: 'rebase-ff', pruneOnMerge: false }
+      } as Workspace
+      const ws2 = {
+        ...makeWorkspace({ id: 'ws-2' }),
+        completionPolicy: null
+      } as Workspace
+      mockStoreData.set('workspaces.all', [ws1, ws2])
+
+      migrateCompletionActionsV2()
+
+      const after = getAllWorkspaces()
+      expect(after).toHaveLength(2)
+      // Field is gone (not just null) — uses `in` operator to check absence.
+      expect('completionPolicy' in after[0]!).toBe(false)
+      expect('completionPolicy' in after[1]!).toBe(false)
+    })
+
+    it("backfills defaultPublishPath = 'both' for workspaces missing it", () => {
+      const ws = makeWorkspace({ id: 'ws-1' })
+      // Ensure field is genuinely missing in the persisted record.
+      delete (ws as { defaultPublishPath?: unknown }).defaultPublishPath
+      mockStoreData.set('workspaces.all', [ws])
+
+      migrateCompletionActionsV2()
+
+      const after = getAllWorkspaces()
+      expect(after[0]!.defaultPublishPath).toBe('both')
+    })
+
+    it('preserves an existing defaultPublishPath chosen by the user', () => {
+      const ws = makeWorkspace({ id: 'ws-1', defaultPublishPath: 'pr' })
+      mockStoreData.set('workspaces.all', [ws])
+
+      migrateCompletionActionsV2()
+
+      const after = getAllWorkspaces()
+      expect(after[0]!.defaultPublishPath).toBe('pr')
+    })
+
+    it('is idempotent — a second run leaves the data untouched', () => {
+      const ws = {
+        ...makeWorkspace({ id: 'ws-1' }),
+        completionPolicy: { action: 'ask', mergeStrategy: 'rebase-ff', pruneOnMerge: false }
+      } as Workspace
+      mockStoreData.set('workspaces.all', [ws])
+
+      migrateCompletionActionsV2()
+      const afterFirst = JSON.stringify(getAllWorkspaces())
+      migrateCompletionActionsV2()
+      const afterSecond = JSON.stringify(getAllWorkspaces())
+
+      expect(afterSecond).toBe(afterFirst)
+    })
+
+    it('is a no-op when no workspaces exist', () => {
+      mockStoreData.set('workspaces.all', [])
+      expect(() => migrateCompletionActionsV2()).not.toThrow()
+      expect(getAllWorkspaces()).toEqual([])
+    })
+
+    it('does not touch unrelated fields (status, name, type, viewMode)', () => {
+      const ws = {
+        ...makeWorkspace({
+          id: 'ws-1',
+          name: 'Important workspace',
+          status: 'dormant',
+          type: 'repo',
+          viewMode: 'kanban'
+        }),
+        completionPolicy: { action: 'ask', mergeStrategy: 'rebase-ff', pruneOnMerge: false }
+      } as Workspace
+      mockStoreData.set('workspaces.all', [ws])
+
+      migrateCompletionActionsV2()
+
+      const after = getAllWorkspaces()[0]!
+      expect(after.id).toBe('ws-1')
+      expect(after.name).toBe('Important workspace')
+      expect(after.status).toBe('dormant')
+      expect(after.type).toBe('repo')
+      expect(after.viewMode).toBe('kanban')
     })
   })
 

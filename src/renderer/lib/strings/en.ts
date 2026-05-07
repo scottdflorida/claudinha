@@ -768,6 +768,69 @@ export const en = {
     bodyHeader: 'Claude reported the following:'
   },
 
+  turnsModal: {
+    titleFmt: (paneName: string): string => `Turns · ${paneName}`,
+    subtitle: 'Each agent turn is auto-committed and shown here. Pick turns to publish, split, or discard.',
+    closeAria: 'Close turns modal',
+    closeButton: 'Close',
+    comingSoon: 'Turn-based completion actions are landing soon.',
+    comingSoonBody:
+      'M0 ships the foundation. Auto-commit on Stop, the turn list, publish/squash/split/discard, and side-clone merges arrive in the next milestones.',
+    autoCommitToggle: 'Auto-commit on Stop',
+    autoCommitToggleEnabled: 'On',
+    autoCommitToggleDisabled: 'Off',
+    sectionJustLanded: 'Just landed',
+    sectionPending: 'Pending',
+    sectionAlreadyPublished: 'Already published',
+    turnNumberFmt: (n: number): string => `Turn ${n}`,
+    turnRenumberedFmt: (current: number, original: number): string =>
+      `Turn ${current} (was ${original})`,
+    turnFilesAndLinesFmt: (files: number, added: number, removed: number): string =>
+      `${files === 1 ? '1 file' : `${files} files`}  +${added}/-${removed}`,
+    publishMenuLabel: 'Publish',
+    publishSquashAndPush: 'Squash + push branch',
+    publishSquashAndMerge: 'Squash + direct merge',
+    publishSquashAndPr: 'Squash + open PR',
+    publishSquashAndDraftPr: 'Squash + open draft PR',
+    publishIndividual: 'Publish each turn individually',
+    publishSplit: 'Split a turn…',
+    discardAction: 'Discard',
+    discardConfirmTitle: 'Discard this turn?',
+    discardConfirmBodyFmt: (turn: number): string =>
+      `Turn ${turn} will be removed from the worktree branch. The reflog still has it for ~30 days, but Claudinha won't show it again.`,
+    discardCascadeWarningFmt: (count: number): string =>
+      count === 1
+        ? `1 later turn depends on this one. Discarding will rebase that turn onto the previous parent.`
+        : `${count} later turns depend on this one. Discarding will rebase them onto the previous parent.`,
+    discardConfirmButton: 'Discard',
+    discardCancelButton: 'Cancel',
+    splitTitleFmt: (turn: number): string => `Split turn ${turn}`,
+    splitBodyHint:
+      'Pick which hunks go to the FIRST commit. The rest go to the SECOND.',
+    splitLeftMessageLabel: 'First commit message',
+    splitRightMessageLabel: 'Second commit message',
+    splitConfirmButton: 'Split',
+    splitCancelButton: 'Cancel',
+    pendingActionLabel: 'Working…',
+    publishingSquashFmt: (count: number): string =>
+      count === 1 ? 'Squashing 1 turn…' : `Squashing ${count} turns…`,
+    publishingIndividualFmt: (count: number): string =>
+      count === 1 ? 'Publishing 1 turn…' : `Publishing ${count} turns…`,
+    splitting: 'Splitting…',
+    discarding: 'Discarding…',
+    merging: 'Merging…',
+    openingPr: 'Opening PR…',
+    publishPathDirectMerge: 'Direct merge',
+    publishPathPr: 'Pull request',
+    publishPathBoth: 'Both',
+    /** Pill that opens the modal, on the kanban changes-ready card and the wall-mode header. */
+    pillIdle: 'View turns',
+    pillCountFmt: (n: number): string => (n === 1 ? '1 turn' : `${n} turns`),
+    /** Empty-state when no turns yet (Stop hasn't fired with file changes). */
+    emptyState: 'No turns yet. Auto-commit fires when the agent stops with file changes.',
+    autoCommitToggleAria: 'Toggle auto-commit on Stop'
+  },
+
   changesReadyModal: {
     title: 'Changes ready',
     closeAria: 'Close',

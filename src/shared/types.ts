@@ -141,10 +141,23 @@ export interface Workspace {
   /** Epoch ms when workspace was last active */
   lastActiveAt: number
   /**
-   * Optional workspace-scoped override for the completion policy. `null` (or
-   * missing) means this workspace inherits the global policy.
+   * @deprecated Replaced by the v2 turn-as-commit model. Kept on the type
+   * as optional so legacy persisted JSONs don't fail to deserialize before
+   * the M0 migration strips them. Do not read from this field in new code.
    */
   completionPolicy?: CompletionPolicy | null
+  /**
+   * Default publish path for repos opened in this workspace. The user
+   * picks this at workspace creation (per U5: required field, defaults
+   * visible). Each repo can override via per-repo Publish-path config.
+   * Optional during M0 transition; M4 tightens to required.
+   */
+  defaultPublishPath?: PublishPath
+  /**
+   * Per-repo Publish-path overrides. Map repoPath → PublishPath. Absent
+   * means inherit `defaultPublishPath`.
+   */
+  publishPathOverrides?: Record<string, PublishPath>
   /**
    * Top-level view mode the workspace window uses to render its terminals.
    * `'wall'` tiles every active pane via PaneGrid; `'kanban'` renders a status
@@ -182,8 +195,15 @@ export interface RendererWorkspace {
   pausedTerminals: TerminalSnapshot[]
   /** Epoch ms of the most recent activity in this workspace — used for sort + "Xm ago" display */
   lastActiveAt: number
-  /** Workspace-level completion policy override (null = inherit global) */
+  /**
+   * @deprecated v2 turn-as-commit replaces this. Kept on the type for
+   * backward-compat with persisted JSONs until the M0 migration runs.
+   */
   completionPolicy?: CompletionPolicy | null
+  /** Default publish path for the workspace (set at launch per U5). */
+  defaultPublishPath?: PublishPath
+  /** Per-repo Publish-path overrides; absent → inherit defaultPublishPath. */
+  publishPathOverrides?: Record<string, PublishPath>
   /** Current view mode (wall | kanban). Absent in legacy payloads; defaults to 'wall'. */
   viewMode?: 'wall' | 'kanban'
 }
@@ -283,8 +303,114 @@ export interface PaneMetrics {
 }
 
 // ---------------------------------------------------------------------------
-// Completion Actions — merge/PR flow for worktree panes
+// Completion Actions v2 — turn-as-commit model (Option B)
 // ---------------------------------------------------------------------------
+//
+// Each agent turn auto-commits as a `wip(turn-N)` commit on the worktree
+// branch. The user surfaces, picks turns, and publishes them via
+// squash / individual / split. State is *derived from git*, not persisted
+// separately — the source of truth is `git log <base>..<worktree-branch>`
+// plus a sidecar for discarded-turn telemetry.
+//
+// Lifecycle (see docs/implementation-plan-completion-actions.md §4):
+//
+//   open ──► pushed ──► pr-open ──► merged ──► shipped
+//      └─► superseded     (split absorbed this commit)
+//      └─► discarded      (user dropped this commit)
+
+export type TurnState =
+  | 'open'         // wip-commit on worktree branch, no publish action yet
+  | 'pushed'       // worktree branch pushed to origin (PR-able)
+  | 'pr-open'      // PR exists for the publish commit derived from this turn
+  | 'merged'       // publish commit is on base branch locally
+  | 'shipped'      // base branch is on origin (terminal "done" state)
+  | 'superseded'   // a later split/squash absorbed this turn-commit
+  | 'discarded'    // explicitly dropped by the user
+
+/**
+ * In-flight async action against a turn (or set of turns). Renderer reads
+ * this to disable surfaces while the action runs; main clears it on
+ * completion. Mutually exclusive — at most one pending action per pane.
+ */
+export type TurnPendingAction =
+  | { kind: 'publishing-squash'; selectedTurnIds: string[] }
+  | { kind: 'publishing-individual'; selectedTurnIds: string[] }
+  | { kind: 'splitting'; turnId: string }
+  | { kind: 'discarding'; turnId: string }
+  | { kind: 'merging'; selectedTurnIds: string[] }
+  | { kind: 'opening-pr'; selectedTurnIds: string[] }
+
+export interface Turn {
+  /** Stable UUID generated when the wip-commit is created. */
+  id: string
+  paneId: string
+  /**
+   * Sequential display number; renumbers on discard so the UI shows a
+   * tidy 1..N sequence. The stable identity is `id`, not `index`.
+   */
+  index: number
+  /** wip-commit sha on the worktree branch. */
+  commitSha: string
+  parentCommitSha: string
+  /** Haiku one-liner describing the turn's diff. */
+  summary: string
+  filesChanged: number
+  additions: number
+  deletions: number
+  /** Epoch ms of the wip-commit's author timestamp. */
+  createdAt: number
+  state: TurnState
+  /** Sha of the publish-commit derived from this turn (after squash/individual). */
+  publishCommitSha: string | null
+  /** GitHub PR URL (after PR creation). */
+  prUrl: string | null
+}
+
+/**
+ * Publish-path configuration. The user picks a workspace-wide default at
+ * launch (per U5: required field, defaults visible). Each repo can
+ * override the default.
+ *
+ *   `direct-merge` — merge into base via side-clone, push base to origin
+ *   `pr`           — push branch + `gh pr create`
+ *   `both`         — surface both affordances; user picks per-action
+ */
+export type PublishPath = 'direct-merge' | 'pr' | 'both'
+
+export interface PublishPathConfig {
+  scope: 'workspace' | 'repo'
+  value: PublishPath
+}
+
+/**
+ * Per-pane sidecar — records turns the user explicitly discarded so the
+ * UI can warn ("you discarded N turns; reflog has them") and telemetry
+ * can attribute the action. Persisted at
+ * `<worktreePath>/.claudinha-turns.json`.
+ */
+export interface DiscardedTurnsSidecar {
+  version: 1
+  /** UUID → minimal record. Keyed by Turn.id. */
+  discarded: Record<string, {
+    /** Sha at the time of discard (the blob is gone from log but reflog has it). */
+    commitSha: string
+    /** Epoch ms when discarded. */
+    discardedAt: number
+    /** Original sequential number when discarded — for the audit trail. */
+    originalIndex: number
+    /** Turns that absorbed this one via split (if any). */
+    supersededBy?: string[]
+  }>
+}
+
+// ---------------------------------------------------------------------------
+// Completion Actions v1 — LEGACY merge/PR flow (DEPRECATED, slated for removal)
+// ---------------------------------------------------------------------------
+//
+// Kept as compile-time shims while the v2 turn-based model rolls out and
+// existing references are migrated. Do not extend; do not introduce new
+// usage. Scheduled for deletion at the end of M0 once every reference has
+// been migrated.
 
 export type CompletionActionState =
   | 'ready'
@@ -558,6 +684,24 @@ export interface PaneState {
    * done.
    */
   permissionMode?: 'normal' | 'plan'
+  /**
+   * Per-session toggle for auto-commit on Stop. Default true. When false,
+   * `turn-recorder` skips creating a wip-commit on the next Stop hook even
+   * if the working tree is dirty. Optional during M0 transition.
+   */
+  autoCommitEnabled?: boolean
+  /**
+   * Synthesised projection of turns for this pane. Source of truth is git
+   * itself (`git log <base>..<worktree-branch>` plus UUID trailers); this
+   * field is a cache the renderer reads. M1 starts populating it.
+   */
+  turns?: Turn[]
+  /**
+   * Mutually-exclusive in-flight action. Set by main when starting an
+   * action; cleared on completion or failure. Renderer disables surfaces
+   * while pending. Null when idle.
+   */
+  pendingAction?: TurnPendingAction | null
 }
 
 // ---------------------------------------------------------------------------

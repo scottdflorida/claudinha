@@ -10,7 +10,7 @@
  * in IPC payloads (ToolUsageSummaryRecord), even though in-memory it is a Map.
  */
 
-import type { PaneStatus, PaneMetrics, EffortLevel, Model, PermissionOverrides, WorkspaceType, WorkspaceConstraint, TerminalSnapshot, RendererWorkspace, GitStatus, PaneCloseAction, MergeStrategy, CompletionActionStatus, CompletionPolicy, AppConfig, WorkspaceSummary, InspectorReport } from './types'
+import type { PaneStatus, PaneMetrics, EffortLevel, Model, PermissionOverrides, WorkspaceType, WorkspaceConstraint, TerminalSnapshot, RendererWorkspace, GitStatus, PaneCloseAction, MergeStrategy, CompletionActionStatus, CompletionPolicy, AppConfig, WorkspaceSummary, InspectorReport, Turn, TurnPendingAction, PublishPath } from './types'
 
 // ---------------------------------------------------------------------------
 // Channel name constants
@@ -191,7 +191,41 @@ export const IPC = {
   WORKSPACE_INITIAL_SPAWN_BEGIN: 'workspace:initial-spawn-begin',
   WORKSPACE_INITIAL_SPAWN_COMPLETE: 'workspace:initial-spawn-complete',
 
-  // --- Completion actions (merge/PR flow) ---
+  // --- Completion Actions v2 (turn-as-commit, Option B) ---
+  //
+  // See docs/implementation-plan-completion-actions.md §7. Each agent turn
+  // is auto-committed as a `wip(turn-N)` commit; the renderer surfaces
+  // turns and offers publish/split/discard.
+
+  // main → renderer — broadcast events
+  TURN_RECORDED: 'turn:recorded',          // a new wip-commit landed for a pane
+  TURNS_UPDATED: 'turn:updated',           // full turn projection for a pane refreshed
+  TURN_PENDING_ACTION: 'turn:pending-action', // pending-action for a pane changed (set | cleared)
+
+  // renderer → main (invoke/reply) — fetch + actions
+  TURNS_GET: 'turn:get',                   // fetch the current turn projection for a pane
+  TURN_PUBLISH_SQUASH: 'turn:publish-squash',
+  TURN_PUBLISH_INDIVIDUAL: 'turn:publish-individual',
+  TURN_SPLIT: 'turn:split',
+  TURN_DISCARD: 'turn:discard',
+  TURN_AUTO_COMMIT_TOGGLE: 'turn:auto-commit-toggle',
+
+  // renderer → main (invoke/reply) — Publish-path config
+  REPO_PUBLISH_PATH_GET: 'repo:publish-path-get',
+  REPO_PUBLISH_PATH_SET: 'repo:publish-path-set',
+  WORKSPACE_DEFAULT_PATH_SET: 'workspace:default-path-set',
+  WORKSPACE_DEFAULT_PATH_GET: 'workspace:default-path-get',
+
+  // renderer → main (invoke/reply) — bulk operations
+  BULK_RUN: 'bulk:run',
+  BULK_CANCEL: 'bulk:cancel',
+  // main → renderer — bulk progress events
+  BULK_PROGRESS: 'bulk:progress',
+  BULK_COMPLETED: 'bulk:completed',
+  // renderer → main (invoke/reply) — multi-conflict resolution choice
+  MERGE_CONFLICT_RESOLVE: 'merge-conflict:resolve',
+
+  // --- Completion actions (merge/PR flow) — LEGACY v1, scheduled for deletion ---
 
   // renderer → main (invoke/reply)
   COMPLETION_MERGE: 'completion:merge',
@@ -1568,4 +1602,201 @@ export interface GitListBranchesResult {
   error: string | null
   branches: string[]
   current: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Completion Actions v2 — Turn payload types
+// ---------------------------------------------------------------------------
+
+/** main → renderer broadcast: a new wip-commit landed for a pane. */
+export interface TurnRecordedPayload {
+  paneId: string
+  turn: Turn
+}
+
+/** main → renderer broadcast: full turn projection refresh for a pane. */
+export interface TurnsUpdatedPayload {
+  paneId: string
+  turns: Turn[]
+  pendingAction: TurnPendingAction | null
+  /** Per-session auto-commit toggle. */
+  autoCommitEnabled: boolean
+}
+
+/** main → renderer broadcast: pendingAction transition for a pane. */
+export interface TurnPendingActionPayload {
+  paneId: string
+  pendingAction: TurnPendingAction | null
+}
+
+/** renderer → main invoke: fetch the current turn projection for a pane. */
+export interface TurnsGetPayload {
+  paneId: string
+}
+
+export interface TurnsGetResult {
+  error: string | null
+  turns: Turn[]
+  pendingAction: TurnPendingAction | null
+  autoCommitEnabled: boolean
+}
+
+/** renderer → main invoke: squash + publish via the chosen path. */
+export interface TurnPublishSquashPayload {
+  paneId: string
+  /** Turn IDs in display order; must be contiguous on the worktree branch. */
+  turnIds: string[]
+  /** Final commit message for the squashed publish-commit. */
+  message: string
+  /** Which path to run after the squash. */
+  path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr'
+}
+
+/** renderer → main invoke: publish each selected turn as its own publish-commit. */
+export interface TurnPublishIndividualPayload {
+  paneId: string
+  turnIds: string[]
+  path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr'
+}
+
+/** Selection of hunks for a split — file path + indexes within `git diff`. */
+export interface HunkSelection {
+  file: string
+  /** 0-indexed hunk indexes that go to the LEFT (first) commit. The
+   *  REST of the file's hunks go to the RIGHT (second) commit. */
+  leftHunkIndexes: number[]
+}
+
+export interface TurnSplitPayload {
+  paneId: string
+  turnId: string
+  hunkSelections: HunkSelection[]
+  leftMessage: string
+  rightMessage: string
+}
+
+export interface TurnDiscardPayload {
+  paneId: string
+  turnId: string
+  /** Set true to confirm cascading discard of dependent turns. */
+  cascadeConfirmed: boolean
+}
+
+export interface TurnAutoCommitTogglePayload {
+  paneId: string
+  enabled: boolean
+}
+
+/** Generic IPC result envelope for the turn actions. */
+export interface TurnActionResult {
+  error: string | null
+  /** Optional warnings that aren't blocking errors. */
+  warnings?: string[]
+  /** When discard requires cascade, the dependent turn IDs are returned
+   *  so the renderer can re-prompt with `cascadeConfirmed=true`. */
+  dependentTurnIds?: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Publish-path config payloads
+// ---------------------------------------------------------------------------
+
+export interface RepoPublishPathGetPayload {
+  repoPath: string
+}
+
+export interface RepoPublishPathGetResult {
+  error: string | null
+  /** Resolved value (workspace default if no per-repo override). */
+  value: PublishPath
+  /** True if a per-repo override is set. */
+  hasOverride: boolean
+}
+
+export interface RepoPublishPathSetPayload {
+  workspaceId: string
+  repoPath: string
+  /** Pass null to clear the per-repo override and inherit the workspace default. */
+  value: PublishPath | null
+}
+
+export interface WorkspaceDefaultPathGetPayload {
+  workspaceId: string
+}
+
+export interface WorkspaceDefaultPathGetResult {
+  error: string | null
+  value: PublishPath
+}
+
+export interface WorkspaceDefaultPathSetPayload {
+  workspaceId: string
+  value: PublishPath
+}
+
+// ---------------------------------------------------------------------------
+// Bulk action payloads
+// ---------------------------------------------------------------------------
+
+export type BulkActionKind =
+  | 'push-branch'
+  | 'merge'           // direct-merge via side-clone
+  | 'open-pr'         // gh pr create
+  | 'open-draft-pr'
+  | 'discard-all'
+
+export interface BulkRunPayload {
+  repoPath: string
+  workspaceId: string
+  paneIds: string[]
+  action: BulkActionKind
+}
+
+/** Per-pane outcome of one step in a bulk run. */
+export interface BulkActionResult {
+  paneId: string
+  ok: boolean
+  /** Error category for routing in the multi-conflict modal. */
+  errorKind?: 'conflict' | 'gh-rate-limit' | 'gh-auth' | 'push-rejected' | 'unknown'
+  errorMessage?: string
+  /** Populated on success when the action produced a URL (PR opened). */
+  resultUrl?: string
+}
+
+export interface BulkProgressPayload {
+  runId: string
+  paneId: string
+  result: BulkActionResult
+  completed: number
+  total: number
+}
+
+export interface BulkCompletedPayload {
+  runId: string
+  results: BulkActionResult[]
+}
+
+export interface BulkCancelPayload {
+  runId: string
+}
+
+export interface BulkRunResult {
+  error: string | null
+  /** UUID for the run; used to correlate progress / cancel events. */
+  runId?: string
+}
+
+/** Per-row choice in the multi-conflict modal. */
+export type ConflictResolution =
+  | { kind: 'manual' }            // user resolves locally; no IPC action
+  | { kind: 'punt-to-claude' }   // resume the agent with a "you have a conflict" prompt
+  | { kind: 'discard' }            // drop the conflicting work entirely
+
+export interface MergeConflictResolvePayload {
+  paneId: string
+  resolution: ConflictResolution
+}
+
+export interface MergeConflictResolveResult {
+  error: string | null
 }

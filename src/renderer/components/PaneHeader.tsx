@@ -1,10 +1,10 @@
 import React, { useCallback } from 'react'
 import {
   ArrowRightLeft, X, MoreHorizontal,
-  GitMerge, GitPullRequest, Hand,
+  Hand,
   ArrowUp, Asterisk, ChevronDown
 } from 'lucide-react'
-import type { EffortLevel, Model, GitStatus, CompletionPolicy, PaneStatus, PaneMetrics } from '../../shared/types'
+import type { EffortLevel, Model, GitStatus, PaneStatus, PaneMetrics } from '../../shared/types'
 import type { PaneMetricsIpc } from '../../shared/ipc-channels'
 import { HEADER_ROW1_HEIGHT_PX, STATUS_COLORS, STATUS_TERMINATED_COLOR } from '../lib/constants'
 import { formatStatusLabel } from './StatusOverlay'
@@ -78,8 +78,6 @@ interface PaneHeaderProps {
   effort?: EffortLevel
   onEffortToggle?: () => void
   gitStatus?: GitStatus | null
-  completionPolicy?: CompletionPolicy | null
-  onPolicyClick?: () => void
   model?: Model
   onModelClick?: () => void
   /** Controls header bg tint and label brightness (bg-surface → bg-raised, fg-secondary → fg-primary) */
@@ -112,8 +110,6 @@ export function PaneHeader({
   positionNumber,
   onClose,
   gitStatus,
-  completionPolicy,
-  onPolicyClick,
   model,
   onModelClick,
   isFocused = false,
@@ -128,20 +124,7 @@ export function PaneHeader({
   const t = useStrings()
   const handleClose = useCallback((e: React.MouseEvent) => { e.stopPropagation(); onClose?.() }, [onClose])
   const handleMove = useCallback((e: React.MouseEvent) => { e.stopPropagation(); onMoveClick?.() }, [onMoveClick])
-  const handlePolicyClick = useCallback((e: React.MouseEvent) => { e.stopPropagation(); onPolicyClick?.() }, [onPolicyClick])
   const handleModelClick = useCallback((e: React.MouseEvent) => { e.stopPropagation(); onModelClick?.() }, [onModelClick])
-
-  // Policy icon (only shown for non-ask policies)
-  const PolicyIcon =
-    completionPolicy?.action === 'auto-merge' ? GitMerge
-    : completionPolicy?.action === 'auto-pr' || completionPolicy?.action === 'auto-draft-pr' ? GitPullRequest
-    : null
-  const policyLabel = completionPolicy
-    ? completionPolicy.action === 'auto-merge' ? `Auto-merge (${completionPolicy.mergeStrategy})`
-      : completionPolicy.action === 'auto-pr' ? 'Auto-create PR'
-      : completionPolicy.action === 'auto-draft-pr' ? 'Auto-create draft PR'
-      : 'Ask before action'
-    : undefined
 
   const isDirty = gitStatus?.hasUncommittedChanges ?? false
   const commitsAhead = gitStatus?.commitsAhead ?? 0
@@ -233,16 +216,6 @@ export function PaneHeader({
         </div>
       ) : (
         <div className="flex items-center gap-0.5 flex-shrink-0">
-          {/* Policy icon */}
-          {PolicyIcon && (
-            <IconBtn
-              icon={PolicyIcon}
-              label={policyLabel ?? t.paneHeader.completionPolicyLabel}
-              title={policyLabel}
-              onClick={handlePolicyClick}
-            />
-          )}
-
           {/* Model badge */}
           {model && (
             <button

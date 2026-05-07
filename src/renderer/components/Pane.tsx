@@ -12,8 +12,7 @@ import { MetricsOverlay } from './MetricsOverlay'
 import { StatusOverlay } from './StatusOverlay'
 import { ToolUsageRow } from './ToolUsageRow'
 import { WindowPicker } from './WindowPicker'
-import { ChangesReadyModal } from './ChangesReadyModal'
-import { PolicyPopover } from './PolicyPopover'
+import { TurnsModal } from './TurnsModal'
 import { ModelPopover } from './ModelPopover'
 import { XTermView } from './XTermView'
 import type { XTermViewHandle } from './XTermView'
@@ -63,9 +62,6 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
     setFocusedPane,
     setEffort,
     setModel,
-    effectiveCompletionPolicy,
-    globalCompletionPolicy,
-    workspaceCompletionPolicy,
     windowHiveId
   } = usePaneState()
   const { config: appConfig } = useAppConfig()
@@ -109,20 +105,17 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
   const hasWorkToIntegrate =
     (gitStatus?.commitsAhead ?? 0) > 0 || (gitStatus?.hasUncommittedChanges ?? false)
   const [completionDismissed, setCompletionDismissed] = useState(false)
-  // ChangesReadyModal visibility — opened by the in-strip CTA above and by the
+  // TurnsModal visibility — opened by the in-strip CTA below and by the
   // global Cmd+Shift+G / Cmd+Shift+R shortcuts (WindowShell dispatches a
-  // CustomEvent the focused pane listens for).
-  const [isChangesReadyOpen, setIsChangesReadyOpen] = useState(false)
-  // Optional initial-focus hint for the modal — set when the user opened it
-  // via Cmd+Shift+G ('merge') or Cmd+Shift+R ('pr'). Cleared on close so the
-  // next CTA-click open doesn't carry stale focus.
-  const [changesReadyFocus, setChangesReadyFocus] = useState<'merge' | 'pr' | null>(null)
+  // CustomEvent the focused pane listens for). The legacy menu-focus hint
+  // (`merge` / `pr`) is intentionally dropped — the new turn-based UI
+  // doesn't have separate Merge / PR menus to focus into.
+  const [isTurnsModalOpen, setIsTurnsModalOpen] = useState(false)
   useEffect(() => {
     const handler = (e: Event): void => {
-      const detail = (e as CustomEvent).detail as { paneId?: string; menu?: 'merge' | 'pr' } | undefined
+      const detail = (e as CustomEvent).detail as { paneId?: string } | undefined
       if (detail?.paneId !== paneId) return
-      setChangesReadyFocus(detail?.menu === 'merge' || detail?.menu === 'pr' ? detail.menu : null)
-      setIsChangesReadyOpen(true)
+      setIsTurnsModalOpen(true)
     }
     document.addEventListener('claudinha:open-completion-menu', handler)
     return () => document.removeEventListener('claudinha:open-completion-menu', handler)
@@ -157,7 +150,6 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
   }, [status])
 
   const [isWindowPickerOpen, setIsWindowPickerOpen] = useState(false)
-  const [isPolicyPopoverOpen, setIsPolicyPopoverOpen] = useState(false)
   const [isModelPopoverOpen, setIsModelPopoverOpen] = useState(false)
 
   // Track pane width for progressive metrics truncation (B-040) and narrow adaptations (B-061)
@@ -269,8 +261,6 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
               positionNumber={positionNumber}
               onClose={handleClose}
               gitStatus={gitStatus}
-              completionPolicy={effectiveCompletionPolicy}
-              onPolicyClick={() => setIsPolicyPopoverOpen((prev) => !prev)}
               model={model}
               onModelClick={() => setIsModelPopoverOpen((prev) => !prev)}
               isFocused={isFocused}
@@ -289,15 +279,6 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
               onMoveToWindow={handleMoveToWindow}
               onMoveToNewWindow={handleMoveToNewWindow}
             />
-            {windowHiveId && (
-              <PolicyPopover
-                isOpen={isPolicyPopoverOpen}
-                onClose={() => setIsPolicyPopoverOpen(false)}
-                workspaceId={windowHiveId}
-                workspacePolicy={workspaceCompletionPolicy}
-                globalPolicy={globalCompletionPolicy}
-              />
-            )}
             <ModelPopover
               isOpen={isModelPopoverOpen}
               onClose={() => setIsModelPopoverOpen(false)}
@@ -347,32 +328,28 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
             )}
           </div>
         </div>
-        {/* "Changes ready" CTA — replaces the old per-pane completion bar.
-            Opens the same ChangesReadyModal the Kanban tile uses, so the merge /
-            push / PR flow is identical across both chrome modes.
-
-            Suppressed in Kanban chrome: the kanban tile's pill is the entry
-            point there. */}
+        {/* "Changes ready" CTA — opens the per-terminal TurnsModal where the
+            user picks turns to publish, split, or discard. Wall-mode only —
+            the kanban tile's own pill is the entry point in kanban chrome. */}
         {chromeMode === 'wall' && showCompletionBar && (
           <button
             type="button"
-            onClick={() => { setChangesReadyFocus(null); setIsChangesReadyOpen(true) }}
+            onClick={() => setIsTurnsModalOpen(true)}
             className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-[600] bg-[var(--color-status-done)] text-canvas hover:brightness-110 transition-[filter] duration-[80ms]"
             style={{ height: COMPLETION_BAR_HEIGHT_PX }}
-            title="Open changes-ready menu"
+            title="Open turns modal"
           >
             <span>Changes ready</span>
             <span aria-hidden="true">▸</span>
           </button>
         )}
       </PaneBorder>
-      {isChangesReadyOpen && pane && (
-        <ChangesReadyModal
+      {isTurnsModalOpen && pane && (
+        <TurnsModal
           paneId={paneId}
           paneName={resolvePaneDisplayName(pane)}
           workspaceId={windowHiveId ?? null}
-          initialFocus={changesReadyFocus}
-          onClose={() => { setIsChangesReadyOpen(false); setChangesReadyFocus(null) }}
+          onClose={() => setIsTurnsModalOpen(false)}
         />
       )}
 

@@ -54,6 +54,51 @@ export function migrateLegacyKeys(): void {
 }
 
 /**
+ * One-time M0 migration for the v2 turn-as-commit completion-actions model.
+ *
+ * 1. Strips the deprecated `completionPolicy` field from every persisted
+ *    workspace. The old `auto-merge` / `auto-pr` / `ask` policies don't
+ *    map onto turn-based publishing — every action in v2 is user-driven.
+ * 2. Backfills `defaultPublishPath` with `'both'` for any workspace missing
+ *    it (legacy workspaces created before the field existed). The
+ *    workspace-launch dialog will keep requiring an explicit choice for
+ *    *new* workspaces (per U5), but legacy ones get a forgiving default
+ *    that surfaces both publish-path affordances.
+ *
+ * Idempotent: every run yields the same result given the same input.
+ * Idempotency is critical because this function runs on every app launch.
+ *
+ * Called from main/index.ts at app startup, after `migrateLegacyKeys` and
+ * before any other workspace-store consumer.
+ */
+export function migrateCompletionActionsV2(): void {
+  const all = store.get('workspaces.all', [] as Workspace[])
+  if (all.length === 0) return
+
+  let touched = 0
+  const migrated = all.map((ws) => {
+    const before = ws as Workspace & { completionPolicy?: unknown }
+    const next: Workspace = { ...ws }
+    if ('completionPolicy' in before) {
+      delete (next as { completionPolicy?: unknown }).completionPolicy
+      touched++
+    }
+    if (next.defaultPublishPath === undefined) {
+      next.defaultPublishPath = 'both'
+      touched++
+    }
+    return next
+  })
+
+  if (touched > 0) {
+    store.set('workspaces.all', migrated)
+    console.log(
+      `[workspace-store] M0 completion-actions v2 migration: stripped/backfilled ${touched} field(s) across ${all.length} workspace(s).`
+    )
+  }
+}
+
+/**
  * Returns the next workspace ordinal to assign, then increments and persists the
  * counter. Call exactly once per new workspace at creation time.
  */

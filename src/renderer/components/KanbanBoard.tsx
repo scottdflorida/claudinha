@@ -4,7 +4,6 @@ import type { RendererPane } from '../hooks/usePaneState'
 import { IPC } from '../../shared/ipc-channels'
 import { ipcInvoke, ipcSend } from '../hooks/useIpc'
 import { KanbanColumn } from './KanbanColumn'
-import { DirtyMainModal } from './DirtyMainModal'
 import { ConflictResolveModal } from './ConflictResolveModal'
 import { useStrings } from '../lib/strings'
 import { useKanbanCardMoves } from '../hooks/useKanbanCardMoves'
@@ -90,59 +89,15 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
   // column uses its fallback constant.
   const compactionDurationMs = movingCard?.durationMs ?? null
 
-  // Dirty-main resolution modal state. The board owns it (not each card) so
-  // the dialog overlays the entire Kanban view regardless of which column the
-  // offending card lives in. Auto-opens once per dirty-main transition —
-  // mirrors CompletionActionBar's auto-open-on-error pattern so the user
-  // doesn't have to hunt for the small chip on a busy board.
-  const [dirtyMainPaneId, setDirtyMainPaneId] = useState<string | null>(null)
-  const autoOpenedFor = useRef<Set<string>>(new Set())
-  const previousDirtyPanes = useRef<Set<string>>(new Set())
+  // (M0: dirty-main resolution removed — the v2 turn-as-commit model uses
+  // side-clone-based merges, which never touch the user's working tree
+  // and so cannot land in dirty-main. Anything previously routed through
+  // DirtyMainModal goes away with completion-actions v1.)
 
-  useEffect(() => {
-    const nowDirty = new Set<string>()
-    for (const pane of panes) {
-      if (pane.completionStatus?.state === 'dirty-main') {
-        nowDirty.add(pane.id)
-      }
-    }
-    // Detect panes that just transitioned INTO dirty-main (present now, absent
-    // last tick). If no modal is already open, auto-open for the first such
-    // pane and mark it as auto-opened so a dismiss + new dirty-main lands
-    // back on the modal rather than suppressing it permanently.
-    let paneToAutoOpen: string | null = null
-    for (const paneId of nowDirty) {
-      if (!previousDirtyPanes.current.has(paneId)) {
-        paneToAutoOpen = paneId
-        break
-      }
-    }
-    // Clear auto-open marker for panes that left dirty-main so a future
-    // re-entry retriggers.
-    for (const paneId of autoOpenedFor.current) {
-      if (!nowDirty.has(paneId)) autoOpenedFor.current.delete(paneId)
-    }
-    if (paneToAutoOpen && !dirtyMainPaneId && !autoOpenedFor.current.has(paneToAutoOpen)) {
-      autoOpenedFor.current.add(paneToAutoOpen)
-      setDirtyMainPaneId(paneToAutoOpen)
-    }
-    previousDirtyPanes.current = nowDirty
-  }, [panes, dirtyMainPaneId])
-
-  const onResolveDirtyMain = useCallback((paneId: string) => {
-    setDirtyMainPaneId(paneId)
-  }, [])
-
-  const dirtyMainPane = dirtyMainPaneId
-    ? panes.find((p) => p.id === dirtyMainPaneId) ?? null
-    : null
-
-  // Same auto-open / click-to-reopen pattern for the conflict state. Distinct
-  // pane-tracking refs so transitions into dirty-main and conflict can each
-  // open their own modal without one suppressing the other. Only one modal
-  // renders at a time because the board checks dirtyMainPane first (exclusive
-  // in render order) — that matches the user's recovery flow: resolve main
-  // dirtiness, then retry, then handle conflict if one surfaces.
+  // Auto-open / click-to-reopen pattern for the conflict state. Conflict
+  // is the only completion-state that auto-opens a modal in v2 — dirty-
+  // main went away with side-clone merges. M5 will extend
+  // ConflictResolveModal to participate in the multi-conflict bulk flow.
   const [conflictPaneId, setConflictPaneId] = useState<string | null>(null)
   const autoOpenedForConflict = useRef<Set<string>>(new Set())
   const previousConflictPanes = useRef<Set<string>>(new Set())
@@ -164,12 +119,12 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
     for (const paneId of autoOpenedForConflict.current) {
       if (!nowConflict.has(paneId)) autoOpenedForConflict.current.delete(paneId)
     }
-    if (paneToAutoOpen && !conflictPaneId && !dirtyMainPaneId && !autoOpenedForConflict.current.has(paneToAutoOpen)) {
+    if (paneToAutoOpen && !conflictPaneId && !autoOpenedForConflict.current.has(paneToAutoOpen)) {
       autoOpenedForConflict.current.add(paneToAutoOpen)
       setConflictPaneId(paneToAutoOpen)
     }
     previousConflictPanes.current = nowConflict
-  }, [panes, conflictPaneId, dirtyMainPaneId])
+  }, [panes, conflictPaneId])
 
   const onResolveConflict = useCallback((paneId: string) => {
     setConflictPaneId(paneId)
@@ -198,7 +153,6 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
             activePaneId={activePaneId}
             onCardClick={onCardClick}
             onCloseCard={onCloseCard}
-            onResolveDirtyMain={onResolveDirtyMain}
             onResolveConflict={onResolveConflict}
             cardRefs={cardRefs}
             dropTargetRef={(el) => {
@@ -210,13 +164,7 @@ export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onC
         ))}
       </div>
       {movingCard && <KanbanOverlayCard moving={movingCard} />}
-      {dirtyMainPane && (
-        <DirtyMainModal
-          pane={dirtyMainPane}
-          onClose={() => setDirtyMainPaneId(null)}
-        />
-      )}
-      {!dirtyMainPane && conflictPane && (
+      {conflictPane && (
         <ConflictResolveModal
           pane={conflictPane}
           onClose={() => setConflictPaneId(null)}
