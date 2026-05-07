@@ -93,17 +93,23 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
   const model = pane?.model ?? 'opus'
   const gitStatus = pane?.gitStatus ?? null
   const completionStatus = pane?.completionStatus ?? null
-  const isWorktreePane = pane?.isWorktree ?? false
   const isResolvingConflict = pane?.isResolvingConflict ?? false
   const toolsUsed = metrics.toolsUsed
 
   // Completion action bar visibility:
-  // Show when pane is done, is a worktree, has work to integrate, and not on main/master.
-  // "Work to integrate" means commits ahead OR uncommitted changes (merge flow auto-commits).
-  // dismissed tracks local user dismissal (completionStatus null + dismissed = hidden).
-  const isOnMainBranch = gitStatus?.branchName === 'main' || gitStatus?.branchName === 'master'
-  const hasWorkToIntegrate =
-    (gitStatus?.commitsAhead ?? 0) > 0 || (gitStatus?.hasUncommittedChanges ?? false)
+  // Show when the pane is changes-ready and has *something to publish*.
+  //
+  // M2.5 generalized this to cover both worktree and main-mode panes:
+  //   - Worktree branch: "ahead of base" (commitsAhead > 0) OR uncommitted.
+  //   - Main mode: "ahead of origin" (baseBranchAheadOfRemote > 0) OR uncommitted.
+  //
+  // The wall-mode CTA opens TurnsModal, which knows how to render either
+  // mode (projection picks the right range). The pane just needs to show
+  // the entry point whenever there's plausibly something to publish.
+  const hasWorkToPublish =
+    (gitStatus?.commitsAhead ?? 0) > 0 ||
+    (gitStatus?.baseBranchAheadOfRemote ?? 0) > 0 ||
+    (gitStatus?.hasUncommittedChanges ?? false)
   const [completionDismissed, setCompletionDismissed] = useState(false)
   // TurnsModal visibility — opened by the in-strip CTA below and by the
   // global Cmd+Shift+G / Cmd+Shift+R shortcuts (WindowShell dispatches a
@@ -131,12 +137,7 @@ export function Pane({ paneId, onRequestClose, chromeMode = 'wall', isVisible = 
     !terminated &&
     !completionDismissed &&
     (
-      (
-        status === 'changes-ready' &&
-        isWorktreePane &&
-        hasWorkToIntegrate &&
-        !isOnMainBranch
-      ) ||
+      (status === 'changes-ready' && hasWorkToPublish) ||
       hasActiveCompletionState
     )
 

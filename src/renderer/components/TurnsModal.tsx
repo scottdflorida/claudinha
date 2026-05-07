@@ -231,6 +231,14 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
           <p className="text-[11px] text-fg-muted mt-0.5">
             {t.turnsModal.subtitle}
           </p>
+          {/* Main-mode context strip — surfaces that publishing pushes
+              directly to origin/<base>, not to a feature branch. */}
+          {diagnostic && diagnostic.currentBranch && diagnostic.baseBranch &&
+            diagnostic.currentBranch === diagnostic.baseBranch && (
+            <p className="text-[11px] text-warning-fg mt-1">
+              Working on <code className="font-mono">{diagnostic.currentBranch}</code> · publish pushes to <code className="font-mono">origin/{diagnostic.currentBranch}</code>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <AutoCommitPill
@@ -370,13 +378,8 @@ function EmptyTurnsState({ diagnostic, fallback }: EmptyTurnsStateProps): React.
 
   if (diagnostic) {
     const skip = diagnostic.lastSkipReason
-    if (skip === 'non-worktree' || diagnostic.isWorktree === false) {
-      headline = 'This pane is running in the main repo, not a worktree.'
-      detail = 'Auto-commit only fires on worktree panes. Open a new worktree pane (or convert this one) to record turns.'
-    } else if (skip === 'on-base-branch' || diagnostic.currentBranch === diagnostic.baseBranch) {
-      headline = `This pane is on the base branch (${diagnostic.baseBranch ?? 'main'}).`
-      detail = "Auto-commit only fires on a non-base branch so wip-commits don't accidentally land on main. Switch to a worktree branch to start recording turns."
-    } else if (skip === 'branch-detection-failed') {
+    const onBaseBranch = diagnostic.currentBranch === diagnostic.baseBranch
+    if (skip === 'branch-detection-failed') {
       headline = 'Could not detect the base branch for this worktree.'
       detail = 'Claudinha looks for `main` or `master` (in that order). If your repo uses a different default, the recorder skips. Tell us what it should look for.'
     } else if (skip === 'auto-commit-off') {
@@ -393,8 +396,13 @@ function EmptyTurnsState({ diagnostic, fallback }: EmptyTurnsStateProps): React.
       detail = skip
     } else {
       // No skip reason yet — recorder hasn't run for this pane.
-      headline = 'No turns yet on ' + (diagnostic.currentBranch ?? 'this branch') + '.'
-      detail = 'Auto-commit fires when the agent stops with file changes.'
+      const where = onBaseBranch
+        ? `on ${diagnostic.currentBranch ?? 'main'} (no commits ahead of origin)`
+        : `on ${diagnostic.currentBranch ?? 'this branch'}`
+      headline = `No turns yet ${where}.`
+      detail = onBaseBranch
+        ? 'Working directly on the base branch — turns are local commits ahead of origin. Auto-commit fires when the agent stops with file changes.'
+        : 'Auto-commit fires when the agent stops with file changes.'
     }
   }
 

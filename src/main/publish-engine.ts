@@ -137,6 +137,26 @@ export async function squashAndPublish(args: {
     }
   }
 
+  // For main-mode pushes, divergence-refusal happens BEFORE we rewrite any
+  // local history. Otherwise the rebase would land a fresh squash commit
+  // on local main even though the push then refuses, leaving the user
+  // with rewritten history they didn't ask for.
+  const isMainModePreCheck = currentBranch === baseBranch
+  if (isMainModePreCheck && publishPath === 'push-branch') {
+    const moved = await detectOriginDivergence(worktreePath, currentBranch)
+    if (moved) {
+      return {
+        ok: false,
+        error:
+          `origin/${currentBranch} has commits your local branch doesn't have. ` +
+          `Pushing would either be rejected non-fast-forward or require a force, ` +
+          `which is dangerous on the main branch. Fetch + reconcile (pull --rebase ` +
+          `or merge) from a terminal, then retry the publish.`,
+        errorKind: 'push-rejected'
+      }
+    }
+  }
+
   // Set the pending action so any open TurnsModal disables its surfaces.
   const pending: TurnPendingAction = {
     kind: 'publishing-squash',
@@ -180,16 +200,22 @@ export async function squashAndPublish(args: {
       cwd: worktreePath
     }).then((r) => r.stdout.trim())
 
-    // 4. Push the worktree branch.
-    //    `--force-with-lease` is the right hammer here: we just rewrote the
-    //    branch via rebase, so a regular `push` will be rejected as non-FF.
-    //    `--force-with-lease` only succeeds if origin/<branch> hasn't moved
-    //    beyond what we last fetched, so we won't blow away a teammate's
-    //    push that happened in the meantime.
-    const pushErr = await runGitWithLockRetry(
-      ['push', '--force-with-lease', 'origin', currentBranch],
-      { cwd: worktreePath }
-    )
+    // 4. Push.
+    //
+    //    Worktree branches: we just rewrote via rebase, so plain `push`
+    //    would be rejected as non-FF. `--force-with-lease` is the right
+    //    hammer — only succeeds if origin/<branch> hasn't moved beyond
+    //    what we last fetched, so we won't blow away a teammate's
+    //    intervening push.
+    //
+    //    Main mode (currentBranch === baseBranch): we already pre-checked
+    //    divergence above the rebase. Plain `push` is the right call here
+    //    — we won't force on a shared branch even via lease.
+    const isMainMode = currentBranch === baseBranch
+    const pushArgs = isMainMode
+      ? ['push', 'origin', currentBranch]
+      : ['push', '--force-with-lease', 'origin', currentBranch]
+    const pushErr = await runGitWithLockRetry(pushArgs, { cwd: worktreePath })
     if (pushErr) {
       return { ok: false, error: pushErr, errorKind: 'push-rejected', publishCommitSha }
     }
@@ -302,6 +328,45 @@ async function scriptedRebaseSquash(args: {
       await fs.unlink(scriptPath)
       await fs.rmdir(path.dirname(scriptPath))
     } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Pre-publish probe used by main-mode pushes: returns true if `origin/<branch>`
+ * has commits that the local branch doesn't have. Fetches first so we're not
+ * looking at a stale ref.
+ *
+ * Best-effort: if the fetch or the rev-list fails (offline, no remote, etc.)
+ * we return `false` and let the actual push surface whatever error. The
+ * caller treats `true` as a hard "refuse to push" signal.
+ */
+async function detectOriginDivergence(worktreePath: string, branch: string): Promise<boolean> {
+  // Refresh the remote ref. Without `--quiet` the fetch noise can leak into
+  // logs; ignore non-zero exit (offline, no auth) — we'll fall through to
+  // checking whatever ref we have locally.
+  await execFileAsync('git', ['fetch', '--quiet', 'origin', branch], {
+    cwd: worktreePath,
+    maxBuffer: 1024 * 1024
+  }).catch(() => null)
+  // Verify the remote ref exists (otherwise nothing to compare against —
+  // "ahead" is the only relevant direction; we'd push for the first time).
+  try {
+    await execFileAsync('git', ['rev-parse', '--verify', `refs/remotes/origin/${branch}`], {
+      cwd: worktreePath
+    })
+  } catch {
+    return false
+  }
+  // Count commits in origin/<branch> that the local HEAD doesn't have.
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['rev-list', '--count', `HEAD..origin/${branch}`],
+      { cwd: worktreePath }
+    )
+    return Number.parseInt(stdout.trim(), 10) > 0
+  } catch {
+    return false
   }
 }
 

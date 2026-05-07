@@ -70,13 +70,24 @@ export async function projectTurnsForPane(
   baseBranch: string,
   currentBranch: string
 ): Promise<Turn[]> {
-  // 1. List commits on the worktree branch beyond the merge-base with base.
-  //    `--reverse` walks oldest → newest, which matches the user's mental
-  //    model of "Turn 1" being the first thing the agent did.
-  //    Format: <sha>|<parent>|<author-epoch>|<subject>|<body>
-  //    Bodies need a separator that doesn't appear naturally; use \x1f
-  //    (unit-separator) as the inner field delimiter and \x1e (record-
-  //    separator) between commits.
+  // 1. Decide the projection range.
+  //
+  //    Worktree mode (currentBranch !== baseBranch):
+  //      `<base>..HEAD` — every commit the user added on top of base.
+  //      Some may be `pushed` to origin/<branch>; others are `open`.
+  //
+  //    Main mode (currentBranch === baseBranch):
+  //      `origin/<branch>..HEAD` — local-only commits awaiting push.
+  //      Once pushed, they leave the range automatically. There is no
+  //      `pushed` state for main-mode turns — pushed commits aren't
+  //      visible in the modal.
+  //
+  //    `--reverse` walks oldest → newest so "Turn 1" is the user's first
+  //    action.
+  const isMainMode = currentBranch === baseBranch
+  const range = await resolveProjectionRange(worktreePath, baseBranch, currentBranch, isMainMode)
+  if (!range) return [] // no upstream / no base — nothing to project
+
   const FIELD = '\x1f'
   const RECORD = '\x1e'
   const FORMAT = `%H${FIELD}%P${FIELD}%at${FIELD}%s${FIELD}%b${RECORD}`
@@ -85,7 +96,7 @@ export async function projectTurnsForPane(
   try {
     const { stdout } = await execFileAsync(
       'git',
-      ['log', `${baseBranch}..${currentBranch}`, '--reverse', `--pretty=format:${FORMAT}`],
+      ['log', range, '--reverse', `--pretty=format:${FORMAT}`],
       { cwd: worktreePath, maxBuffer: 8 * 1024 * 1024 }
     )
     logOut = stdout
@@ -121,7 +132,7 @@ export async function projectTurnsForPane(
 
   // 3. Compute per-commit numstat in one shot (cheaper than per-commit calls).
   //    We populate `additions` / `deletions` / `filesChanged`.
-  const numstat = await collectNumstats(worktreePath, baseBranch, currentBranch)
+  const numstat = await collectNumstatsForRange(worktreePath, range)
 
   // 4. Determine `pushed` set. M1 only checks origin/<branch>; M4 will fold
   //    in PR + merged/shipped probes.
@@ -177,6 +188,43 @@ function legacyTurnId(commitSha: string): string {
 }
 
 /**
+ * Pick the right `<floor>..HEAD` range for the projection. Returns null
+ * when the floor can't be resolved (no remote, no base, etc.).
+ *
+ * Worktree mode: `<base>..HEAD` — the canonical "what has this branch
+ *   contributed beyond the base" range.
+ *
+ * Main mode (currentBranch === baseBranch): `origin/<branch>..HEAD` if
+ *   `origin/<branch>` exists, otherwise an empty range. Pushed commits
+ *   leave the range so the projection only ever surfaces local-only
+ *   commits the user can still rewrite.
+ */
+async function resolveProjectionRange(
+  worktreePath: string,
+  baseBranch: string,
+  currentBranch: string,
+  isMainMode: boolean
+): Promise<string | null> {
+  if (!isMainMode) return `${baseBranch}..${currentBranch}`
+  // Main mode: origin/<branch>..HEAD if origin/<branch> exists.
+  try {
+    await execFileAsync(
+      'git',
+      ['rev-parse', '--verify', `refs/remotes/origin/${currentBranch}`],
+      { cwd: worktreePath }
+    )
+    return `origin/${currentBranch}..HEAD`
+  } catch {
+    // No origin/<branch> ref — every commit on local main is "ahead of
+    // origin." Use HEAD..HEAD (empty range) so the projection returns []
+    // and the modal's empty state shows "No turns yet" without throwing.
+    // The user pushes once via the regular CTA and origin/<branch>
+    // becomes the floor for subsequent runs.
+    return null
+  }
+}
+
+/**
  * Strip the `wip(turn-N): ` prefix from the subject for the displayed
  * summary. Falls back to the raw subject if no prefix matches (e.g.
  * non-claudinha commits the user landed manually).
@@ -195,17 +243,16 @@ function cleanSubject(subject: string): string {
  * dozens of turns will have noticeable startup cost on cold cache; M6 may
  * memoize per-sha results.
  */
-async function collectNumstats(
+async function collectNumstatsForRange(
   worktreePath: string,
-  baseBranch: string,
-  currentBranch: string
+  range: string
 ): Promise<Map<string, { filesChanged: number; additions: number; deletions: number }>> {
   const out = new Map<string, { filesChanged: number; additions: number; deletions: number }>()
   let commits: string[]
   try {
     const { stdout } = await execFileAsync(
       'git',
-      ['rev-list', `${baseBranch}..${currentBranch}`],
+      ['rev-list', range],
       { cwd: worktreePath, maxBuffer: 1024 * 1024 }
     )
     commits = stdout.trim().split('\n').filter(Boolean)

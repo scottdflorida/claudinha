@@ -130,7 +130,6 @@ export class TurnRecorder {
   private async handleStopInner(paneId: string): Promise<AutoCommitResult> {
     const pane = this.sessionRegistry.getPane(paneId)
     if (!pane) return { outcome: 'skipped', reason: 'pane-missing' }
-    if (!pane.isWorktree) return { outcome: 'skipped', reason: 'non-worktree' }
 
     // Default true — only skip when the user has explicitly toggled it off.
     // Read defensively because the field is optional during M0/M1 transition.
@@ -147,14 +146,17 @@ export class TurnRecorder {
     }
 
     // Resolve branches. If we can't determine a base, skip — we don't want
-    // to commit on top of `main` or detached-HEAD by accident.
+    // to commit on top of detached-HEAD by accident.
+    //
+    // Main-mode panes (currentBranch === baseBranch) are supported: the
+    // projection scopes turns to `origin/<branch>..HEAD` so they're
+    // local-only commits awaiting push, and discards/squashes only touch
+    // local-only history. The user accepted the risk by spawning the pane
+    // on the main repo instead of a worktree.
     const currentBranch = await getCurrentBranch(pane.worktreePath)
     const baseBranch = await detectMainBranch(pane.worktreePath)
     if (!currentBranch || !baseBranch) {
       return { outcome: 'skipped', reason: 'branch-detection-failed' }
-    }
-    if (currentBranch === baseBranch) {
-      return { outcome: 'skipped', reason: 'on-base-branch' }
     }
 
     // Compute the next display index (1-based, sequential through visible
