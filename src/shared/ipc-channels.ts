@@ -1265,7 +1265,13 @@ export interface WorkspaceCreateWithTerminalsPayload {
   /** Per-pane repo paths. When present, length must equal `terminalCount` and takes precedence over `repoPath`. */
   repoPaths?: string[]
   terminalCount: number
-  worktreeMode: 'each-own' | 'shared'
+  /**
+   * 'each-own'  — each terminal gets its own fresh worktree on its own branch.
+   * 'shared'    — one new worktree on a shared branch, every terminal reuses it.
+   * 'main'      — no worktree at all; every terminal runs in the repo root on
+   *               the currently-checked-out branch (typically `main`).
+   */
+  worktreeMode: 'each-own' | 'shared' | 'main'
   namingMode: 'auto' | 'manual'
   manualNames?: string[]
   effort?: EffortLevel
@@ -1299,7 +1305,8 @@ export interface WorkspaceAddTerminalsPayload {
   /** Per-pane repo paths. When present, length must equal `terminalCount` and takes precedence over `repoPath`. */
   repoPaths?: string[]
   terminalCount: number
-  worktreeMode: 'each-own' | 'shared'
+  /** See WorkspaceCreateWithTerminalsPayload.worktreeMode for semantics. */
+  worktreeMode: 'each-own' | 'shared' | 'main'
   namingMode: 'auto' | 'manual'
   manualNames?: string[]
   effort?: EffortLevel

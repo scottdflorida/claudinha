@@ -37,7 +37,7 @@ const MODEL_OPTIONS: { value: Model; label: string }[] = [
   { value: 'haiku', label: 'Haiku' }
 ]
 
-type WorktreeMode = 'each-own' | 'shared'
+type WorktreeMode = 'each-own' | 'shared' | 'main'
 type NamingMode = 'auto' | 'manual'
 type RepoMode = 'single' | 'per-pane'
 
@@ -734,13 +734,17 @@ export function AddTerminalsForm({
           label={t.launchFormUI.branchLayoutLabel}
           options={[
             { value: 'each-own', label: t.launchFormUI.layoutSeparate },
-            { value: 'shared', label: t.launchFormUI.layoutShared }
+            { value: 'shared', label: t.launchFormUI.layoutShared },
+            { value: 'main', label: t.launchFormUI.layoutMain }
           ]}
           value={worktreeMode}
           onChange={(v) => setWorktreeMode(v as WorktreeMode)}
         />
         {worktreeMode === 'shared' && (
           <p className="text-xs text-warning-fg">{t.launchFormUI.sharedConflictsWarning}</p>
+        )}
+        {worktreeMode === 'main' && (
+          <p className="text-xs text-warning-fg">{t.launchFormUI.mainConflictsWarning}</p>
         )}
       </div>
 

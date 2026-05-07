@@ -73,7 +73,9 @@ export interface SpawnTerminalsParams {
    *  mode passes the same path repeated; per-pane mode passes distinct paths. */
   treeRepoPaths: string[]
   terminalCount: number
-  worktreeMode: 'each-own' | 'shared'
+  /** See WorkspaceCreateWithTerminalsPayload.worktreeMode for semantics.
+   *  'main' makes every terminal run in the repo root (no worktree). */
+  worktreeMode: 'each-own' | 'shared' | 'main'
   namingMode: 'auto' | 'manual'
   manualNames?: string[]
   effortLevel: EffortLevel
@@ -121,6 +123,33 @@ const sanitizeBranchName = (raw: string, fallback: string): string =>
     .replace(/-{2,}/g, '-')
     .replace(/^[-.]|[-.]$/g, '')
     || fallback
+
+/**
+ * Per-repo "main mode" detection. Returns true iff the given workspace already
+ * has at least one pane (active or paused) whose working directory is the repo
+ * root itself rather than a `.worktrees/...` subdirectory. We treat that as a
+ * signal that the user chose "On main" for this (workspace, repo) pair when
+ * launching, and any subsequently-added terminal in the same repo should
+ * inherit that — see CLAUDE.md "later-added panes" decision.
+ */
+export function isMainModeForRepoInWorkspace(
+  workspaceId: string,
+  repoRoot: string,
+  sessionRegistry: SessionRegistry,
+  workspaceManager: WorkspaceManager
+): boolean {
+  const norm = path.resolve(repoRoot)
+  for (const pane of sessionRegistry.getPanesForWorkspace(workspaceId)) {
+    if (path.resolve(pane.worktreePath) === norm) return true
+  }
+  const workspace = workspaceManager.getWorkspace(workspaceId)
+  if (workspace) {
+    for (const snap of workspace.pausedTerminals) {
+      if (path.resolve(snap.worktreePath) === norm) return true
+    }
+  }
+  return false
+}
 
 export function spawnTerminalsIntoWorkspace(
   params: SpawnTerminalsParams,
@@ -173,7 +202,24 @@ export function spawnTerminalsIntoWorkspace(
       const autoName = `wt-${droneSuffix}`
       let spawnPayload: PaneSpawnPayload
 
-      if (worktreeMode === 'shared') {
+      // Per-repo "main mode" inheritance: if this workspace already has a pane
+      // running directly inside `droneRepoPath` (no worktree), force the new
+      // terminal to land there too — even if the user picked 'each-own' or
+      // 'shared'. Different repos in the same workspace are independent.
+      const effectiveModeForThisPane: 'each-own' | 'shared' | 'main' =
+        isMainModeForRepoInWorkspace(workspaceId, droneRepoPath, sessionRegistry, workspaceManager)
+          ? 'main'
+          : worktreeMode
+
+      if (effectiveModeForThisPane === 'main') {
+        spawnPayload = {
+          mode: 'manual-path',
+          repoPath: droneRepoPath,
+          worktreePath: droneRepoPath,
+          effort: effortLevel,
+          workspaceId
+        }
+      } else if (effectiveModeForThisPane === 'shared') {
         if (perTree) {
           // Shared + per-repo: each terminal creates its OWN worktree in its
           // own repo, all sharing the same (manual or auto) branch name.

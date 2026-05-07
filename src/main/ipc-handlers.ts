@@ -191,7 +191,7 @@ import type {
   WorkspaceRevealPathPayload,
   WorkspaceRevealPathResult
 } from '../shared/ipc-channels'
-import { spawnTerminalsIntoWorkspace } from './spawn-terminals-helper'
+import { spawnTerminalsIntoWorkspace, isMainModeForRepoInWorkspace } from './spawn-terminals-helper'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -357,7 +357,24 @@ export function registerIpcHandlers(
     const windowId = String(senderWindow.id)
 
     // Resolve working directory from the payload mode
-    const { worktreePath, repoPath, mode } = payload
+    const { repoPath } = payload
+    let { mode, worktreePath } = payload
+
+    // Per-repo "main mode" inheritance: if the caller asked for a fresh
+    // worktree but this workspace already has a pane running directly in the
+    // target repo's root, downgrade to manual-path so the new terminal lands
+    // on the same checkout. Different repos in the same workspace are
+    // independent; existing-worktree / resume-session / manual-path are
+    // always honored as the user explicitly chose them.
+    if (mode === 'new-worktree' && repoPath) {
+      const candidateRepo = normaliseRepoPath(repoPath)
+      const wsId = payload.workspaceId
+        ?? workspaceManager.getWorkspaceForWindow(windowId)?.id
+      if (wsId && isMainModeForRepoInWorkspace(wsId, candidateRepo, sessionRegistry, workspaceManager)) {
+        mode = 'manual-path'
+        worktreePath = candidateRepo
+      }
+    }
 
     let resolvedWorktreePath: string
     let repoName: string
@@ -2419,7 +2436,9 @@ export function registerIpcHandlers(
     const perTree = Array.isArray(repoPaths) && repoPaths.length > 0
     // Shared + per-repo is honored now: each terminal creates its own worktree
     // in its own repo, all sharing the same (manual or auto) branch name.
-    const effectiveWorktreeMode: 'each-own' | 'shared' = worktreeMode
+    // 'main' skips worktree creation entirely — every terminal lands in the
+    // repo root on the currently-checked-out branch.
+    const effectiveWorktreeMode: 'each-own' | 'shared' | 'main' = worktreeMode
 
     // Resolve a path list: one entry per pane. In single-repo mode every pane
     // shares the same path; in per-pane mode each pane has its own.
@@ -2564,7 +2583,19 @@ export function registerIpcHandlers(
               .replace(/^[-.]|[-.]$/g, '')
               || fallback
 
-          if (effectiveWorktreeMode === 'shared') {
+          if (effectiveWorktreeMode === 'main') {
+            // 'On main' mode: every terminal runs directly inside the repo,
+            // on whatever branch is currently checked out. No worktree, no
+            // new branch — same risks as multiple agents sharing one
+            // checkout (warning is shown in the launch form).
+            spawnPayload = {
+              mode: 'manual-path',
+              repoPath: droneRepoPath,
+              worktreePath: droneRepoPath,
+              effort: effortLevel,
+              workspaceId: workspace.id
+            }
+          } else if (effectiveWorktreeMode === 'shared') {
             if (perTree) {
               // Shared + per-repo: each terminal creates its OWN worktree in its
               // own repo, all sharing the same (manual or auto) branch name.
