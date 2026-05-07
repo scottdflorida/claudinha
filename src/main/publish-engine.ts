@@ -110,6 +110,33 @@ export async function squashAndPublish(args: {
     }
   }
 
+  // Push-branch publishes the entire worktree branch, so any earlier
+  // unpublished turns will land on origin too as a side effect of the push.
+  // Reject this case explicitly — the user almost certainly didn't intend
+  // to publish work they didn't select. M4's `direct-merge` and `pr` paths
+  // sidestep this by creating a publish commit in a side-clone and pushing
+  // only that.
+  if (publishPath === 'push-branch') {
+    const oldestSelectedIndex = selected[0]!.index
+    const earlierUnpublished = projection.filter(
+      (t) => t.index < oldestSelectedIndex && t.state !== 'pushed' && t.state !== 'merged' && t.state !== 'shipped' && t.state !== 'pr-open' && t.state !== 'discarded' && t.state !== 'superseded'
+    )
+    if (earlierUnpublished.length > 0) {
+      const labels = earlierUnpublished
+        .map((t) => `Turn ${t.index} (${t.summary || 'no summary'})`)
+        .join(', ')
+      return {
+        ok: false,
+        error:
+          `Selection skips earlier unpublished turn${earlierUnpublished.length === 1 ? '' : 's'}: ` +
+          `${labels}. Push-branch publishes the whole branch, so these would land on origin too. ` +
+          `Either include them in the selection, or wait for M4's direct-merge/PR paths which can ` +
+          `publish a single squash without dragging earlier turns.`,
+        errorKind: 'non-contiguous'
+      }
+    }
+  }
+
   // Set the pending action so any open TurnsModal disables its surfaces.
   const pending: TurnPendingAction = {
     kind: 'publishing-squash',

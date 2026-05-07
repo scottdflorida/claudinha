@@ -31,7 +31,7 @@ import { randomUUID } from 'crypto'
 import type { BrowserWindow } from 'electron'
 import type { SessionRegistry } from './session-registry'
 import type { WindowManager } from './window-manager'
-import { detectMainBranch, getCurrentBranch, getGitStatus, runGitWithLockRetry } from './git-status'
+import { CLAUDINHA_INFRASTRUCTURE_DIRS, detectMainBranch, getCurrentBranch, getGitStatus, runGitWithLockRetry } from './git-status'
 import { projectTurnsForPane, broadcastTurnsUpdated } from './turn-projection'
 import { IPC } from '../shared/ipc-channels'
 import type { TurnRecordedPayload } from '../shared/ipc-channels'
@@ -140,14 +140,52 @@ export class TurnRecorder {
     const placeholderSummary = `${status.changedFileCount} file${status.changedFileCount === 1 ? '' : 's'} changed`
     const placeholderMsg = formatTurnCommitMessage(nextIndex, placeholderSummary, turnId)
 
-    // 1. Stage everything. `git add -A` covers tracked + untracked deletions
-    //    and additions in one shot. Per L-062, untracked files only show up
-    //    in `git diff` once they're at least intent-to-add — `git add -A`
-    //    fully stages them so the diff used by Haiku and the resulting
-    //    commit see every change.
-    const addErr = await runGitWithLockRetry(['add', '-A'], { cwd: pane.worktreePath })
+    // 1. Stage everything EXCEPT Claudinha's own infrastructure paths.
+    //
+    //    `git add -A` covers tracked + untracked + deletions in one shot.
+    //    Per L-062, untracked files need at least intent-to-add to show up
+    //    in `git diff` — `git add -A` fully stages them.
+    //
+    //    BUT: `.claude/` and `.worktrees/` are infrastructure that must not
+    //    land in user-facing commits. Two ways they can sneak in:
+    //      a) Once tracked from a prior commit, `.claude/settings.local.json`
+    //         updates (e.g. Claude auto-granting itself a permission rule)
+    //         get re-staged by `git add -A` regardless of `.git/info/exclude`
+    //         (which only governs untracked files).
+    //      b) A worktree created before `ensureClaudinhaPathsIgnored` ran
+    //         can have these entries un-ignored locally.
+    //
+    //    Pathspec magic `:!<dir>/` excludes a directory from the operation.
+    //    We build the exclusion list from the canonical `CLAUDINHA_INFRASTRUCTURE_DIRS`
+    //    so adding a new infra dir means one place to edit. If the user
+    //    *did* add a `.claude/settings.local.json` modification they want
+    //    in a turn, they'll need to commit it explicitly — the auto-commit
+    //    deliberately excludes it.
+    const excludePathspecs = CLAUDINHA_INFRASTRUCTURE_DIRS.map((dir) => `:!${dir}`)
+    const addErr = await runGitWithLockRetry(
+      ['add', '-A', '--', ...excludePathspecs],
+      { cwd: pane.worktreePath }
+    )
     if (addErr) {
       return { outcome: 'error', error: `git add -A: ${addErr}` }
+    }
+    // Belt + suspenders: if any infra paths were already staged from a
+    // pre-turn-recorder action (e.g. spawn-time .claude/ writes), unstage
+    // them before the commit so they never enter the wip-commit.
+    await runGitWithLockRetry(
+      ['reset', 'HEAD', '--', ...CLAUDINHA_INFRASTRUCTURE_DIRS],
+      { cwd: pane.worktreePath }
+    ).catch(() => null)
+
+    // After the exclusion + reset, re-check that there's actually anything
+    // staged. The original `getGitStatus` saw dirty *including* infra paths;
+    // if all the dirty was infra, we have nothing to commit and skipping
+    // here matches the "Stop with no real edits = no turn" intent.
+    const stagedDiff = await execFileAsync('git', ['diff', '--cached', '--name-only'], {
+      cwd: pane.worktreePath
+    }).then((r) => r.stdout.trim()).catch(() => '')
+    if (!stagedDiff) {
+      return { outcome: 'skipped', reason: 'only-infrastructure-changes' }
     }
 
     // 2. Commit with placeholder. `--allow-empty` would be wrong here —

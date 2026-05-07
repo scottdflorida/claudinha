@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile)
  * `ensureClaudinhaPathsIgnored`). Adding a new infra dir means adding it here
  * once — both filter and ignore-writer pick it up.
  */
-const CLAUDINHA_INFRASTRUCTURE_DIRS = ['.worktrees', '.claude'] as const
+export const CLAUDINHA_INFRASTRUCTURE_DIRS = ['.worktrees', '.claude'] as const
 
 /** Timeout for git commands (ms) */
 const GIT_TIMEOUT = 5_000
