@@ -122,7 +122,7 @@ export function KanbanCard({
       className={`
         group/card w-full text-left rounded-md ${baseBg}
         flex flex-col justify-center gap-0 cursor-pointer
-        px-3 py-1
+        px-3 pt-0 pb-1
         transition-colors duration-[80ms]
         hover:bg-overlay focus:outline-none focus-visible:outline-accent
       `}
@@ -130,10 +130,12 @@ export function KanbanCard({
         // Fixed height so the in-flight overlay never shrinks/expands when
         // the source column's two-line content (working with active tool)
         // doesn't match the destination's one-line content. Every card is
-        // the same 52px shell; one-line content centers vertically,
-        // two-line content groups tightly with breathing room above and
-        // below.
-        height: 52,
+        // the same 34px shell; one-line content centers vertically,
+        // two-line content sits with the top row hugging the upper edge
+        // (top-padding zeroed below) so the second line drops beneath
+        // without overflowing the bottom. The bottom padding stays at 4px
+        // for visual balance.
+        height: 34,
         // Red left-border when the pane is in any error condition: PTY
         // terminated OR a transient action failure (mirrors PaneBorder's
         // hasError treatment in Wall mode).
