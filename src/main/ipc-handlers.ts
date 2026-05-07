@@ -146,10 +146,12 @@ import type { PlanApprovalSequencer } from './plan-approval-sequencer'
 import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff, gitCommitAll, getPaneCommitLog, gitRewordCommit, listBranches, detectMainBranch, getCurrentBranch } from './git-status'
 import { projectTurnsForPane, broadcastTurnsUpdated } from './turn-projection'
 import { squashAndPublish } from './publish-engine'
+import { discardTurn } from './discard-engine'
 import type {
   TurnsGetPayload,
   TurnsGetResult,
   TurnPublishSquashPayload,
+  TurnDiscardPayload,
   TurnAutoCommitTogglePayload,
   TurnActionResult
 } from '../shared/ipc-channels'
@@ -3128,6 +3130,28 @@ export function registerIpcHandlers(
       path: payload.path
     })
     return { error: result.ok ? null : (result.error ?? 'unknown error') }
+  })
+
+  // Discard a turn from the worktree branch. On a clean rebase, only the
+  // selected turn drops. On a conflicting replay, the handler returns
+  // `dependentTurnIds` so the renderer can re-prompt with cascade.
+  ipcMain.handle(IPC.TURN_DISCARD, async (_event, payload: TurnDiscardPayload): Promise<TurnActionResult> => {
+    const pane = sessionRegistry.getPane(payload.paneId)
+    if (!pane) return { error: 'pane not found' }
+    const result = await discardTurn({
+      worktreePath: pane.worktreePath,
+      paneId: payload.paneId,
+      windowId: pane.windowId,
+      windowManager,
+      sessionRegistry,
+      turnId: payload.turnId,
+      cascadeConfirmed: payload.cascadeConfirmed
+    })
+    if (result.ok) return { error: null }
+    return {
+      error: result.error ?? 'unknown error',
+      dependentTurnIds: result.dependentTurnIds
+    }
   })
 
   // Per-session auto-commit toggle. Persists on the in-memory PaneState so

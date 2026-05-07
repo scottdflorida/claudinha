@@ -29,6 +29,7 @@ import { IPC } from '../../shared/ipc-channels'
 import type {
   TurnsGetResult,
   TurnPublishSquashPayload,
+  TurnDiscardPayload,
   TurnAutoCommitTogglePayload,
   TurnActionResult
 } from '../../shared/ipc-channels'
@@ -51,6 +52,15 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [commitMessage, setCommitMessage] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Discard confirmation modal state. `pending` carries the turn the user
+  // clicked discard on; `cascadeIds` is populated AFTER the first attempt
+  // returns a cascade-required error, so the prompt's second pass shows
+  // the dependents that would have to drop too.
+  const [discardPending, setDiscardPending] = useState<{
+    turn: Turn
+    cascadeIds: string[]
+  } | null>(null)
 
   // Reference workspaceId so M4's publish-path resolution can pick it up
   // when those paths land. Silenced for now.
@@ -150,6 +160,49 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
     refresh()
   }
 
+  const handleStartDiscard = (turn: Turn): void => {
+    setActionError(null)
+    setDiscardPending({ turn, cascadeIds: [] })
+  }
+
+  const handleConfirmDiscard = async (): Promise<void> => {
+    if (!discardPending) return
+    const cascadeConfirmed = discardPending.cascadeIds.length > 0
+    const payload: TurnDiscardPayload = {
+      paneId,
+      turnId: discardPending.turn.id,
+      cascadeConfirmed
+    }
+    const raw = await ipcInvoke(IPC.TURN_DISCARD, payload)
+    const result = raw as TurnActionResult
+    if (result.error) {
+      // Cascade required: re-prompt with the dependent list.
+      if (result.dependentTurnIds && result.dependentTurnIds.length > 0 && !cascadeConfirmed) {
+        setDiscardPending({
+          turn: discardPending.turn,
+          cascadeIds: result.dependentTurnIds
+        })
+        return
+      }
+      setActionError(result.error)
+      setDiscardPending(null)
+      return
+    }
+    // Success — clear UI state.
+    setDiscardPending(null)
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(discardPending.turn.id)
+      for (const id of discardPending.cascadeIds) next.delete(id)
+      return next
+    })
+    refresh()
+  }
+
+  const handleCancelDiscard = (): void => {
+    setDiscardPending(null)
+  }
+
   const handleToggleAutoCommit = async (): Promise<void> => {
     const payload: TurnAutoCommitTogglePayload = { paneId, enabled: !autoCommitEnabled }
     await ipcInvoke(IPC.TURN_AUTO_COMMIT_TOGGLE, payload)
@@ -216,6 +269,7 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
                 turn={turn}
                 selected={selectedIds.has(turn.id)}
                 onToggle={() => toggleSelect(turn.id)}
+                onDiscard={() => handleStartDiscard(turn)}
                 disabled={isWorking}
               />
             ))}
@@ -278,6 +332,17 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
           </div>
         )}
       </footer>
+
+      {discardPending && (
+        <DiscardConfirmDialog
+          turn={discardPending.turn}
+          cascadeIds={discardPending.cascadeIds}
+          allTurns={turns}
+          onConfirm={handleConfirmDiscard}
+          onCancel={handleCancelDiscard}
+          working={isWorking}
+        />
+      )}
     </dialog>
   )
 }
@@ -290,15 +355,19 @@ interface TurnRowProps {
   turn: Turn
   selected: boolean
   onToggle: () => void
+  onDiscard: () => void
   disabled: boolean
 }
 
-function TurnRow({ turn, selected, onToggle, disabled }: TurnRowProps): React.JSX.Element {
+function TurnRow({ turn, selected, onToggle, onDiscard, disabled }: TurnRowProps): React.JSX.Element {
   const t = useStrings()
+  // Discard is only valid for `open` and `pushed` turns. Everything else
+  // (merged/shipped/pr-open) is shared work; superseded/discarded are gone.
+  const canDiscard = turn.state === 'open' || turn.state === 'pushed'
   return (
     <li
       className={`
-        px-5 py-2 flex items-start gap-3
+        group/row px-5 py-2 flex items-start gap-3
         ${selected ? 'bg-overlay' : ''}
         ${disabled ? 'opacity-60' : 'hover:bg-overlay'}
       `}
@@ -325,6 +394,24 @@ function TurnRow({ turn, selected, onToggle, disabled }: TurnRowProps): React.JS
           <StateBadge state={turn.state} />
         </div>
       </div>
+      {canDiscard && (
+        <button
+          type="button"
+          onClick={onDiscard}
+          disabled={disabled}
+          aria-label={`${t.turnsModal.discardAction} ${t.turnsModal.turnNumberFmt(turn.index)}`}
+          title={t.turnsModal.discardAction}
+          className="
+            flex-shrink-0 text-[11px] px-2 py-1 rounded border border-[var(--color-border-subtle)]
+            text-fg-muted hover:text-danger-fg hover:border-danger-fg/60
+            opacity-0 group-hover/row:opacity-100 focus:opacity-100
+            transition-[opacity,colors] duration-[80ms]
+            disabled:opacity-30 disabled:cursor-not-allowed
+          "
+        >
+          {t.turnsModal.discardAction}
+        </button>
+      )}
     </li>
   )
 }
@@ -474,6 +561,118 @@ function PublishDropdown({ label, options, disabled }: PublishDropdownProps): Re
         </div>
       )}
     </div>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// DiscardConfirmDialog — sub-dialog for the destructive discard verb.
+// ----------------------------------------------------------------------------
+//
+// Two-phase prompt. First click on a row's "Discard" button opens this
+// with `cascadeIds: []` — a simple "are you sure?" confirmation. If the
+// backend's first attempt returns a cascade-required error, the parent
+// re-renders this with `cascadeIds` populated, and the body now lists
+// the dependent turns that would also drop. The user clicks Discard
+// again to confirm cascade.
+
+interface DiscardConfirmDialogProps {
+  turn: Turn
+  cascadeIds: string[]
+  allTurns: Turn[]
+  onConfirm: () => Promise<void> | void
+  onCancel: () => void
+  working: boolean
+}
+
+function DiscardConfirmDialog({
+  turn,
+  cascadeIds,
+  allTurns,
+  onConfirm,
+  onCancel,
+  working
+}: DiscardConfirmDialogProps): React.JSX.Element {
+  const t = useStrings()
+  const dialogRef = useRef<HTMLDialogElement>(null)
+
+  // jsdom doesn't implement showModal; tests stub it. In production this
+  // composes correctly with the parent dialog because both use top-layer.
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (!dialog.open) dialog.showModal()
+    const handleNativeClose = (): void => onCancel()
+    dialog.addEventListener('close', handleNativeClose)
+    return () => dialog.removeEventListener('close', handleNativeClose)
+  }, [onCancel])
+
+  const cascadeTurns = allTurns.filter((tu) => cascadeIds.includes(tu.id))
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={`discard-confirm-title-${turn.id}`}
+      className="
+        bg-surface text-fg-primary
+        rounded-lg border border-[var(--color-border-strong)] shadow-2xl
+        p-0 w-[480px] max-w-[90vw]
+        backdrop:bg-black/40
+      "
+      data-testid={`discard-confirm-${turn.id}`}
+    >
+      <header className="px-5 py-4 border-b border-[var(--color-border-subtle)]">
+        <h3 id={`discard-confirm-title-${turn.id}`} className="text-sm font-[600] text-fg-primary">
+          {t.turnsModal.discardConfirmTitle}
+        </h3>
+      </header>
+      <div className="px-5 py-4 flex flex-col gap-3 text-[12px] text-fg-secondary">
+        <p>
+          {t.turnsModal.discardConfirmBodyFmt(turn.index)}
+        </p>
+        {cascadeTurns.length > 0 && (
+          <div className="rounded border border-warning-fg/40 bg-warning-fg/5 px-3 py-2 text-warning-fg text-[11px]">
+            <p className="font-[600] mb-1">
+              {t.turnsModal.discardCascadeWarningFmt(cascadeTurns.length)}
+            </p>
+            <ul className="list-disc pl-5 space-y-0.5">
+              {cascadeTurns.map((tu) => (
+                <li key={tu.id}>
+                  {t.turnsModal.turnNumberFmt(tu.index)} — {tu.summary}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+      <footer className="px-5 py-3 border-t border-[var(--color-border-subtle)] flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={working}
+          className="
+            text-[12px] px-3 py-1 rounded border border-[var(--color-border-subtle)]
+            text-fg-secondary hover:text-fg-primary hover:bg-overlay
+            transition-colors duration-[80ms]
+            disabled:opacity-50 disabled:cursor-not-allowed
+          "
+        >
+          {t.turnsModal.discardCancelButton}
+        </button>
+        <button
+          type="button"
+          onClick={() => void onConfirm()}
+          disabled={working}
+          className="
+            text-[12px] px-3 py-1 rounded border border-danger-fg/60
+            text-danger-fg hover:bg-danger-fg/10
+            transition-colors duration-[80ms]
+            disabled:opacity-50 disabled:cursor-not-allowed
+          "
+        >
+          {t.turnsModal.discardConfirmButton}
+        </button>
+      </footer>
+    </dialog>
   )
 }
 
