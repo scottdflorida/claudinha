@@ -149,6 +149,8 @@ import { squashAndPublish, splitTurn } from './publish-engine'
 import { discardTurn } from './discard-engine'
 import { getTurnDiff, resolveTurnSha } from './turn-diff'
 import type { TurnRecorder } from './turn-recorder'
+import type { SideCloneManager } from './side-clone-manager'
+import { getMainRepoPath } from './git-status'
 import type {
   TurnsGetPayload,
   TurnsGetResult,
@@ -362,7 +364,8 @@ export function registerIpcHandlers(
   completionExecutor: CompletionExecutor,
   inspector: InspectorService,
   planApprovalSequencer: PlanApprovalSequencer,
-  turnRecorder: TurnRecorder
+  turnRecorder: TurnRecorder,
+  sideCloneManager: SideCloneManager
 ): void {
   // -------------------------------------------------------------------------
   // pane:spawn — create a new Claude Code pane
@@ -2528,6 +2531,13 @@ export function registerIpcHandlers(
       workspace.viewMode = viewMode
       saveHiveToStore(workspace)
     }
+    // Apply the LaunchForm's publish-path choice (M4 / U5). Optional in
+    // the payload type so older callers don't break; M0 migration
+    // backfills `'both'` for legacy persisted workspaces missing this.
+    if (payload.defaultPublishPath) {
+      workspace.defaultPublishPath = payload.defaultPublishPath
+      saveHiveToStore(workspace)
+    }
 
     // Create a window
     const newWin = windowManager.createWindow()
@@ -3149,12 +3159,19 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.TURN_PUBLISH_SQUASH, async (_event, payload: TurnPublishSquashPayload): Promise<TurnActionResult> => {
     const pane = sessionRegistry.getPane(payload.paneId)
     if (!pane) return { error: 'pane not found' }
+    // Resolve the user's primary repo root from the pane's worktree
+    // path. For main-mode panes the main repo IS the worktree; for
+    // worktree panes it's the parent repo holding the `.worktrees/`
+    // dir. side-clone-manager needs this to root the staging worktree.
+    const repoPath = (await getMainRepoPath(pane.worktreePath)) ?? pane.worktreePath
     const result = await squashAndPublish({
       worktreePath: pane.worktreePath,
+      repoPath,
       paneId: payload.paneId,
       windowId: pane.windowId,
       windowManager,
       sessionRegistry,
+      sideCloneManager,
       turnIds: payload.turnIds,
       message: payload.message,
       path: payload.path
@@ -3220,6 +3237,61 @@ export function registerIpcHandlers(
       rightMessage: payload.rightMessage
     })
     return { error: result.ok ? null : (result.error ?? 'unknown error') }
+  })
+
+  // -------------------------------------------------------------------------
+  // Per-repo Publish-path config (M4)
+  // -------------------------------------------------------------------------
+  //
+  // Resolution order: per-repo override (workspace.publishPathOverrides)
+  //   → workspace default (workspace.defaultPublishPath)
+  //   → 'both' (legacy / unset).
+
+  ipcMain.handle(IPC.WORKSPACE_DEFAULT_PATH_GET, async (_event, payload: { workspaceId: string }): Promise<{ error: string | null; value: import('../shared/types').PublishPath }> => {
+    const ws = (await import('./workspace-store')).getWorkspace(payload.workspaceId)
+    if (!ws) return { error: 'workspace not found', value: 'both' }
+    return { error: null, value: ws.defaultPublishPath ?? 'both' }
+  })
+
+  ipcMain.handle(IPC.WORKSPACE_DEFAULT_PATH_SET, async (_event, payload: { workspaceId: string; value: import('../shared/types').PublishPath }): Promise<TurnActionResult> => {
+    const store = await import('./workspace-store')
+    const ws = store.getWorkspace(payload.workspaceId)
+    if (!ws) return { error: 'workspace not found' }
+    store.saveWorkspace({ ...ws, defaultPublishPath: payload.value })
+    return { error: null }
+  })
+
+  ipcMain.handle(IPC.REPO_PUBLISH_PATH_GET, async (_event, payload: { repoPath: string; workspaceId?: string }): Promise<{ error: string | null; value: import('../shared/types').PublishPath; hasOverride: boolean }> => {
+    const store = await import('./workspace-store')
+    if (!payload.workspaceId) {
+      return { error: null, value: 'both', hasOverride: false }
+    }
+    const ws = store.getWorkspace(payload.workspaceId)
+    if (!ws) return { error: 'workspace not found', value: 'both', hasOverride: false }
+    const override = ws.publishPathOverrides?.[payload.repoPath]
+    if (override) return { error: null, value: override, hasOverride: true }
+    return { error: null, value: ws.defaultPublishPath ?? 'both', hasOverride: false }
+  })
+
+  ipcMain.handle(IPC.REPO_PUBLISH_PATH_SET, async (_event, payload: { workspaceId: string; repoPath: string; value: import('../shared/types').PublishPath | null }): Promise<TurnActionResult> => {
+    const store = await import('./workspace-store')
+    const ws = store.getWorkspace(payload.workspaceId)
+    if (!ws) return { error: 'workspace not found' }
+    const overrides: Record<string, import('../shared/types').PublishPath> = {
+      ...(ws.publishPathOverrides ?? {})
+    }
+    if (payload.value === null) {
+      delete overrides[payload.repoPath]
+    } else {
+      overrides[payload.repoPath] = payload.value
+    }
+    // Drop the field entirely if it's empty so the persisted JSON stays
+    // tidy.
+    const next: import('../shared/types').Workspace = Object.keys(overrides).length === 0
+      ? (() => { const { publishPathOverrides: _drop, ...rest } = ws; return rest })()
+      : { ...ws, publishPathOverrides: overrides }
+    store.saveWorkspace(next)
+    return { error: null }
   })
 
   // Per-session auto-commit toggle. Persists on the in-memory PaneState so

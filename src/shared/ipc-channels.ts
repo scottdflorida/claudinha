@@ -1316,6 +1316,10 @@ export interface WorkspaceCreateWithTerminalsPayload {
   viewMode?: 'wall' | 'kanban'
   /** User-provided workspace name. Omit / empty to auto-generate "Workspace N". */
   name?: string
+  /** Workspace-default publish path for the v2 turn-as-commit completion-actions
+   *  flow. Per U5: required field on the launch form (defaults visible).
+   *  Persisted on `Workspace.defaultPublishPath`. */
+  defaultPublishPath?: PublishPath
 }
 
 /** workspace:create-with-terminals response */

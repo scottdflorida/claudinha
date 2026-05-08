@@ -190,6 +190,16 @@ export const ptBR: Strings = {
     statusValidNonGit: 'Diretório válido — não é um repositório git',
     statusValidGit: 'Repositório git confirmado',
     terminalsToSpawnLabel: 'Terminais a abrir',
+    publishPathLabel: 'Caminho de publicação padrão',
+    publishPathDirectMerge: 'Merge direto',
+    publishPathPr: 'Pull request',
+    publishPathBoth: 'Ambos',
+    publishPathHintDirectMerge:
+      'Publicar um turno faz merge direto na branch base via clone lateral e empurra. Sem PRs a menos que você altere por repositório.',
+    publishPathHintPr:
+      'Publicar um turno empurra a branch da worktree e abre um PR via `gh`. Requer o CLI `gh`.',
+    publishPathHintBoth:
+      'Ambas as opções aparecem no menu de publicação — escolha por ação. Recomendado se você tem uma mistura de repositórios.',
     viewModeLabel: 'Modo de visualização',
     viewModeKanban: 'Kanban',
     viewModeWall: 'Mural',

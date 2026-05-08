@@ -66,6 +66,7 @@ interface CachedLaunchState {
   manualNames?: string[]
   effort?: EffortLevel
   model?: Model
+  defaultPublishPath?: import('../../shared/types').PublishPath
 }
 
 let cachedLaunchState: CachedLaunchState = {}
@@ -97,6 +98,15 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
   const [viewMode, setViewMode] = useState<'wall' | 'kanban'>(
     () => cachedLaunchState.viewMode ?? 'kanban'
   )
+  // Per U5 (required field, defaults visible). The user MUST see this
+  // before launching — initial value is a sensible default ('both') so
+  // the form is valid out of the box; the user can override before
+  // clicking Launch. Persists in cachedLaunchState across mounts so a
+  // user who switches mid-form doesn't lose their pick.
+  const [defaultPublishPath, setDefaultPublishPath] =
+    useState<import('../../shared/types').PublishPath>(
+      () => cachedLaunchState.defaultPublishPath ?? 'both'
+    )
 
   const [worktreeMode, setWorktreeMode] = useState<WorktreeMode>(
     () => cachedLaunchState.worktreeMode ?? 'each-own'
@@ -194,9 +204,10 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
       namingMode,
       manualNames,
       effort,
-      model
+      model,
+      defaultPublishPath
     }
-  }, [workspaceName, repoMode, repoPath, repoPaths, terminalCount, advanced, viewMode, worktreeMode, namingMode, manualNames, effort, model])
+  }, [workspaceName, repoMode, repoPath, repoPaths, terminalCount, advanced, viewMode, worktreeMode, namingMode, manualNames, effort, model, defaultPublishPath])
 
   // Sync manual names + placeholders with terminal count. Only collapses
   // to 1 name when (Custom + Shared + same-repo) — in that case the single
@@ -396,7 +407,8 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
         manualNames: namingMode === 'manual' ? manualNames : undefined,
         effort,
         model,
-        viewMode
+        viewMode,
+        defaultPublishPath
       }
 
       const result = await ipcInvoke(IPC.WORKSPACE_CREATE_WITH_TERMINALS, payload) as WorkspaceCreateWithTerminalsResult
@@ -746,6 +758,27 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
             onClick={() => setViewMode('wall')}
           />
         </div>
+      </div>
+
+      {/* Publish path — workspace default per U5. Required field with
+          defaults visible; user must click through (or accept the
+          default) before launching. */}
+      <div className="flex flex-col gap-2">
+        <SegmentedControl<'direct-merge' | 'pr' | 'both'>
+          label={t.launchFormUI.publishPathLabel}
+          options={[
+            { value: 'direct-merge', label: t.launchFormUI.publishPathDirectMerge },
+            { value: 'pr', label: t.launchFormUI.publishPathPr },
+            { value: 'both', label: t.launchFormUI.publishPathBoth }
+          ]}
+          value={defaultPublishPath}
+          onChange={setDefaultPublishPath}
+        />
+        <p className="text-[11px] text-fg-muted">
+          {defaultPublishPath === 'direct-merge' && t.launchFormUI.publishPathHintDirectMerge}
+          {defaultPublishPath === 'pr' && t.launchFormUI.publishPathHintPr}
+          {defaultPublishPath === 'both' && t.launchFormUI.publishPathHintBoth}
+        </p>
       </div>
 
       {/* Advanced Setup */}

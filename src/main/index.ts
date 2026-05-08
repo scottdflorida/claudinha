@@ -49,6 +49,7 @@ import { migrateLegacyKeys, migrateCompletionActionsV2 } from './workspace-store
 import { GitStatusPoller } from './git-status-poller'
 import { CompletionExecutor } from './completion-executor'
 import { TurnRecorder } from './turn-recorder'
+import { SideCloneManager } from './side-clone-manager'
 import { InspectorService } from './inspector'
 import { PlanApprovalSequencer } from './plan-approval-sequencer'
 import { getGlobalCompletionPolicy } from './completion-policy-store'
@@ -127,6 +128,10 @@ export const planApprovalSequencer = new PlanApprovalSequencer(sessionRegistry, 
 // panes. Wired into hook-listener via `setOnStopProcessed` below; never
 // blocks the hook path because Haiku summaries can take a few seconds.
 export const turnRecorder = new TurnRecorder(sessionRegistry, windowManager)
+// Side-clone manager — provisions per-repo `.worktrees/.merge-staging/`
+// for direct-merge publishing (M4) and bulk merges (M5). Singleton; one
+// instance owns every repo's mutex queue.
+export const sideCloneManager = new SideCloneManager()
 
 // Wire the bidirectional references that have to be set after
 // construction to avoid a circular dep in the DI graph:
@@ -344,7 +349,7 @@ app.whenReady().then(() => {
     healStaleWorktreeSettings(permissionsManager, worktreePaths)
   }
 
-  registerIpcHandlers(windowManager, sessionRegistry, ptyPool, hookListener, permissionsManager, statusDetector, metricsCollector, transitionBuffer, workspaceManager, gitStatusPoller, completionExecutor, inspector, planApprovalSequencer, turnRecorder)
+  registerIpcHandlers(windowManager, sessionRegistry, ptyPool, hookListener, permissionsManager, statusDetector, metricsCollector, transitionBuffer, workspaceManager, gitStatusPoller, completionExecutor, inspector, planApprovalSequencer, turnRecorder, sideCloneManager)
 
   // Build application menu bar (B-066)
   buildMenu(windowManager, sessionRegistry, workspaceManager)

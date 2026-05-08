@@ -34,7 +34,9 @@ import type { BrowserWindow } from 'electron'
 import { detectMainBranch, getCurrentBranch, runGitWithLockRetry } from './git-status'
 import { broadcastTurnsUpdated, projectTurnsForPane, readDiscardedSidecar, writeDiscardedSidecar } from './turn-projection'
 import { buildLeftSubPatch, getTurnDiff } from './turn-diff'
-import { extractTurnIdFromCommitMessage } from './turn-recorder'
+import { runDirectMerge } from './merge-runner'
+import { runOpenPr } from './pr-runner'
+import type { SideCloneManager } from './side-clone-manager'
 import type { SessionRegistry } from './session-registry'
 import type { WindowManager } from './window-manager'
 import { IPC } from '../shared/ipc-channels'
@@ -70,31 +72,39 @@ export interface PublishResult {
  */
 export async function squashAndPublish(args: {
   worktreePath: string
+  /** Absolute path to the user's primary repo checkout. Required for
+   *  `direct-merge` so the side-clone-manager can root the staging
+   *  worktree in the right repo. May differ from `worktreePath` for
+   *  worktree-mode panes; equals it for main-mode. */
+  repoPath: string
   paneId: string
   windowId: string
   windowManager: WindowManager
   sessionRegistry: SessionRegistry
+  /** Required for `direct-merge` and `pr` paths; nullable so M1's
+   *  `push-branch` callers don't have to construct one. */
+  sideCloneManager: SideCloneManager | null
   turnIds: string[]
   message: string
   path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr'
 }): Promise<PublishResult> {
   const {
-    worktreePath, paneId, windowId, windowManager, sessionRegistry,
-    turnIds, message, path: publishPath
+    worktreePath, repoPath, paneId, windowId, windowManager, sessionRegistry,
+    sideCloneManager, turnIds, message, path: publishPath
   } = args
 
-  if (publishPath !== 'push-branch') {
-    return {
-      ok: false,
-      error: `publish path '${publishPath}' is not implemented yet (M4 adds direct-merge / pr / draft-pr)`,
-      errorKind: 'unknown'
-    }
-  }
   if (turnIds.length === 0) {
     return { ok: false, error: 'no turns selected', errorKind: 'unknown' }
   }
   if (!message.trim()) {
     return { ok: false, error: 'commit message is empty', errorKind: 'unknown' }
+  }
+  if ((publishPath === 'direct-merge') && !sideCloneManager) {
+    return {
+      ok: false,
+      error: 'direct-merge requires a sideCloneManager (caller setup error)',
+      errorKind: 'unknown'
+    }
   }
 
   const baseBranch = await detectMainBranch(worktreePath)
@@ -204,24 +214,92 @@ export async function squashAndPublish(args: {
       cwd: worktreePath
     }).then((r) => r.stdout.trim())
 
-    // 4. Push.
-    //
-    //    Worktree branches: we just rewrote via rebase, so plain `push`
-    //    would be rejected as non-FF. `--force-with-lease` is the right
-    //    hammer — only succeeds if origin/<branch> hasn't moved beyond
-    //    what we last fetched, so we won't blow away a teammate's
-    //    intervening push.
-    //
-    //    Main mode (currentBranch === baseBranch): we already pre-checked
-    //    divergence above the rebase. Plain `push` is the right call here
-    //    — we won't force on a shared branch even via lease.
+    // 4. Dispatch on publish path.
     const isMainMode = currentBranch === baseBranch
-    const pushArgs = isMainMode
-      ? ['push', 'origin', currentBranch]
-      : ['push', '--force-with-lease', 'origin', currentBranch]
-    const pushErr = await runGitWithLockRetry(pushArgs, { cwd: worktreePath })
-    if (pushErr) {
-      return { ok: false, error: pushErr, errorKind: 'push-rejected', publishCommitSha }
+    let prUrl: string | undefined
+
+    if (publishPath === 'push-branch') {
+      // Worktree branches: we just rewrote via rebase, so plain `push`
+      // would be rejected as non-FF. `--force-with-lease` is the right
+      // hammer — only succeeds if origin/<branch> hasn't moved beyond
+      // what we last fetched.
+      //
+      // Main mode (currentBranch === baseBranch): we already pre-checked
+      // divergence above the rebase. Plain `push` is the right call here
+      // — we won't force on a shared branch even via lease.
+      const pushArgs = isMainMode
+        ? ['push', 'origin', currentBranch]
+        : ['push', '--force-with-lease', 'origin', currentBranch]
+      const pushErr = await runGitWithLockRetry(pushArgs, { cwd: worktreePath })
+      if (pushErr) {
+        return { ok: false, error: pushErr, errorKind: 'push-rejected', publishCommitSha }
+      }
+    } else if (publishPath === 'direct-merge') {
+      if (isMainMode) {
+        return {
+          ok: false,
+          error: 'direct-merge is not available on main-mode panes — already on the base branch',
+          errorKind: 'unknown',
+          publishCommitSha
+        }
+      }
+      // Push the squashed branch first so origin has the commit, then
+      // merge-runner fetches and merges into base via the side-clone.
+      const pushErr = await runGitWithLockRetry(
+        ['push', '--force-with-lease', 'origin', currentBranch],
+        { cwd: worktreePath }
+      )
+      if (pushErr) {
+        return { ok: false, error: pushErr, errorKind: 'push-rejected', publishCommitSha }
+      }
+      const mergeResult = await runDirectMerge({
+        sideCloneManager: sideCloneManager!,
+        repoPath,
+        worktreeBranch: currentBranch,
+        baseBranch,
+        allowNoFastForward: false
+      })
+      if (!mergeResult.ok) {
+        return {
+          ok: false,
+          error: mergeResult.error,
+          errorKind: mergeResult.errorKind === 'push-rejected' ? 'push-rejected' : 'unknown',
+          publishCommitSha
+        }
+      }
+    } else if (publishPath === 'pr' || publishPath === 'draft-pr') {
+      if (isMainMode) {
+        return {
+          ok: false,
+          error: 'PR is not available on main-mode panes — cannot open a PR from the base branch',
+          errorKind: 'unknown',
+          publishCommitSha
+        }
+      }
+      const prResult = await runOpenPr({
+        worktreePath,
+        branch: currentBranch,
+        baseBranch,
+        title: messageSubject(message),
+        body: messageBody(message),
+        draft: publishPath === 'draft-pr'
+      })
+      if (!prResult.ok) {
+        return {
+          ok: false,
+          error: prResult.error,
+          errorKind: prResult.errorKind === 'push-rejected' ? 'push-rejected' : 'unknown',
+          publishCommitSha
+        }
+      }
+      prUrl = prResult.prUrl
+    } else {
+      return {
+        ok: false,
+        error: `unknown publish path: ${publishPath}`,
+        errorKind: 'unknown',
+        publishCommitSha
+      }
     }
 
     // 5. Refresh projection so the renderer sees the new state.
@@ -236,7 +314,7 @@ export async function squashAndPublish(args: {
       pendingAction: null
     })
 
-    return { ok: true, publishCommitSha }
+    return { ok: true, publishCommitSha, prUrl }
   } finally {
     setPendingAction(sessionRegistry, paneId, null)
     broadcastPendingAction(windowManager, windowId, paneId, null)
@@ -724,6 +802,19 @@ async function isRebaseInProgress(worktreePath: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/** First line of a commit message. Used as the PR title. */
+function messageSubject(message: string): string {
+  return message.split('\n')[0]?.trim() ?? message
+}
+
+/** Body of a commit message (everything after the first line + blank
+ *  line). May be empty. Used as the PR body. */
+function messageBody(message: string): string {
+  const lines = message.split('\n')
+  if (lines.length <= 2) return ''
+  return lines.slice(2).join('\n').trim()
 }
 
 /**

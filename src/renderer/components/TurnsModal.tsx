@@ -33,7 +33,7 @@ import type {
   TurnAutoCommitTogglePayload,
   TurnActionResult
 } from '../../shared/ipc-channels'
-import type { Turn, TurnState } from '../../shared/types'
+import type { Turn, TurnState, PublishPath } from '../../shared/types'
 import { HunkPickerModal } from './HunkPickerModal'
 
 interface TurnsModalProps {
@@ -65,6 +65,23 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
   // HunkPickerModal — opened from PublishDropdown's "Split a turn…" entry.
   // Only valid when exactly one `open` turn is selected.
   const [splitTurnTarget, setSplitTurnTarget] = useState<Turn | null>(null)
+  // Resolved publish-path for this pane's workspace. M4 shows the
+  // workspace default in the per-pane modal; M5's repo modal sets per-
+  // repo overrides which the bulk pipeline consumes. Defaults to 'both'
+  // until the resolve fetch completes.
+  const [publishPath, setPublishPath] = useState<PublishPath>('both')
+  useEffect(() => {
+    if (!workspaceId) return
+    let cancelled = false
+    void ipcInvoke(IPC.WORKSPACE_DEFAULT_PATH_GET, { workspaceId })
+      .then((raw) => {
+        if (cancelled) return
+        const result = raw as { error: string | null; value: PublishPath }
+        if (!result.error) setPublishPath(result.value)
+      })
+      .catch(() => { /* fall through to default */ })
+    return () => { cancelled = true }
+  }, [workspaceId])
 
   // Reference workspaceId so M4's publish-path resolution can pick it up
   // when those paths land. Silenced for now.
@@ -142,16 +159,15 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
     selectionContiguous &&
     commitMessage.trim().length > 0
 
-  const handlePublishSquashPushBranch = async (): Promise<void> => {
+  const handlePublishSquash = async (path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr'): Promise<void> => {
     if (!canPublish) return
     setActionError(null)
-    // Selection in chronological (oldest → newest) order.
     const orderedIds = turns.filter((tu) => selectedIds.has(tu.id)).map((tu) => tu.id)
     const payload: TurnPublishSquashPayload = {
       paneId,
       turnIds: orderedIds,
       message: commitMessage.trim(),
-      path: 'push-branch'
+      path
     }
     const raw = await ipcInvoke(IPC.TURN_PUBLISH_SQUASH, payload)
     const result = raw as TurnActionResult
@@ -316,34 +332,25 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
           />
           <PublishDropdown
             label={t.turnsModal.publishMenuLabel}
-            options={[
-              {
-                key: 'squash-push-branch',
-                label: t.turnsModal.publishSquashAndPush,
-                disabled: !canPublish,
-                onSelect: handlePublishSquashPushBranch
-              },
-              {
-                key: 'split-turn',
-                label: t.turnsModal.publishSplit,
-                // Split is single-turn-only and requires the turn to be
-                // `open` (no rewriting pushed/merged work).
-                disabled:
-                  isWorking ||
-                  selectedIds.size !== 1 ||
-                  (() => {
-                    const id = [...selectedIds][0]!
-                    const t = turns.find((tu) => tu.id === id)
-                    return !t || t.state !== 'open'
-                  })(),
-                onSelect: () => {
-                  const id = [...selectedIds][0]
-                  if (!id) return
-                  const target = turns.find((tu) => tu.id === id)
-                  if (target) setSplitTurnTarget(target)
-                }
+            options={buildPublishOptions({
+              t, canPublish, isWorking, publishPath,
+              isMainMode: !!(diagnostic && diagnostic.currentBranch === diagnostic.baseBranch && diagnostic.baseBranch !== null),
+              onSquash: handlePublishSquash,
+              splitDisabled:
+                isWorking ||
+                selectedIds.size !== 1 ||
+                (() => {
+                  const id = [...selectedIds][0]!
+                  const tu = turns.find((x) => x.id === id)
+                  return !tu || tu.state !== 'open'
+                })(),
+              onSplit: () => {
+                const id = [...selectedIds][0]
+                if (!id) return
+                const target = turns.find((tu) => tu.id === id)
+                if (target) setSplitTurnTarget(target)
               }
-            ]}
+            })}
             disabled={isWorking || (selectedIds.size === 0)}
           />
           <button
@@ -778,6 +785,100 @@ function DiscardConfirmDialog({
       </footer>
     </dialog>
   )
+}
+
+// ----------------------------------------------------------------------------
+// buildPublishOptions — per-mode dropdown options for the PublishDropdown.
+// ----------------------------------------------------------------------------
+//
+// Resolves the correct set of options for the current pane:
+//
+//   - Main-mode panes (currentBranch === baseBranch): only `push-branch`
+//     applies. Direct-merge has no target (already on base); PR can't
+//     open from base to base. The dropdown collapses to a single entry.
+//
+//   - Worktree panes with publishPath = 'direct-merge': just the merge
+//     entry. Push-branch is suppressed because the user explicitly
+//     chose merge as the path.
+//
+//   - Worktree + 'pr': PR entry + draft-PR entry.
+//
+//   - Worktree + 'both': all three publish entries surface; the user
+//     picks per action.
+//
+//   - "Split a turn…" is always present, gated by single-`open`-turn
+//     selection.
+
+interface BuildPublishOptionsArgs {
+  t: ReturnType<typeof useStrings>
+  canPublish: boolean
+  isWorking: boolean
+  publishPath: PublishPath
+  isMainMode: boolean
+  onSquash: (path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr') => Promise<void> | void
+  splitDisabled: boolean
+  onSplit: () => void
+}
+
+function buildPublishOptions(args: BuildPublishOptionsArgs): PublishOption[] {
+  const { t, canPublish, isWorking, publishPath, isMainMode, onSquash, splitDisabled, onSplit } = args
+  const options: PublishOption[] = []
+
+  if (isMainMode) {
+    // Main mode: push-branch only.
+    options.push({
+      key: 'squash-push-branch',
+      label: t.turnsModal.publishSquashAndPush,
+      disabled: !canPublish,
+      onSelect: () => onSquash('push-branch')
+    })
+  } else {
+    // Worktree mode: shape by publishPath.
+    if (publishPath === 'direct-merge' || publishPath === 'both') {
+      options.push({
+        key: 'squash-direct-merge',
+        label: t.turnsModal.publishSquashAndMerge,
+        disabled: !canPublish,
+        onSelect: () => onSquash('direct-merge')
+      })
+    }
+    if (publishPath === 'pr' || publishPath === 'both') {
+      options.push({
+        key: 'squash-pr',
+        label: t.turnsModal.publishSquashAndPr,
+        disabled: !canPublish,
+        onSelect: () => onSquash('pr')
+      })
+      options.push({
+        key: 'squash-draft-pr',
+        label: t.turnsModal.publishSquashAndDraftPr,
+        disabled: !canPublish,
+        onSelect: () => onSquash('draft-pr')
+      })
+    }
+    // Push-branch is always available as an "advanced / fallback" option
+    // — useful when the user wants to publish without merging or PRing
+    // (e.g., handing the branch off for review out-of-band). The repo's
+    // configured path drives the *primary* options above; this is the
+    // escape hatch.
+    options.push({
+      key: 'squash-push-branch',
+      label: t.turnsModal.publishSquashAndPush,
+      disabled: !canPublish,
+      onSelect: () => onSquash('push-branch')
+    })
+  }
+
+  options.push({
+    key: 'split-turn',
+    label: t.turnsModal.publishSplit,
+    disabled: splitDisabled,
+    onSelect: onSplit
+  })
+
+  // Reference unused params so they don't get linted away in tightenings.
+  void isWorking
+  return options
 }
 
 // ----------------------------------------------------------------------------

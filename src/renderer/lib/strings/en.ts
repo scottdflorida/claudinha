@@ -177,6 +177,16 @@ export const en = {
     statusValidNonGit: 'Valid directory — not a git repo',
     statusValidGit: 'Git repository confirmed',
     terminalsToSpawnLabel: 'Terminals to spawn',
+    publishPathLabel: 'Default publish path',
+    publishPathDirectMerge: 'Direct merge',
+    publishPathPr: 'Pull request',
+    publishPathBoth: 'Both',
+    publishPathHintDirectMerge:
+      'Publishing a turn merges directly into the base branch via a side-clone, then pushes. No PRs unless you change this per repo.',
+    publishPathHintPr:
+      'Publishing a turn pushes the worktree branch and opens a PR via `gh`. Requires `gh` CLI.',
+    publishPathHintBoth:
+      'Both options surface in the publish menu — pick per action. Recommended if you have a mix of repos.',
     viewModeLabel: 'View mode',
     viewModeKanban: 'Kanban',
     viewModeWall: 'Wall',
