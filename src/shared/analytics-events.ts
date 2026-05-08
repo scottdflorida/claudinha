@@ -316,6 +316,56 @@ export interface AnalyticsConsentSetEvent extends AnalyticsEventBase {
 }
 
 // ---------------------------------------------------------------------------
+// Completion-actions v2 (turn-as-commit) events
+// ---------------------------------------------------------------------------
+
+/** A user published one or more turns via squash + path. */
+export interface TurnPublishedEvent extends AnalyticsEventBase {
+  event_name: 'turn_published'
+  /** "push-branch" | "direct-merge" | "pr" | "draft-pr" */
+  path: string
+  /** Bucketed turn count: "1" | "2-5" | "6+" */
+  turn_count_bucket: string
+  /** "succeeded" | "failed" */
+  outcome: string
+  /** Origin of the publish: "per-terminal" | "bulk" */
+  source: string
+}
+
+/** A turn was split into two via the hunk picker. */
+export interface TurnSplitEvent extends AnalyticsEventBase {
+  event_name: 'turn_split'
+  /** "succeeded" | "failed" */
+  outcome: string
+  /** Bucketed file count of the original turn: "1" | "2-5" | "6+" */
+  files_changed_bucket: string
+}
+
+/** A turn was discarded (and any cascade dependents dropped). */
+export interface TurnDiscardedEvent extends AnalyticsEventBase {
+  event_name: 'turn_discarded'
+  /** "tip" | "cascade" — whether dependents were also dropped. */
+  variant: string
+  /** "succeeded" | "failed" */
+  outcome: string
+}
+
+/** A bulk run finished, with aggregate outcome. */
+export interface BulkRunCompletedEvent extends AnalyticsEventBase {
+  event_name: 'bulk_run_completed'
+  /** "merge" | "open-pr" | "open-draft-pr" | "push-branch" | "discard-all" */
+  action: string
+  /** Bucketed pane count: "1" | "2-5" | "6+" */
+  pane_count_bucket: string
+  /** Successful panes count, bucketed. */
+  success_count_bucket: string
+  /** Failed panes count, bucketed. */
+  failure_count_bucket: string
+  /** True if cancelled mid-run. */
+  cancelled: boolean
+}
+
+// ---------------------------------------------------------------------------
 // Discriminated union of all event types
 // ---------------------------------------------------------------------------
 
@@ -349,6 +399,10 @@ export type AnalyticsEvent =
   | PlanSequenceStartedEvent
   | PlanSequenceCompletedEvent
   | AnalyticsConsentSetEvent
+  | TurnPublishedEvent
+  | TurnSplitEvent
+  | TurnDiscardedEvent
+  | BulkRunCompletedEvent
 
 // ---------------------------------------------------------------------------
 // Event creation helper — enforces common fields on every event

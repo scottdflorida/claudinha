@@ -3334,7 +3334,26 @@ export function registerIpcHandlers(
       return { error: null }
     }
     if (payload.resolution.kind === 'punt-to-claude') {
-      return { error: 'punt-to-claude is not implemented yet' }
+      // Inject a single-line prompt into the agent's PTY asking it to
+      // rebase onto base + resolve. The agent's Claude Code session is
+      // typically idle on Stop when the bulk run hit the conflict, so a
+      // typed prompt drops straight into the input buffer. We append a
+      // CR (`\r`) so the agent submits immediately.
+      //
+      // We *don't* try to read the actual conflict files here — the
+      // agent can `git status` and infer them itself. This keeps the
+      // resolver minimal and lets the agent's Read tool pick up the
+      // newest state.
+      const baseBranch = await detectMainBranch(pane.worktreePath).catch(() => null)
+      const baseHint = baseBranch ?? 'the base branch'
+      const prompt =
+        `Your worktree branch has a merge conflict against \`${baseHint}\` ` +
+        `from the latest publish attempt. Please \`git fetch origin\`, ` +
+        `rebase this branch onto \`origin/${baseHint}\`, resolve any ` +
+        `conflicts, and \`git push --force-with-lease\` when clean. ` +
+        `When done, I'll re-run the merge from the changes modal.`
+      ptyPool.write(pane.ptyId, prompt + '\r')
+      return { error: null }
     }
     if (payload.resolution.kind === 'discard') {
       // Drop every publishable turn on the pane, tip-down. Same shape as

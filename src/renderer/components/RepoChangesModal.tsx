@@ -55,6 +55,10 @@ export function RepoChangesModal({ workspaceId, repoPath, onClose }: RepoChanges
   const [selectedPaneIds, setSelectedPaneIds] = useState<Set<string>>(new Set())
   const [running, setRunning] = useState<{ runId: string; total: number; completed: number } | null>(null)
   const [conflictResults, setConflictResults] = useState<BulkActionResult[] | null>(null)
+  // After a bulk run, any per-pane results that produced a URL (PRs)
+  // get parked here so the user can click through. Cleared when they
+  // dismiss the toast or trigger another run.
+  const [resultUrls, setResultUrls] = useState<BulkActionResult[]>([])
 
   // Mount + native close.
   useEffect(() => {
@@ -113,6 +117,10 @@ export function RepoChangesModal({ workspaceId, repoPath, onClose }: RepoChanges
       const failures = p.results.filter((r) => !r.ok)
       if (failures.length > 0) {
         setConflictResults(p.results)
+      }
+      const withUrls = p.results.filter((r) => r.ok && r.resultUrl)
+      if (withUrls.length > 0) {
+        setResultUrls(withUrls)
       }
       return null
     })
@@ -243,6 +251,51 @@ export function RepoChangesModal({ workspaceId, repoPath, onClose }: RepoChanges
           select all
         </button>
       </div>
+
+      {/* Result-URL strip — shows PR / merge URLs after a successful
+          bulk run. One row per result; the agent's display name is the
+          link text and `data-url` carries the actual URL the click
+          opens externally via window.api.openExternal (no in-app
+          navigation). Dismissable. */}
+      {resultUrls.length > 0 && (
+        <div className="flex-shrink-0 px-5 py-2 border-b border-[var(--color-border-subtle)] bg-info-fg/5">
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+              <p className="text-[11px] text-info-fg font-[600]">
+                {resultUrls.length === 1 ? 'PR opened' : `${resultUrls.length} PRs opened`}
+              </p>
+              {resultUrls.map((r) => {
+                const pane = data?.panes.find((p) => p.paneId === r.paneId)
+                const label = pane?.paneName ?? r.paneId
+                return (
+                  <a
+                    key={r.paneId}
+                    href={r.resultUrl}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (r.resultUrl) {
+                        void ipcInvoke(IPC.OPEN_EXTERNAL, { url: r.resultUrl })
+                      }
+                    }}
+                    className="text-[11px] text-info-fg hover:underline truncate"
+                    title={r.resultUrl}
+                  >
+                    {label}: {r.resultUrl}
+                  </a>
+                )
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setResultUrls([])}
+              aria-label="Dismiss PR list"
+              className="text-fg-muted hover:text-fg-primary text-sm leading-none px-1"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto min-h-0">

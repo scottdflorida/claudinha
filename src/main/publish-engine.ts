@@ -333,6 +333,14 @@ export async function squashAndPublish(args: {
       pendingAction: null
     })
 
+    void import('./analytics/turn-instrumentation').then((m) =>
+      m.trackTurnPublished({
+        path: publishPath,
+        turnCount: turnIds.length,
+        ok: true,
+        source: allowNoFastForward ? 'bulk' : 'per-terminal'
+      })
+    )
     return { ok: true, publishCommitSha, prUrl }
   } finally {
     setPendingAction(sessionRegistry, paneId, null)
@@ -605,6 +613,9 @@ export async function splitTurn(args: {
       pendingAction: null
     })
 
+    void import('./analytics/turn-instrumentation').then((m) =>
+      m.trackTurnSplit({ ok: true, filesChanged: target.filesChanged })
+    )
     return {
       ok: true,
       leftCommitSha: result.leftSha,

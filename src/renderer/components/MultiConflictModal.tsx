@@ -171,9 +171,9 @@ export function MultiConflictModal({ panes, results, onClose }: MultiConflictMod
                         Discard
                       </RowResolutionButton>
                       <RowResolutionButton
-                        onClick={() => void 0}
-                        disabled
-                        title="Coming in M6: hands the conflict back to the agent's terminal with a 'rebase onto main and resolve' prompt. For now, use Resolve manually (open the worktree in your editor) or Discard."
+                        onClick={() => void dispatchOne(result.paneId, 'punt-to-claude')}
+                        disabled={isWorking || working !== null}
+                        title="Hand the conflict back to the agent: a 'fetch + rebase + push' prompt is typed into its terminal. Re-run the merge from this modal once the agent reports done."
                       >
                         Punt to Claude
                       </RowResolutionButton>

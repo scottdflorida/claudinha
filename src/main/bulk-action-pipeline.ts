@@ -126,6 +126,15 @@ export async function runBulkAction(args: {
       broadcastToAllWindows(windowManager, IPC.BULK_COMPLETED, {
         runId, results
       } satisfies BulkCompletedPayload)
+      void import('./analytics/turn-instrumentation').then((m) =>
+        m.trackBulkRunCompleted({
+          action,
+          paneCount: paneIds.length,
+          successCount: results.filter((r) => r.ok).length,
+          failureCount: results.filter((r) => !r.ok).length,
+          cancelled: run.cancelled
+        })
+      )
     }
   })()
 

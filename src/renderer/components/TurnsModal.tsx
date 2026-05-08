@@ -114,7 +114,25 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
   const handleClose = (): void => dialogRef.current?.close()
 
   // Display order: newest first. Projection is oldest first.
-  const displayTurns = useMemo(() => [...turns].reverse(), [turns])
+  // Keyboard nav: J/K move focus through the visible turn rows; X
+  // toggles selection on the focused row. The focus index lives in
+  // local state and is reset whenever the row count changes (a
+  // discard / split / refresh that changes the list shouldn't strand
+  // the focus on a no-longer-existent row).
+  const [focusedRowIndex, setFocusedRowIndex] = useState<number>(-1)
+  // Performance cap: a hot terminal can accumulate hundreds of wip
+  // commits over a long session. Render only the most recent N rows
+  // by default — the older ones get rolled into a single
+  // "Already published / older turns" footer line so the row count
+  // the renderer paints stays bounded. Click to expand.
+  const TURN_DISPLAY_CAP = 100
+  const [showAllTurns, setShowAllTurns] = useState(false)
+  const displayTurns = useMemo(() => {
+    const reversed = [...turns].reverse()
+    if (showAllTurns || reversed.length <= TURN_DISPLAY_CAP) return reversed
+    return reversed.slice(0, TURN_DISPLAY_CAP)
+  }, [turns, showAllTurns])
+  const hiddenTurnCount = Math.max(0, turns.length - displayTurns.length)
 
   // Default the commit message to the most recent selected turn's summary
   // when nothing's been typed. This keeps the field useful for the typical
@@ -272,6 +290,37 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
     setDiscardPending(null)
   }
 
+  // Wire J/K/X global listeners while the dialog is open. Skip the
+  // handlers when a text input has focus so typing in the publish
+  // commit-message box doesn't hijack the keys.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      const total = displayTurns.length
+      if (total === 0) return
+      if (e.key === 'j' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        setFocusedRowIndex((i) => Math.min(i + 1, total - 1) === -1 ? 0 : Math.min(Math.max(i, -1) + 1, total - 1))
+      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setFocusedRowIndex((i) => Math.max(i - 1, 0))
+      } else if (e.key === 'x' || e.key === ' ') {
+        if (focusedRowIndex < 0 || focusedRowIndex >= total) return
+        e.preventDefault()
+        const turn = displayTurns[focusedRowIndex]
+        if (turn) toggleSelect(turn.id)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [displayTurns, focusedRowIndex])
+
+  // Reset focus when the visible row count changes.
+  useEffect(() => {
+    setFocusedRowIndex((i) => (i >= displayTurns.length ? -1 : i))
+  }, [displayTurns.length])
+
   const handleToggleAutoCommit = async (): Promise<void> => {
     const payload: TurnAutoCommitTogglePayload = { paneId, enabled: !autoCommitEnabled }
     await ipcInvoke(IPC.TURN_AUTO_COMMIT_TOGGLE, payload)
@@ -340,17 +389,29 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
           <EmptyTurnsState diagnostic={diagnostic} fallback={t.turnsModal.emptyState} />
         ) : (
           <ul className="divide-y divide-[var(--color-border-subtle)]">
-            {displayTurns.map((turn) => (
+            {displayTurns.map((turn, idx) => (
               <TurnRow
                 key={turn.id}
                 turn={turn}
                 selected={selectedIds.has(turn.id)}
+                focused={idx === focusedRowIndex}
                 onToggle={() => toggleSelect(turn.id)}
                 onDiscard={() => handleStartDiscard(turn)}
                 onSplit={() => setSplitTurnTarget(turn)}
                 disabled={isWorking}
               />
             ))}
+            {hiddenTurnCount > 0 && (
+              <li className="px-5 py-3 text-[11px] text-fg-muted text-center">
+                <button
+                  type="button"
+                  onClick={() => setShowAllTurns(true)}
+                  className="hover:text-fg-primary"
+                >
+                  Show {hiddenTurnCount} older turn{hiddenTurnCount === 1 ? '' : 's'}
+                </button>
+              </li>
+            )}
           </ul>
         )}
       </div>
@@ -508,13 +569,14 @@ function EmptyTurnsState({ diagnostic, fallback }: EmptyTurnsStateProps): React.
 interface TurnRowProps {
   turn: Turn
   selected: boolean
+  focused?: boolean
   onToggle: () => void
   onDiscard: () => void
   onSplit: () => void
   disabled: boolean
 }
 
-function TurnRow({ turn, selected, onToggle, onDiscard, onSplit, disabled }: TurnRowProps): React.JSX.Element {
+function TurnRow({ turn, selected, focused, onToggle, onDiscard, onSplit, disabled }: TurnRowProps): React.JSX.Element {
   const t = useStrings()
   // Discard is only valid for `open` and `pushed` turns. Everything else
   // (merged/shipped/pr-open) is shared work; superseded/discarded are gone.
@@ -529,6 +591,7 @@ function TurnRow({ turn, selected, onToggle, onDiscard, onSplit, disabled }: Tur
     <li
       className={`
         group/row px-5 py-2 flex items-start gap-3
+        ${focused ? 'ring-1 ring-inset ring-accent' : ''}
         ${selected ? 'bg-overlay' : ''}
         ${disabled ? 'opacity-60' : 'hover:bg-overlay'}
       `}

@@ -202,6 +202,9 @@ export async function discardTurn(args: {
       pendingAction: null
     })
 
+    void import('./analytics/turn-instrumentation').then((m) =>
+      m.trackTurnDiscarded({ ok: true, cascade: cascadeConfirmed })
+    )
     return { ok: true }
   } finally {
     // Restore any pre-discard dirty state. If the pop conflicts (e.g.,
