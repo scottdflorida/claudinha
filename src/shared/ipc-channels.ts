@@ -208,6 +208,7 @@ export const IPC = {
   TURN_PUBLISH_INDIVIDUAL: 'turn:publish-individual',
   TURN_SPLIT: 'turn:split',
   TURN_DISCARD: 'turn:discard',
+  TURN_GET_DIFF: 'turn:get-diff',
   TURN_AUTO_COMMIT_TOGGLE: 'turn:auto-commit-toggle',
 
   // renderer → main (invoke/reply) — Publish-path config
@@ -1681,6 +1682,45 @@ export interface HunkSelection {
   /** 0-indexed hunk indexes that go to the LEFT (first) commit. The
    *  REST of the file's hunks go to the RIGHT (second) commit. */
   leftHunkIndexes: number[]
+}
+
+/**
+ * One file's worth of diff broken into hunks for the HunkPickerModal.
+ * Each `Hunk.diff` is the raw unified-diff text for that hunk only —
+ * the modal shows it; the engine concatenates `fileHeader` + selected
+ * hunk diffs back into a valid patch for `git apply --cached`.
+ */
+export interface TurnDiffFile {
+  /** Repo-relative path of the file (`b/<path>` minus the `b/` prefix). */
+  path: string
+  /** The four header lines for the file: `diff --git`, `index`, `---`,
+   *  `+++`. Reconstructed when applying a sub-patch. */
+  fileHeader: string
+  hunks: Hunk[]
+}
+
+export interface Hunk {
+  /** 0-indexed position within `TurnDiffFile.hunks`. */
+  index: number
+  /** The `@@ -X,Y +A,B @@` header line. */
+  header: string
+  /** The hunk body — every line after the header up to (not including)
+   *  the next `@@` line or the next `diff --git`. Includes context,
+   *  `-` removed, and `+` added lines. */
+  body: string
+  /** Quick-glance counts for the modal's "+5 -2" caption. */
+  additions: number
+  deletions: number
+}
+
+export interface TurnGetDiffPayload {
+  paneId: string
+  turnId: string
+}
+
+export interface TurnGetDiffResult {
+  error: string | null
+  files: TurnDiffFile[]
 }
 
 export interface TurnSplitPayload {

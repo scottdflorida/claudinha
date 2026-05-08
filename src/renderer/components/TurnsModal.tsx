@@ -34,6 +34,7 @@ import type {
   TurnActionResult
 } from '../../shared/ipc-channels'
 import type { Turn, TurnState } from '../../shared/types'
+import { HunkPickerModal } from './HunkPickerModal'
 
 interface TurnsModalProps {
   paneId: string
@@ -61,6 +62,9 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
     turn: Turn
     cascadeIds: string[]
   } | null>(null)
+  // HunkPickerModal — opened from PublishDropdown's "Split a turn…" entry.
+  // Only valid when exactly one `open` turn is selected.
+  const [splitTurnTarget, setSplitTurnTarget] = useState<Turn | null>(null)
 
   // Reference workspaceId so M4's publish-path resolution can pick it up
   // when those paths land. Silenced for now.
@@ -318,9 +322,29 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
                 label: t.turnsModal.publishSquashAndPush,
                 disabled: !canPublish,
                 onSelect: handlePublishSquashPushBranch
+              },
+              {
+                key: 'split-turn',
+                label: t.turnsModal.publishSplit,
+                // Split is single-turn-only and requires the turn to be
+                // `open` (no rewriting pushed/merged work).
+                disabled:
+                  isWorking ||
+                  selectedIds.size !== 1 ||
+                  (() => {
+                    const id = [...selectedIds][0]!
+                    const t = turns.find((tu) => tu.id === id)
+                    return !t || t.state !== 'open'
+                  })(),
+                onSelect: () => {
+                  const id = [...selectedIds][0]
+                  if (!id) return
+                  const target = turns.find((tu) => tu.id === id)
+                  if (target) setSplitTurnTarget(target)
+                }
               }
             ]}
-            disabled={!canPublish}
+            disabled={isWorking || (selectedIds.size === 0)}
           />
           <button
             type="button"
@@ -349,6 +373,19 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
           onConfirm={handleConfirmDiscard}
           onCancel={handleCancelDiscard}
           working={isWorking}
+        />
+      )}
+
+      {splitTurnTarget && (
+        <HunkPickerModal
+          paneId={paneId}
+          turn={splitTurnTarget}
+          onClose={() => setSplitTurnTarget(null)}
+          onSplit={() => {
+            setSplitTurnTarget(null)
+            setSelectedIds(new Set())
+            refresh()
+          }}
         />
       )}
     </dialog>

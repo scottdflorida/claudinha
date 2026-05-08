@@ -145,14 +145,18 @@ import type { InspectorService } from './inspector'
 import type { PlanApprovalSequencer } from './plan-approval-sequencer'
 import { gitWorktreeRemove, ghCliAvailable, gitPushBaseBranch, getDiff, gitCommitAll, getPaneCommitLog, gitRewordCommit, listBranches, detectMainBranch, getCurrentBranch } from './git-status'
 import { projectTurnsForPane, broadcastTurnsUpdated } from './turn-projection'
-import { squashAndPublish } from './publish-engine'
+import { squashAndPublish, splitTurn } from './publish-engine'
 import { discardTurn } from './discard-engine'
+import { getTurnDiff, resolveTurnSha } from './turn-diff'
 import type { TurnRecorder } from './turn-recorder'
 import type {
   TurnsGetPayload,
   TurnsGetResult,
   TurnPublishSquashPayload,
   TurnDiscardPayload,
+  TurnSplitPayload,
+  TurnGetDiffPayload,
+  TurnGetDiffResult,
   TurnAutoCommitTogglePayload,
   TurnActionResult
 } from '../shared/ipc-channels'
@@ -3178,6 +3182,44 @@ export function registerIpcHandlers(
       error: result.error ?? 'unknown error',
       dependentTurnIds: result.dependentTurnIds
     }
+  })
+
+  // Fetch a turn's per-file hunks for the HunkPickerModal. Renderer side
+  // doesn't run git; this is the only path that surfaces parsed hunks.
+  ipcMain.handle(IPC.TURN_GET_DIFF, async (_event, payload: TurnGetDiffPayload): Promise<TurnGetDiffResult> => {
+    const pane = sessionRegistry.getPane(payload.paneId)
+    if (!pane) return { error: 'pane not found', files: [] }
+    const sha = await resolveTurnSha(pane.worktreePath, payload.turnId)
+    if (!sha) return { error: 'turn not found', files: [] }
+    try {
+      const files = await getTurnDiff(pane.worktreePath, sha)
+      return { error: null, files }
+    } catch (err) {
+      return {
+        error: err instanceof Error ? err.message : String(err),
+        files: []
+      }
+    }
+  })
+
+  // Split a turn into two contiguous publish-commits by hunk selection.
+  // The engine handles the rebase / apply / replay choreography and
+  // sidecar bookkeeping; the renderer just collects user input.
+  ipcMain.handle(IPC.TURN_SPLIT, async (_event, payload: TurnSplitPayload): Promise<TurnActionResult> => {
+    const pane = sessionRegistry.getPane(payload.paneId)
+    if (!pane) return { error: 'pane not found' }
+    const result = await splitTurn({
+      worktreePath: pane.worktreePath,
+      paneId: payload.paneId,
+      windowId: pane.windowId,
+      windowManager,
+      sessionRegistry,
+      turnId: payload.turnId,
+      hunkSelections: payload.hunkSelections,
+      leftMessage: payload.leftMessage,
+      rightMessage: payload.rightMessage
+    })
+    return { error: result.ok ? null : (result.error ?? 'unknown error') }
   })
 
   // Per-session auto-commit toggle. Persists on the in-memory PaneState so

@@ -24,19 +24,23 @@
  *     so the user can pull / merge / force-push by hand.
  */
 
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
+import { randomUUID } from 'crypto'
 import { promisify } from 'util'
 import path from 'path'
 import os from 'os'
 import fs from 'fs/promises'
 import type { BrowserWindow } from 'electron'
 import { detectMainBranch, getCurrentBranch, runGitWithLockRetry } from './git-status'
-import { broadcastTurnsUpdated, projectTurnsForPane } from './turn-projection'
+import { broadcastTurnsUpdated, projectTurnsForPane, readDiscardedSidecar, writeDiscardedSidecar } from './turn-projection'
+import { buildLeftSubPatch, getTurnDiff } from './turn-diff'
+import { extractTurnIdFromCommitMessage } from './turn-recorder'
 import type { SessionRegistry } from './session-registry'
 import type { WindowManager } from './window-manager'
 import { IPC } from '../shared/ipc-channels'
 import type { TurnPendingActionPayload } from '../shared/ipc-channels'
 import type { Turn, TurnPendingAction } from '../shared/types'
+import type { HunkSelection } from '../shared/ipc-channels'
 
 const execFileAsync = promisify(execFile)
 
@@ -328,6 +332,382 @@ async function scriptedRebaseSquash(args: {
       await fs.unlink(scriptPath)
       await fs.rmdir(path.dirname(scriptPath))
     } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Split a single turn into two contiguous publish-commits, splitting by
+ * hunk. Per plan §5 / U4 default (hunks expanded). The choreography:
+ *
+ *   1. `git rebase -i <turn-parent>` with GIT_SEQUENCE_EDITOR set to a
+ *      script that converts the turn's `pick` line to `edit`. Dependents
+ *      stay `pick` so they replay onto the new tip.
+ *
+ *   2. At the `edit` stop git is paused with the worktree branch parked
+ *      at the turn's commit. We:
+ *        a. `git reset HEAD^` — un-stage everything but keep working
+ *           tree intact (mixed reset).
+ *        b. Build the LEFT sub-patch from `hunkSelections` and feed it
+ *           to `git apply --check` (validate) then `git apply --cached`
+ *           (stage). If `--check` fails, the combination is illegal —
+ *           abort the rebase and surface "couldn't apply" inline.
+ *        c. `git commit -m <leftMessage>` with a fresh
+ *           `Claudinha-Turn-Id` trailer.
+ *        d. `git add -A` — stages everything still in the working tree
+ *           (the un-selected hunks).
+ *        e. `git commit -m <rightMessage>` with another fresh trailer.
+ *
+ *   3. `git rebase --continue` — replays the dependent turns. If the
+ *      replay conflicts, abort and report.
+ *
+ *   4. Sidecar: record the original turn-id as `discarded` with
+ *      `supersededBy: [leftId, rightId]` so the projection marks it
+ *      `superseded`.
+ *
+ * Failure handling along the way always tries `git rebase --abort` so
+ * the branch is left unchanged. The pre-rebase HEAD is captured first
+ * and verified at the end as a sanity check.
+ */
+export async function splitTurn(args: {
+  worktreePath: string
+  paneId: string
+  windowId: string
+  windowManager: WindowManager
+  sessionRegistry: SessionRegistry
+  turnId: string
+  hunkSelections: HunkSelection[]
+  leftMessage: string
+  rightMessage: string
+}): Promise<{
+  ok: boolean
+  leftCommitSha?: string
+  rightCommitSha?: string
+  error?: string
+  errorKind?: 'turn-not-found' | 'unsupported-state' | 'empty-side' | 'apply-failed' | 'rebase-failed' | 'replay-failed' | 'unknown'
+}> {
+  const {
+    worktreePath, paneId, windowId, windowManager, sessionRegistry,
+    turnId, hunkSelections, leftMessage, rightMessage
+  } = args
+
+  if (!leftMessage.trim() || !rightMessage.trim()) {
+    return { ok: false, error: 'both commit messages are required', errorKind: 'unknown' }
+  }
+
+  const baseBranch = await detectMainBranch(worktreePath)
+  const currentBranch = await getCurrentBranch(worktreePath)
+  if (!baseBranch || !currentBranch) {
+    return { ok: false, error: 'could not resolve base/current branch', errorKind: 'unknown' }
+  }
+
+  const projection = await projectTurnsForPane(worktreePath, paneId, baseBranch, currentBranch)
+  const target = projection.find((t) => t.id === turnId)
+  if (!target) {
+    return { ok: false, error: 'turn not found in projection', errorKind: 'turn-not-found' }
+  }
+  // Splitting only valid for `open` turns. `pushed` would force-rewrite a
+  // branch already on origin (worktree case) or rewrite `origin/<branch>`
+  // history (main case) — refuse.
+  if (target.state !== 'open') {
+    return {
+      ok: false,
+      error: `splitting a turn in '${target.state}' state is not supported`,
+      errorKind: 'unsupported-state'
+    }
+  }
+  if (!target.parentCommitSha) {
+    return { ok: false, error: 'target turn has no parent commit', errorKind: 'unknown' }
+  }
+
+  // Capture the diff and validate that selections are non-trivial.
+  const diffFiles = await getTurnDiff(worktreePath, target.commitSha)
+  const totalHunks = diffFiles.reduce((acc, f) => acc + f.hunks.length, 0)
+  if (totalHunks === 0) {
+    return { ok: false, error: 'turn has no hunks to split (binary-only or empty diff)', errorKind: 'unsupported-state' }
+  }
+  const leftHunkCount = hunkSelections.reduce((acc, s) => acc + s.leftHunkIndexes.length, 0)
+  if (leftHunkCount === 0) {
+    return { ok: false, error: 'no hunks selected for the LEFT commit', errorKind: 'empty-side' }
+  }
+  if (leftHunkCount === totalHunks) {
+    return { ok: false, error: 'every hunk is selected for the LEFT — RIGHT would be empty', errorKind: 'empty-side' }
+  }
+
+  // Capture pre-rebase HEAD so we can verify the branch state on failure
+  // paths.
+  const preHead = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: worktreePath })
+    .then((r) => r.stdout.trim())
+
+  // Mark pending so the modal disables surfaces.
+  const pending: TurnPendingAction = { kind: 'splitting', turnId }
+  setPendingAction(sessionRegistry, paneId, pending)
+  broadcastPendingAction(windowManager, windowId, paneId, pending)
+
+  try {
+    const result = await runSplitChoreography({
+      worktreePath,
+      target,
+      diffFiles,
+      hunkSelections,
+      leftMessage,
+      rightMessage
+    })
+    if (!result.ok) {
+      // Best-effort abort + restore.
+      await runGitWithLockRetry(['rebase', '--abort'], { cwd: worktreePath }).catch(() => null)
+      // If we left a partial state, force HEAD back to where we started.
+      const cur = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: worktreePath })
+        .then((r) => r.stdout.trim())
+        .catch(() => '')
+      if (cur && cur !== preHead) {
+        await runGitWithLockRetry(['reset', '--hard', preHead], { cwd: worktreePath }).catch(() => null)
+      }
+      return { ok: false, error: result.error, errorKind: result.errorKind }
+    }
+
+    // Sidecar: mark the original turn as superseded by the two new ones.
+    const sidecar = await readDiscardedSidecar(worktreePath)
+    sidecar.discarded[target.id] = {
+      commitSha: target.commitSha,
+      discardedAt: Date.now(),
+      originalIndex: target.index,
+      supersededBy: [result.leftId, result.rightId]
+    }
+    await writeDiscardedSidecar(worktreePath, sidecar)
+
+    // Refresh projection so the renderer shows the two new rows.
+    const paneExt = sessionRegistry.getPane(paneId) as
+      | { autoCommitEnabled?: boolean }
+      | undefined
+    void broadcastTurnsUpdated(windowManager, windowId, paneId, {
+      worktreePath,
+      baseBranch,
+      currentBranch,
+      autoCommitEnabled: paneExt?.autoCommitEnabled !== false,
+      pendingAction: null
+    })
+
+    return {
+      ok: true,
+      leftCommitSha: result.leftSha,
+      rightCommitSha: result.rightSha
+    }
+  } finally {
+    setPendingAction(sessionRegistry, paneId, null)
+    broadcastPendingAction(windowManager, windowId, paneId, null)
+  }
+}
+
+/**
+ * The actual rebase-in-progress sequence. Returns either:
+ *   - { ok: true, leftSha, rightSha, leftId, rightId }
+ *   - { ok: false, error, errorKind }
+ *
+ * Never throws; caller handles cleanup (abort + reset to preHead).
+ */
+async function runSplitChoreography(args: {
+  worktreePath: string
+  target: Turn
+  diffFiles: import('../shared/ipc-channels').TurnDiffFile[]
+  hunkSelections: HunkSelection[]
+  leftMessage: string
+  rightMessage: string
+}): Promise<
+  | { ok: true; leftSha: string; rightSha: string; leftId: string; rightId: string }
+  | { ok: false; error: string; errorKind: 'apply-failed' | 'rebase-failed' | 'replay-failed' | 'unknown' }
+> {
+  const { worktreePath, target, diffFiles, hunkSelections, leftMessage, rightMessage } = args
+
+  // 1. Build the LEFT sub-patch. Empty selection = empty patch = nothing
+  //    to commit; the `splitTurn` caller catches that earlier with a
+  //    clearer "empty-side" error, but defend here too.
+  //
+  //    We DON'T pre-flight `git apply --check` here: the index is still
+  //    at the target commit (the file's already there), so the check
+  //    would always fail with "already exists in index." The actual
+  //    `git apply --cached` runs after `git reset HEAD^` lands us at the
+  //    parent tree, where the patch is meant to apply. If it fails
+  //    there, we abort and surface the message.
+  const subPatch = buildLeftSubPatch(diffFiles, hunkSelections)
+  if (!subPatch) {
+    return { ok: false, error: 'no hunks to apply (selection empty)', errorKind: 'apply-failed' }
+  }
+
+  // 2. Build the editor script that flips `pick <target>` → `edit <target>`.
+  //
+  //    The TODO file uses git's *abbreviated* commit shas (typically 7-12
+  //    characters depending on `core.abbrev` and uniqueness needs). We
+  //    pass the FULL sha and use awk's `index()` to check whether the
+  //    TODO's abbreviation is a prefix of our target — works regardless
+  //    of how many chars git chose.
+  const editorScript = [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'todo="$1"',
+    `target="${target.commitSha}"`,
+    'awk -v sha="$target" \'',
+    '  $1 == "pick" {',
+    '    if (index(sha, $2) == 1) sub(/^pick /, "edit ")',
+    '    print',
+    '    next',
+    '  }',
+    '  { print }',
+    '\' "$todo" > "$todo.tmp"',
+    'mv "$todo.tmp" "$todo"'
+  ].join('\n') + '\n'
+
+  const scriptPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudinha-split-'))
+    .then((dir) => path.join(dir, 'rebase-editor.sh'))
+  await fs.writeFile(scriptPath, editorScript, { mode: 0o755 })
+  const env = {
+    ...process.env,
+    GIT_SEQUENCE_EDITOR: scriptPath,
+    GIT_EDITOR: 'true'
+  }
+
+  try {
+    // 3. Start the interactive rebase. On an `edit` step, git pauses with
+    //    the worktree branch parked at the target commit and exits 0 —
+    //    leaving the rebase "in progress" until we run `--continue`. So
+    //    the success path is: exit 0 + a rebase-in-progress directory
+    //    (`.git/rebase-merge/`). A non-zero exit (or exit 0 without an
+    //    in-progress rebase) means our editor script failed to match.
+    let rebaseStartErr: string | null = null
+    try {
+      await execFileAsync('git', ['rebase', '-i', target.parentCommitSha], {
+        cwd: worktreePath,
+        env,
+        maxBuffer: 4 * 1024 * 1024
+      })
+    } catch (err) {
+      const e = err as { stderr?: string; message?: string }
+      rebaseStartErr = (e.stderr ?? e.message ?? 'rebase failed').trim().slice(0, 400)
+    }
+    const inProgress = await isRebaseInProgress(worktreePath)
+    if (!inProgress) {
+      return {
+        ok: false,
+        error: rebaseStartErr
+          ?? 'rebase finished without pausing on the target turn (sequence editor failed to match)',
+        errorKind: 'rebase-failed'
+      }
+    }
+
+    // 4. Mixed reset to drop the target's contents from the index while
+    //    keeping the working tree intact.
+    const resetErr = await runGitWithLockRetry(['reset', 'HEAD^'], { cwd: worktreePath })
+    if (resetErr) {
+      return { ok: false, error: `git reset HEAD^: ${resetErr}`, errorKind: 'rebase-failed' }
+    }
+
+    // 5. Apply LEFT hunks to the index.
+    const applyErr = await applyPatchCached(worktreePath, subPatch)
+    if (applyErr) {
+      return { ok: false, error: `git apply --cached: ${applyErr}`, errorKind: 'apply-failed' }
+    }
+    // Commit LEFT.
+    const leftId = randomUUID()
+    const leftMsg = `${leftMessage}\n\nClaudinha-Turn-Id: ${leftId}\n`
+    const leftCommitErr = await runGitWithLockRetry(
+      ['commit', '-m', leftMsg, '--no-verify'],
+      { cwd: worktreePath }
+    )
+    if (leftCommitErr) {
+      return { ok: false, error: `LEFT commit: ${leftCommitErr}`, errorKind: 'rebase-failed' }
+    }
+    const leftSha = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: worktreePath })
+      .then((r) => r.stdout.trim())
+
+    // 6. Stage everything left over and commit RIGHT. `git add -A` here
+    //    catches the un-selected hunks; we already filtered .claude/ out
+    //    earlier in turn-recorder when the original commit was made, so
+    //    the working-tree remainder is user files only.
+    const addRightErr = await runGitWithLockRetry(['add', '-A'], { cwd: worktreePath })
+    if (addRightErr) {
+      return { ok: false, error: `git add -A (right): ${addRightErr}`, errorKind: 'rebase-failed' }
+    }
+    // Verify right has content.
+    const stagedRight = await execFileAsync('git', ['diff', '--cached', '--name-only'], {
+      cwd: worktreePath
+    }).then((r) => r.stdout.trim())
+    if (!stagedRight) {
+      return {
+        ok: false,
+        error: 'after applying LEFT hunks, the RIGHT side had nothing to commit',
+        errorKind: 'apply-failed'
+      }
+    }
+    const rightId = randomUUID()
+    const rightMsg = `${rightMessage}\n\nClaudinha-Turn-Id: ${rightId}\n`
+    const rightCommitErr = await runGitWithLockRetry(
+      ['commit', '-m', rightMsg, '--no-verify'],
+      { cwd: worktreePath }
+    )
+    if (rightCommitErr) {
+      return { ok: false, error: `RIGHT commit: ${rightCommitErr}`, errorKind: 'rebase-failed' }
+    }
+    const rightSha = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: worktreePath })
+      .then((r) => r.stdout.trim())
+
+    // 7. Continue the rebase to replay dependents.
+    try {
+      await execFileAsync('git', ['rebase', '--continue'], {
+        cwd: worktreePath,
+        env,
+        maxBuffer: 4 * 1024 * 1024
+      })
+    } catch (err) {
+      // Replay conflict — abort. The caller will reset to preHead.
+      const e = err as { stderr?: string; message?: string }
+      return {
+        ok: false,
+        error:
+          'replay of dependents conflicted: ' +
+          (e.stderr ?? e.message ?? 'unknown').trim().slice(0, 300),
+        errorKind: 'replay-failed'
+      }
+    }
+
+    return { ok: true, leftSha, rightSha, leftId, rightId }
+  } finally {
+    try {
+      await fs.unlink(scriptPath)
+      await fs.rmdir(path.dirname(scriptPath))
+    } catch { /* ignore */ }
+  }
+}
+
+async function applyPatchCached(worktreePath: string, patch: string): Promise<string | null> {
+  return new Promise<string | null>((resolve) => {
+    const proc = spawn(
+      'git',
+      ['apply', '--cached'],
+      { cwd: worktreePath, stdio: ['pipe', 'pipe', 'pipe'] }
+    )
+    let stderr = ''
+    proc.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+    proc.on('close', (code: number) => {
+      resolve(code === 0 ? null : (stderr.trim() || `git apply --cached exited ${code}`))
+    })
+    proc.on('error', (err: Error) => resolve(err.message))
+    proc.stdin?.end(patch)
+  })
+}
+
+async function isRebaseInProgress(worktreePath: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['rev-parse', '--git-dir'],
+      { cwd: worktreePath }
+    )
+    const gitDir = path.isAbsolute(stdout.trim())
+      ? stdout.trim()
+      : path.join(worktreePath, stdout.trim())
+    return (await fs.stat(path.join(gitDir, 'rebase-merge')).catch(() => null)) !== null
+      || (await fs.stat(path.join(gitDir, 'rebase-apply')).catch(() => null)) !== null
+  } catch {
+    return false
   }
 }
 
