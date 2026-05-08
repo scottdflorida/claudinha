@@ -181,10 +181,30 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
     return true
   }, [selectedIds, turns])
 
+  // The selection must include every earlier unpublished turn. Whatever
+  // path we publish via (push-branch, direct-merge, PR) pushes the
+  // worktree branch, which carries earlier turns as ancestors. Skipping
+  // them publishes work the user didn't select — refuse up front.
+  const selectionStartsAtBase = useMemo(() => {
+    if (selectedIds.size === 0) return false
+    let oldestSelectedIndex = Number.POSITIVE_INFINITY
+    for (const tu of turns) {
+      if (selectedIds.has(tu.id) && tu.index < oldestSelectedIndex) {
+        oldestSelectedIndex = tu.index
+      }
+    }
+    for (const tu of turns) {
+      if (tu.index >= oldestSelectedIndex) continue
+      if (tu.state === 'open' || tu.state === 'pushed') return false
+    }
+    return true
+  }, [selectedIds, turns])
+
   const canPublish =
     !isWorking &&
     selectedIds.size > 0 &&
     selectionContiguous &&
+    selectionStartsAtBase &&
     allSelectedPublishable &&
     commitMessage.trim().length > 0
 
@@ -343,6 +363,11 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
         {selectedIds.size > 0 && !selectionContiguous && (
           <div className="text-[11px] text-warning-fg">
             Selection must be contiguous on the branch.
+          </div>
+        )}
+        {selectedIds.size > 0 && selectionContiguous && !selectionStartsAtBase && (
+          <div className="text-[11px] text-warning-fg">
+            Selection skips earlier unpublished turns. Include them or discard them first — publishing the tail would carry them along as ancestors.
           </div>
         )}
         <div className="flex items-center gap-2">
@@ -529,23 +554,19 @@ function TurnRow({ turn, selected, onToggle, onDiscard, onSplit, disabled }: Tur
           <StateBadge state={turn.state} />
         </div>
       </div>
-      {turn.state === 'open' && (
+      {canSplit && (
         <button
           type="button"
           onClick={onSplit}
-          disabled={disabled || !canSplit}
+          disabled={disabled}
           aria-label={`Split ${t.turnsModal.turnNumberFmt(turn.index)}`}
-          title={
-            canSplit
-              ? t.turnsModal.splitTooltip
-              : t.turnsModal.splitDisabledHint
-          }
+          title={t.turnsModal.splitTooltip}
           className="
             flex-shrink-0 text-[11px] px-2 py-1 rounded border border-[var(--color-border-subtle)]
             text-fg-muted hover:text-fg-primary hover:border-[var(--color-border-strong)]
             opacity-0 group-hover/row:opacity-100 focus:opacity-100
             transition-[opacity,colors] duration-[80ms]
-            disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-fg-muted disabled:hover:border-[var(--color-border-subtle)]
+            disabled:opacity-30 disabled:cursor-not-allowed
           "
         >
           {t.turnsModal.splitAction}

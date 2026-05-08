@@ -199,6 +199,51 @@ describe('squashAndPublish — main mode', () => {
     ).toBe('wip(turn-1): Local turn')
   })
 
+  // Regression: user reported selecting only the latest of three turns
+  // and clicking publish → direct-merge. The engine pushed the worktree
+  // branch (which carried T1 + T2 as ancestors of the squash commit),
+  // and main fast-forwarded to include all three. The gate that
+  // protected `push-branch` against this never fired for `direct-merge`
+  // / `pr` paths even though they all push the worktree branch under
+  // the hood. The fix makes the gate path-agnostic. We exercise it via
+  // the cheaper push-branch path (same gate, no side-clone needed).
+  it('refuses publish when selection skips earlier unpublished turns (any path)', async () => {
+    const t1 = commitTurn(localRoot, 1, 'Add a.txt', () => {
+      fs.writeFileSync(path.join(localRoot, 'a.txt'), 'A\n')
+    })
+    const _t2 = commitTurn(localRoot, 2, 'Add b.txt', () => {
+      fs.writeFileSync(path.join(localRoot, 'b.txt'), 'B\n')
+    })
+    const t3 = commitTurn(localRoot, 3, 'Add c.txt', () => {
+      fs.writeFileSync(path.join(localRoot, 'c.txt'), 'C\n')
+    })
+    void _t2
+    void t1
+
+    const pane = makeStubPane(localRoot)
+    const stubs = makeStubs(pane)
+
+    const result = await squashAndPublish({
+      worktreePath: localRoot,
+      repoPath: localRoot,
+      paneId: pane.id,
+      windowId: pane.windowId,
+      windowManager: stubs.windowManager,
+      sessionRegistry: stubs.sessionRegistry,
+      sideCloneManager: null,
+      turnIds: [t3.turnId],
+      message: 'just T3',
+      path: 'push-branch'
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errorKind).toBe('non-contiguous')
+    expect(result.error).toMatch(/skips earlier unpublished/i)
+    // Local branch is unchanged.
+    const headSubject = execFileSync('git', ['log', '-1', '--format=%s'], { cwd: localRoot }).toString().trim()
+    expect(headSubject).toBe('wip(turn-3): Add c.txt')
+  })
+
   it('succeeds when origin/main is up-to-date', async () => {
     const t1 = commitTurn(localRoot, 1, 'Add a.txt', () => {
       fs.writeFileSync(path.join(localRoot, 'a.txt'), 'A\n')

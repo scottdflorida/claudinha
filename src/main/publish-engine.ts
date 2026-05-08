@@ -124,13 +124,16 @@ export async function squashAndPublish(args: {
     }
   }
 
-  // Push-branch publishes the entire worktree branch, so any earlier
-  // unpublished turns will land on origin too as a side effect of the push.
-  // Reject this case explicitly — the user almost certainly didn't intend
-  // to publish work they didn't select. M4's `direct-merge` and `pr` paths
-  // sidestep this by creating a publish commit in a side-clone and pushing
-  // only that.
-  if (publishPath === 'push-branch') {
+  // All publish paths push the worktree branch (push-branch directly;
+  // direct-merge and pr push it first, then merge / open a PR against
+  // the result). That means any earlier unpublished turns sitting on
+  // the branch land on origin / base too — as ancestors of the squash
+  // commit — even though the user didn't select them.
+  //
+  // Refuse the publish when the selection skips any earlier unpublished
+  // turn. The user can either include them in the selection or discard
+  // them first.
+  {
     const oldestSelectedIndex = selected[0]!.index
     const earlierUnpublished = projection.filter(
       (t) => t.index < oldestSelectedIndex && t.state !== 'pushed' && t.state !== 'merged' && t.state !== 'shipped' && t.state !== 'pr-open' && t.state !== 'discarded' && t.state !== 'superseded'
@@ -143,9 +146,8 @@ export async function squashAndPublish(args: {
         ok: false,
         error:
           `Selection skips earlier unpublished turn${earlierUnpublished.length === 1 ? '' : 's'}: ` +
-          `${labels}. Push-branch publishes the whole branch, so these would land on origin too. ` +
-          `Either include them in the selection, or wait for M4's direct-merge/PR paths which can ` +
-          `publish a single squash without dragging earlier turns.`,
+          `${labels}. Publishing the selection would also carry these to origin / the base branch ` +
+          `as ancestors of the squashed commit. Include them in the selection or discard them first.`,
         errorKind: 'non-contiguous'
       }
     }

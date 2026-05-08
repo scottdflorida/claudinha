@@ -341,12 +341,7 @@ function FileBlock({ file, selected, onToggle, disabled }: FileBlockProps): Reac
                         <span className="text-danger-fg">−{hunk.deletions}</span>
                       </span>
                     </div>
-                    <pre className="
-                      mt-1 text-[10.5px] font-mono leading-tight
-                      whitespace-pre overflow-x-auto
-                      bg-canvas/40 rounded px-2 py-1
-                      text-fg-secondary
-                    ">{renderHunkBody(hunk.body)}</pre>
+                    <CollapsibleHunkBody body={hunk.body} />
                   </div>
                 </div>
               </li>
@@ -424,16 +419,41 @@ function fileSplitSummary(total: number, selected: number): string {
   return `${selected} first · ${total - selected} second`
 }
 
-/**
- * Truncate a long hunk body for display. The full body is still sent to
- * the backend; we only abbreviate what the user sees.
- */
-function renderHunkBody(body: string): string {
-  const MAX_LINES = 40
-  const lines = body.split('\n')
-  if (lines.length <= MAX_LINES) return body
-  return [
-    ...lines.slice(0, MAX_LINES),
-    `… +${lines.length - MAX_LINES} more lines`
-  ].join('\n')
+// ----------------------------------------------------------------------------
+// CollapsibleHunkBody — diff body with a 4-line preview + expand toggle.
+// ----------------------------------------------------------------------------
+//
+// Most turns split cleanly with 1-2 hunks visible; the full body is rarely
+// load-bearing. Default to a 4-line peek with a "Show all (N lines)" toggle.
+// The full body is always sent to the backend — this is purely display.
+
+const COLLAPSED_LINES = 4
+
+function CollapsibleHunkBody({ body }: { body: string }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const lines = useMemo(() => body.split('\n'), [body])
+  const isLong = lines.length > COLLAPSED_LINES
+  const visible = expanded || !isLong ? body : lines.slice(0, COLLAPSED_LINES).join('\n')
+  return (
+    <div className="mt-1">
+      <pre className="
+        text-[10.5px] font-mono leading-tight
+        whitespace-pre overflow-x-auto
+        bg-canvas/40 rounded px-2 py-1
+        text-fg-secondary
+      ">{visible}</pre>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-0.5 text-[10.5px] text-fg-muted hover:text-fg-primary transition-colors duration-[80ms]"
+          aria-expanded={expanded}
+        >
+          {expanded
+            ? `▴ Collapse`
+            : `▾ Show all (${lines.length} lines)`}
+        </button>
+      )}
+    </div>
+  )
 }
