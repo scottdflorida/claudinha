@@ -41,6 +41,41 @@ type WorktreeMode = 'each-own' | 'shared' | 'main'
 type NamingMode = 'auto' | 'manual'
 type RepoMode = 'single' | 'per-pane'
 
+const PUBLISH_PATH_VALUES = ['direct-merge', 'pr', 'both'] as const
+const REPO_MODE_VALUES = ['single', 'per-pane'] as const
+const WORKTREE_MODE_VALUES = ['each-own', 'shared', 'main'] as const
+const NAMING_MODE_VALUES = ['auto', 'manual'] as const
+const EFFORT_VALUES = ['max', 'xhigh', 'high', 'medium', 'low'] as const
+const MODEL_VALUES = ['opus', 'sonnet', 'haiku'] as const
+
+// localStorage keys for "remember last choice" persistence on Advanced fields
+// that don't have their own settings entry. Read in useState initializers and
+// in the post-submit cleanup; written on a successful create.
+const LS_KEY_LAST_PUBLISH_PATH = 'claudinha:lastPublishPath'
+const LS_KEY_LAST_REPO_MODE = 'claudinha:lastRepoMode'
+const LS_KEY_LAST_WORKTREE_MODE = 'claudinha:lastWorktreeMode'
+const LS_KEY_LAST_NAMING_MODE = 'claudinha:lastNamingMode'
+const LS_KEY_LAST_EFFORT = 'claudinha:lastEffort'
+
+// Defensive read: returns the stored value only if it parses to one of the
+// allowed enum members. Falls back to `fallback` for missing keys, junk
+// values, or storage-disabled contexts (private browsing, etc.).
+function readLastChoice<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T
+): T {
+  try {
+    const stored = localStorage.getItem(key)
+    if (stored !== null && (allowed as readonly string[]).includes(stored)) {
+      return stored as T
+    }
+  } catch {
+    // localStorage may throw in private-browsing / storage-disabled contexts.
+  }
+  return fallback
+}
+
 const PATH_PLACEHOLDER = navigator.platform.startsWith('Mac')
   ? '/Users/you/my-project'
   : navigator.platform.startsWith('Win')
@@ -71,6 +106,14 @@ interface CachedLaunchState {
 
 let cachedLaunchState: CachedLaunchState = {}
 
+/** Test-only — wipe the module-level form cache so tests that share this
+ *  module can each mount LaunchForm with a clean slate. The cache exists
+ *  to preserve in-progress form state across navigation away/back; test
+ *  isolation requires an explicit reset between renders. */
+export function __resetCachedLaunchStateForTests(): void {
+  cachedLaunchState = {}
+}
+
 // ---------------------------------------------------------------------------
 // LaunchForm
 // ---------------------------------------------------------------------------
@@ -88,7 +131,10 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
     () => cachedLaunchState.workspaceName ?? `Workspace ${nextWorkspaceNumber ?? 1}`
   )
 
-  const [repoMode, setRepoMode] = useState<RepoMode>(() => cachedLaunchState.repoMode ?? 'single')
+  const [repoMode, setRepoMode] = useState<RepoMode>(
+    () => cachedLaunchState.repoMode
+      ?? readLastChoice(LS_KEY_LAST_REPO_MODE, REPO_MODE_VALUES, 'single')
+  )
   const [repoPath, setRepoPath] = useState(
     () => cachedLaunchState.repoPath ?? localStorage.getItem('claudinha:lastRepoPath') ?? ''
   )
@@ -99,26 +145,39 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
     () => cachedLaunchState.viewMode ?? 'kanban'
   )
   // Per U5 (required field, defaults visible). The user MUST see this
-  // before launching — initial value is a sensible default ('both') so
-  // the form is valid out of the box; the user can override before
-  // clicking Launch. Persists in cachedLaunchState across mounts so a
-  // user who switches mid-form doesn't lose their pick.
+  // before launching — initial value defaults to whatever they picked
+  // last (or 'both' on first launch / junk storage) so the form is
+  // valid out of the box and consistent with the rest of the form.
   const [defaultPublishPath, setDefaultPublishPath] =
     useState<import('../../shared/types').PublishPath>(
-      () => cachedLaunchState.defaultPublishPath ?? 'both'
+      () => cachedLaunchState.defaultPublishPath
+        ?? readLastChoice(LS_KEY_LAST_PUBLISH_PATH, PUBLISH_PATH_VALUES, 'both')
     )
 
   const [worktreeMode, setWorktreeMode] = useState<WorktreeMode>(
-    () => cachedLaunchState.worktreeMode ?? 'each-own'
+    () => cachedLaunchState.worktreeMode
+      ?? readLastChoice(LS_KEY_LAST_WORKTREE_MODE, WORKTREE_MODE_VALUES, 'each-own')
   )
   const [namingMode, setNamingMode] = useState<NamingMode>(
-    () => cachedLaunchState.namingMode ?? 'auto'
+    () => cachedLaunchState.namingMode
+      ?? readLastChoice(LS_KEY_LAST_NAMING_MODE, NAMING_MODE_VALUES, 'auto')
   )
   const [manualNames, setManualNames] = useState<string[]>(
     () => cachedLaunchState.manualNames ?? []
   )
   const [namePlaceholders, setNamePlaceholders] = useState<string[]>([])
-  const [effort, setEffort] = useState<EffortLevel>(() => cachedLaunchState.effort ?? 'high')
+  const [effort, setEffort] = useState<EffortLevel>(() => {
+    if (cachedLaunchState.effort) return cachedLaunchState.effort
+    const lastEffort = readLastChoice(LS_KEY_LAST_EFFORT, EFFORT_VALUES, 'high')
+    // Effort is constrained to <= 'high' for non-Opus models. Clamp on init
+    // when the persisted last-model is something else, mirroring the
+    // existing constraint applied by setModel and the appConfig effect.
+    const lastModel = readLastChoice('claudinha:lastModel', MODEL_VALUES, 'opus')
+    if (lastModel !== 'opus' && (lastEffort === 'max' || lastEffort === 'xhigh')) {
+      return 'high'
+    }
+    return lastEffort
+  })
   const [model, setModelRaw] = useState<Model>(
     () => cachedLaunchState.model
         ?? (localStorage.getItem('claudinha:lastModel') as Model | null)
@@ -418,6 +477,18 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
         localStorage.setItem('claudinha:lastRepoPath', payload.repoPath)
       }
       localStorage.setItem('claudinha:lastModel', model)
+      // Persist the user's choices for fields that have no Settings entry,
+      // so the next new-workspace seeds from these (instead of from
+      // hardcoded factory defaults). Read back below to re-seed the form.
+      try {
+        localStorage.setItem(LS_KEY_LAST_PUBLISH_PATH, defaultPublishPath)
+        localStorage.setItem(LS_KEY_LAST_REPO_MODE, repoMode)
+        localStorage.setItem(LS_KEY_LAST_WORKTREE_MODE, worktreeMode)
+        localStorage.setItem(LS_KEY_LAST_NAMING_MODE, namingMode)
+        localStorage.setItem(LS_KEY_LAST_EFFORT, effort)
+      } catch {
+        // localStorage may throw in private-browsing / storage-disabled contexts.
+      }
 
       // Clear the cache so the next new-workspace starts fresh.
       cachedLaunchState = {}
@@ -437,11 +508,21 @@ export function LaunchForm({ onLaunched, nextWorkspaceNumber }: LaunchFormProps)
       if (nextRepo.trim()) validateSingleRepoPath(nextRepo)
       setTerminalCount(4)
       setAdvanced(false)
-      setRepoMode('single')
-      setWorktreeMode('each-own')
-      setNamingMode('auto')
+      // Re-seed each persisted field from the values we just wrote to
+      // localStorage so the form reflects the user's last choice instead of
+      // factory defaults. Effort clamps to 'high' when the active model
+      // doesn't allow higher tiers (mirrors the existing constraint).
+      setRepoMode(readLastChoice(LS_KEY_LAST_REPO_MODE, REPO_MODE_VALUES, 'single'))
+      setWorktreeMode(readLastChoice(LS_KEY_LAST_WORKTREE_MODE, WORKTREE_MODE_VALUES, 'each-own'))
+      setNamingMode(readLastChoice(LS_KEY_LAST_NAMING_MODE, NAMING_MODE_VALUES, 'auto'))
+      setDefaultPublishPath(readLastChoice(LS_KEY_LAST_PUBLISH_PATH, PUBLISH_PATH_VALUES, 'both'))
       setManualNames([])
-      setEffort('high')
+      const nextEffort = readLastChoice(LS_KEY_LAST_EFFORT, EFFORT_VALUES, 'high')
+      setEffort(
+        model !== 'opus' && (nextEffort === 'max' || nextEffort === 'xhigh')
+          ? 'high'
+          : nextEffort
+      )
       // Workspace name re-seeds next time the form renders (new nextWorkspaceNumber will arrive via MANAGER_STATE_UPDATE)
 
       onLaunched?.()
