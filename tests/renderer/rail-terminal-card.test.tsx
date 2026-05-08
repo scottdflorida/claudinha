@@ -60,6 +60,7 @@ function renderCard(overrides: OverrideProps = {}): {
       isActive={overrides.isActive ?? false}
       onClick={onClick}
       onViewTurns={onViewTurns}
+      animatedDots={1}
     />
   )
   return { onClick, onViewTurns }
@@ -90,6 +91,7 @@ describe('RailTerminalCard', () => {
         isActive={false}
         onClick={() => {}}
         onViewTurns={() => {}}
+        animatedDots={1}
       />
     )
     expect(screen.getByText('orchard')).toBeTruthy()
@@ -165,9 +167,48 @@ describe('RailTerminalCard', () => {
         isActive={false}
         onClick={onClick}
         onViewTurns={() => {}}
+        animatedDots={1}
       />
     )
     expect(screen.getByText('3h12m')).toBeTruthy()
+  })
+
+  it('group by repo + planning: renders 1/2/3 cycling dots after the label', () => {
+    const baseProps = {
+      paneId: 'p1',
+      repoName: 'orchard',
+      agentName: 'add-tagline',
+      terminated: false,
+      completionState: null,
+      activeToolName: null,
+      initialPrompt: null,
+      lastActivityAt: 1_000_000,
+      now: 1_000_000 + 5 * 60_000,
+      groupBy: 'repo' as const,
+      isActive: false,
+      onClick: () => {},
+      onViewTurns: () => {}
+    }
+    const { rerender } = render(
+      <RailTerminalCard {...baseProps} status="planning" animatedDots={1} />
+    )
+    expect(screen.getByText('.')).toBeTruthy()
+    rerender(<RailTerminalCard {...baseProps} status="planning" animatedDots={2} />)
+    expect(screen.getByText('..')).toBeTruthy()
+    rerender(<RailTerminalCard {...baseProps} status="planning" animatedDots={3} />)
+    expect(screen.getByText('...')).toBeTruthy()
+  })
+
+  it('group by repo + awaiting-prompt: no animated dots', () => {
+    renderCard({ status: 'awaiting-prompt', groupBy: 'repo', initialPrompt: 'hi' })
+    expect(screen.queryByText('.')).toBeNull()
+    expect(screen.queryByText('..')).toBeNull()
+    expect(screen.queryByText('...')).toBeNull()
+  })
+
+  it('errored pane: no animated dots even on a working underlying status', () => {
+    renderCard({ status: 'working', completionState: 'error', activeToolName: 'Edit' })
+    expect(screen.queryByText('.')).toBeNull()
   })
 
   it('clicking the card calls onClick (selects the pane)', () => {

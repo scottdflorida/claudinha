@@ -34,6 +34,12 @@ interface RailTerminalCardProps {
   onClick: () => void
   /** Opens the per-pane TurnsModal. Wired only on changes-ready cards. */
   onViewTurns: () => void
+  /**
+   * Cycling dot count (1, 2, or 3) for the trailing animated ellipsis on
+   * Planning / Working status labels. Hoisted to the rail so every card ticks
+   * in lockstep with one interval.
+   */
+  animatedDots: 1 | 2 | 3
 }
 
 /**
@@ -68,7 +74,8 @@ export function RailTerminalCard({
   groupBy,
   isActive,
   onClick,
-  onViewTurns
+  onViewTurns,
+  animatedDots
 }: RailTerminalCardProps): React.JSX.Element {
   const t = useStrings()
   const errored = terminated || completionState === 'error'
@@ -84,6 +91,8 @@ export function RailTerminalCard({
     [onViewTurns]
   )
 
+  const animateLabel = !errored && (status === 'planning' || status === 'working')
+
   const topRow =
     groupBy === 'repo' ? (
       <div className="flex items-center gap-2 min-w-0">
@@ -96,6 +105,16 @@ export function RailTerminalCard({
           title={statusLabel}
         >
           {statusLabel}
+          {animateLabel && (
+            // Reserve a fixed width for up to 3 dots so the label doesn't
+            // shift left/right as the ellipsis cycles.
+            <span
+              aria-hidden="true"
+              style={{ display: 'inline-block', width: '0.9em', textAlign: 'left' }}
+            >
+              {'.'.repeat(animatedDots)}
+            </span>
+          )}
         </span>
       </div>
     ) : (

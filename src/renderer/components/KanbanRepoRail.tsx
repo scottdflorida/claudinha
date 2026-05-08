@@ -78,6 +78,17 @@ export function KanbanRepoRail({
     return () => clearInterval(timer)
   }, [])
 
+  // Animated "Working." → "Working.." → "Working..." cycle for Planning /
+  // Working status labels in repo-grouped mode. Hoisted here so every card
+  // ticks in lockstep against one interval.
+  const [animatedDots, setAnimatedDots] = useState<1 | 2 | 3>(1)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setAnimatedDots((d) => ((d % 3) + 1) as 1 | 2 | 3)
+    }, 500)
+    return () => clearInterval(timer)
+  }, [])
+
   // Lookup map for live RendererPane data (activeToolName, initialPrompt).
   // The inspector summary's ReadyPaneEntry doesn't carry these fields.
   const liveByPaneId = useMemo(() => {
@@ -183,6 +194,7 @@ export function KanbanRepoRail({
         isActive={activePaneId === entry.paneId}
         onClick={() => onSelectSession(entry.paneId)}
         onViewTurns={() => setTurnsModalPane({ paneId: entry.paneId, paneName: agentName })}
+        animatedDots={animatedDots}
       />
     )
   }
