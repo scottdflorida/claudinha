@@ -173,7 +173,7 @@ export function MultiConflictModal({ panes, results, onClose }: MultiConflictMod
                       <RowResolutionButton
                         onClick={() => void 0}
                         disabled
-                        title="Punt-to-Claude lands in M6 polish."
+                        title="Coming in M6: hands the conflict back to the agent's terminal with a 'rebase onto main and resolve' prompt. For now, use Resolve manually (open the worktree in your editor) or Discard."
                       >
                         Punt to Claude
                       </RowResolutionButton>

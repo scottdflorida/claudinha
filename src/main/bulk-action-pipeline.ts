@@ -226,19 +226,46 @@ async function runOnePane(args: {
     sideCloneManager,
     turnIds,
     message,
-    path
+    path,
+    // Bulk runs typically merge N panes in sequence. The first one
+    // FFs onto origin/base; the next one's branch was forked off the
+    // OLD base, so it won't FF. Permit a merge commit there — it's
+    // the correct outcome for a bulk merge of independent agents and
+    // matches what a human would do merging two PRs in a row.
+    allowNoFastForward: action === 'merge'
   })
 
   if (result.ok) {
     return { paneId, ok: true, resultUrl: result.prUrl }
   }
+  // Substitute the cryptic `wt-XXXX` branch name with the pane's
+  // display name so the multi-conflict modal reads in product
+  // terminology. The branch name still appears in logs / git output
+  // for users who need it.
+  const paneLabel = describePane(pane)
+  const friendlyMessage = (result.error ?? 'unknown error')
+    .replace(/'wt-[0-9a-f]+'/g, `'${paneLabel}'`)
   return {
     paneId,
     ok: false,
-    errorKind: result.errorKind === 'rebase-failed' ? 'conflict' :
-                result.errorKind === 'push-rejected' ? 'push-rejected' :
-                'unknown',
-    errorMessage: result.error ?? 'unknown error'
+    errorKind: classifyErrorKind(result.errorKind),
+    errorMessage: friendlyMessage
+  }
+}
+
+function describePane(pane: { metrics: { agentName: string | null; sessionTitle: string | null }; worktreeName: string; userName?: string | null }): string {
+  return (pane.userName?.trim() ||
+          pane.metrics.agentName ||
+          pane.metrics.sessionTitle ||
+          pane.worktreeName)
+}
+
+function classifyErrorKind(engineKind: string | undefined): BulkActionResult['errorKind'] {
+  switch (engineKind) {
+    case 'rebase-failed': return 'conflict'
+    case 'push-rejected': return 'push-rejected'
+    case 'apply-failed':  return 'conflict'
+    default:              return 'unknown'
   }
 }
 

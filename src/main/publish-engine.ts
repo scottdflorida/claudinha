@@ -87,10 +87,19 @@ export async function squashAndPublish(args: {
   turnIds: string[]
   message: string
   path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr'
+  /** When true, the side-clone direct-merge falls back to `--no-ff`
+   *  if the worktree branch doesn't fast-forward onto base. The
+   *  bulk pipeline opts in: when N panes merge in sequence, each
+   *  one moves origin/<base> forward, so subsequent panes' branches
+   *  (which were created off the OLD base) won't FF. A merge commit
+   *  is the right outcome there. The per-terminal modal stays
+   *  FF-only so a single agent's publish keeps history linear. */
+  allowNoFastForward?: boolean
 }): Promise<PublishResult> {
   const {
     worktreePath, repoPath, paneId, windowId, windowManager, sessionRegistry,
-    sideCloneManager, turnIds, message, path: publishPath
+    sideCloneManager, turnIds, message, path: publishPath,
+    allowNoFastForward = false
   } = args
 
   if (turnIds.length === 0) {
@@ -259,13 +268,21 @@ export async function squashAndPublish(args: {
         repoPath,
         worktreeBranch: currentBranch,
         baseBranch,
-        allowNoFastForward: false
+        allowNoFastForward
       })
       if (!mergeResult.ok) {
+        // Preserve more error categories so the multi-conflict modal
+        // shows useful labels (CONFLICT vs UNKNOWN) and the bulk
+        // pipeline can route by errorKind.
+        const kind: PublishResult['errorKind'] =
+          mergeResult.errorKind === 'push-rejected' ? 'push-rejected' :
+          mergeResult.errorKind === 'conflict' ? 'rebase-failed' :
+          mergeResult.errorKind === 'merge-failed' ? 'rebase-failed' :
+          'unknown'
         return {
           ok: false,
           error: mergeResult.error,
-          errorKind: mergeResult.errorKind === 'push-rejected' ? 'push-rejected' : 'unknown',
+          errorKind: kind,
           publishCommitSha
         }
       }
