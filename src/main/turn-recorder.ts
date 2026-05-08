@@ -42,6 +42,7 @@ const execFileAsync = promisify(execFile)
 /** Trailer key written into every wip-commit message; the projection reads
  *  this back to associate stable UUIDs with otherwise-identical commits. */
 export const TURN_ID_TRAILER = 'Claudinha-Turn-Id'
+export const PANE_ID_TRAILER = 'Claudinha-Pane-Id'
 
 /** Max time we'll wait for the Haiku summary call before giving up and
  *  leaving the placeholder message in place. Tuned to balance UX (the
@@ -171,7 +172,7 @@ export class TurnRecorder {
 
     const turnId = randomUUID()
     const placeholderSummary = `${status.changedFileCount} file${status.changedFileCount === 1 ? '' : 's'} changed`
-    const placeholderMsg = formatTurnCommitMessage(nextIndex, placeholderSummary, turnId)
+    const placeholderMsg = formatTurnCommitMessage(nextIndex, placeholderSummary, turnId, paneId)
 
     // 1. Stage everything, then defensively unstage Claudinha's own
     //    infrastructure paths.
@@ -309,42 +310,41 @@ export class TurnRecorder {
     }
     if (!summary || summary.length === 0) return
 
-    // Verify HEAD still points at our wip-commit before amending.
-    const head = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: worktreePath })
-      .then((r) => r.stdout.trim())
-      .catch(() => '')
-    if (head !== expectedCommitSha) return // moved on; don't rewrite
+    const amendMsg = formatTurnCommitMessage(turnIndex, summary, turnId, paneId)
+    const ok = await rewordCommitBySha(worktreePath, expectedCommitSha, amendMsg)
+    if (!ok) return
 
-    const amendMsg = formatTurnCommitMessage(turnIndex, summary, turnId)
-    const amendErr = await runGitWithLockRetry(
-      ['commit', '--amend', '-m', amendMsg, '--no-verify'],
-      { cwd: worktreePath }
-    )
-    if (amendErr) {
-      console.warn('[turn-recorder] amend failed:', amendErr)
-      return
+    // Sha churn from the rebase invalidates per-pane sha caches in any open
+    // TurnsModal sharing this branch. Broadcast TURNS_UPDATED to every pane
+    // whose worktree resolves to this same path (in main mode that's all
+    // panes on this repo+branch; in worktree mode it's just this pane).
+    const affectedPaneIds = new Set<string>([paneId])
+    for (const p of this.sessionRegistry.getAllPanes().values()) {
+      if (p.worktreePath === worktreePath) affectedPaneIds.add(p.id)
     }
-
-    // Push a fresh projection so the renderer sees the upgraded summary.
-    void broadcastTurnsUpdated(this.windowManager, windowId, paneId, {
-      worktreePath,
-      baseBranch,
-      currentBranch,
-      autoCommitEnabled: true, // amending only fires on the success path; toggle re-evaluated by next handleStop
-      pendingAction: null
-    })
+    for (const id of affectedPaneIds) {
+      void broadcastTurnsUpdated(this.windowManager, windowId, id, {
+        worktreePath,
+        baseBranch,
+        currentBranch,
+        autoCommitEnabled: true,
+        pendingAction: null
+      })
+    }
   }
 
   /**
    * Run a one-shot Haiku call with the staged diff as context. Returns a
    * trimmed one-liner (capped at 80 chars) suitable for a commit subject.
    */
-  private async haikuSummarize(worktreePath: string, _commitSha: string): Promise<string> {
-    // Diff the new commit against its parent. We use HEAD~1..HEAD so this
-    // works regardless of where the wip-commit sits on the branch.
+  private async haikuSummarize(worktreePath: string, commitSha: string): Promise<string> {
+    // Diff the placeholder commit against its parent BY SHA. Using HEAD~1..HEAD
+    // would race when another pane on the same branch (main mode) commits
+    // between our placeholder and this haiku call — we'd summarize their
+    // changes instead of ours.
     const { stdout: rawDiff } = await execFileAsync(
       'git',
-      ['diff', 'HEAD~1', 'HEAD'],
+      ['diff', `${commitSha}^`, commitSha],
       { cwd: worktreePath, maxBuffer: 4 * 1024 * 1024 }
     ).catch(() => ({ stdout: '' as string }))
 
@@ -383,14 +383,26 @@ export class TurnRecorder {
 }
 
 /**
- * Format a wip-commit message with the conventional subject + UUID trailer
+ * Format a wip-commit message with the conventional subject + UUID trailers
  * the projection reads back. Subject form: `wip(turn-N): <summary>`.
  *
- * Trailer format follows git's standard "Token: value\n" convention so
- * `git interpret-trailers` can parse it later if we ever need to.
+ * Two trailers are emitted, both in git's standard "Token: value\n" format:
+ *   - Claudinha-Turn-Id  — stable per-turn UUID; survives amend / rebase.
+ *   - Claudinha-Pane-Id  — owning pane's UUID; lets the projection filter
+ *                          out commits from other panes when multiple panes
+ *                          share a branch (main mode).
  */
-export function formatTurnCommitMessage(turnIndex: number, summary: string, turnId: string): string {
-  return `wip(turn-${turnIndex}): ${summary}\n\n${TURN_ID_TRAILER}: ${turnId}\n`
+export function formatTurnCommitMessage(
+  turnIndex: number,
+  summary: string,
+  turnId: string,
+  paneId: string
+): string {
+  return (
+    `wip(turn-${turnIndex}): ${summary}\n\n` +
+    `${TURN_ID_TRAILER}: ${turnId}\n` +
+    `${PANE_ID_TRAILER}: ${paneId}\n`
+  )
 }
 
 /**
@@ -404,6 +416,95 @@ export function extractTurnIdFromCommitMessage(message: string): string | null {
     if (m) return m[1]!
   }
   return null
+}
+
+/**
+ * Extract the Claudinha-Pane-Id trailer from a commit message body. Returns
+ * null when missing or malformed (legacy commits pre-dating the trailer).
+ * Used by `turn-projection` to filter main-mode commits to their owning pane.
+ */
+export function extractPaneIdFromCommitMessage(message: string): string | null {
+  const lines = message.split('\n')
+  for (const line of lines) {
+    const m = line.match(new RegExp(`^${PANE_ID_TRAILER}:\\s*(\\S+)\\s*$`))
+    if (m) return m[1]!
+  }
+  return null
+}
+
+/**
+ * Reword a commit identified by sha, even when HEAD has moved past it.
+ *
+ * `git commit --amend` only works on HEAD. In main-mode workspaces, panes
+ * share a branch and a haiku-rename can lose the race when another pane
+ * commits in between the placeholder commit and the amend — the commit we
+ * want to reword is no longer at HEAD.
+ *
+ * Mechanism:
+ *   parent = git rev-parse <sha>^
+ *   tree   = git rev-parse <sha>^{tree}
+ *   newSha = git commit-tree <tree> -p <parent> -m <new-message>
+ *   git rebase --onto <newSha> <sha>     # re-applies (sha, HEAD] onto newSha
+ *
+ * Subsequent commits on the branch get new shas (their parent changed), but
+ * tree content is byte-identical so the rebase has nothing to merge.
+ * Trailers carry forward, so projections remain consistent because they key
+ * on `Claudinha-Turn-Id`, not on sha.
+ *
+ * Returns true on success, false on any failure (logged, no throw). Caller
+ * should treat false as "leave the placeholder summary; nothing to do".
+ *
+ * Exported for tests.
+ */
+export async function rewordCommitBySha(
+  worktreePath: string,
+  sha: string,
+  newMessage: string
+): Promise<boolean> {
+  const exists = await execFileAsync('git', ['cat-file', '-e', `${sha}^{commit}`], {
+    cwd: worktreePath
+  }).then(() => true).catch(() => false)
+  if (!exists) return false
+
+  let parent: string
+  let tree: string
+  try {
+    const [pRes, tRes] = await Promise.all([
+      execFileAsync('git', ['rev-parse', `${sha}^`], { cwd: worktreePath }),
+      execFileAsync('git', ['rev-parse', `${sha}^{tree}`], { cwd: worktreePath })
+    ])
+    parent = pRes.stdout.trim()
+    tree = tRes.stdout.trim()
+  } catch (err) {
+    console.warn('[turn-recorder] reword pre-flight failed:', err instanceof Error ? err.message : err)
+    return false
+  }
+
+  let newSha: string
+  try {
+    // -m accepts arbitrary text including newlines, so trailer-bearing
+    // messages round-trip intact.
+    const { stdout } = await execFileAsync(
+      'git',
+      ['commit-tree', tree, '-p', parent, '-m', newMessage],
+      { cwd: worktreePath }
+    )
+    newSha = stdout.trim()
+  } catch (err) {
+    console.warn('[turn-recorder] commit-tree failed:', err instanceof Error ? err.message : err)
+    return false
+  }
+
+  const rebaseErr = await runGitWithLockRetry(
+    ['rebase', '--onto', newSha, sha],
+    { cwd: worktreePath }
+  )
+  if (rebaseErr) {
+    await runGitWithLockRetry(['rebase', '--abort'], { cwd: worktreePath }).catch(() => null)
+    console.warn('[turn-recorder] reword rebase failed:', rebaseErr)
+    return false
+  }
+  return true
 }
 
 /**

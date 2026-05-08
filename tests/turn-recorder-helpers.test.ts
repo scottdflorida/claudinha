@@ -12,32 +12,41 @@ import { describe, it, expect } from 'vitest'
 import {
   formatTurnCommitMessage,
   extractTurnIdFromCommitMessage,
+  extractPaneIdFromCommitMessage,
   extractTurnIndexFromSubject,
-  TURN_ID_TRAILER
+  TURN_ID_TRAILER,
+  PANE_ID_TRAILER
 } from '../src/main/turn-recorder'
 
 describe('formatTurnCommitMessage', () => {
   it('uses the canonical wip(turn-N): subject form', () => {
-    const msg = formatTurnCommitMessage(7, 'Add user authentication', 'abc-123')
+    const msg = formatTurnCommitMessage(7, 'Add user authentication', 'abc-123', 'pane-9')
     expect(msg.startsWith('wip(turn-7): Add user authentication')).toBe(true)
   })
 
   it('embeds the turn UUID in a Claudinha-Turn-Id trailer', () => {
-    const msg = formatTurnCommitMessage(1, 'Initial commit', '550e8400-e29b-41d4-a716-446655440000')
+    const msg = formatTurnCommitMessage(1, 'Initial commit', '550e8400-e29b-41d4-a716-446655440000', 'pane-id')
     expect(msg).toContain(`${TURN_ID_TRAILER}: 550e8400-e29b-41d4-a716-446655440000`)
   })
 
+  it('embeds the owning pane UUID in a Claudinha-Pane-Id trailer', () => {
+    const msg = formatTurnCommitMessage(1, 'X', 'turn-id', 'pane-uuid-abc')
+    expect(msg).toContain(`${PANE_ID_TRAILER}: pane-uuid-abc`)
+  })
+
   it('separates subject from body with a blank line (git-trailer convention)', () => {
-    const msg = formatTurnCommitMessage(1, 'X', 'id')
+    const msg = formatTurnCommitMessage(1, 'X', 'id', 'pane')
     const lines = msg.split('\n')
     expect(lines[0]).toBe('wip(turn-1): X')
     expect(lines[1]).toBe('')
     expect(lines[2]).toMatch(/^Claudinha-Turn-Id: id$/)
+    expect(lines[3]).toMatch(/^Claudinha-Pane-Id: pane$/)
   })
 
-  it('round-trips through extractTurnIdFromCommitMessage', () => {
-    const msg = formatTurnCommitMessage(3, 'Refactor parser', 'turn-uuid-xyz')
+  it('round-trips through extractTurnIdFromCommitMessage and extractPaneIdFromCommitMessage', () => {
+    const msg = formatTurnCommitMessage(3, 'Refactor parser', 'turn-uuid-xyz', 'pane-uuid-123')
     expect(extractTurnIdFromCommitMessage(msg)).toBe('turn-uuid-xyz')
+    expect(extractPaneIdFromCommitMessage(msg)).toBe('pane-uuid-123')
   })
 })
 
@@ -85,6 +94,24 @@ describe('extractTurnIdFromCommitMessage', () => {
     // trailer. Confirm behavior: this DOES match (we accept embedded
     // trailers; the writer always puts ours at the end).
     expect(extractTurnIdFromCommitMessage(msg)).toBe(null)
+  })
+})
+
+describe('extractPaneIdFromCommitMessage', () => {
+  it('returns null when the trailer is missing (legacy commit)', () => {
+    const legacy = 'wip(turn-1): x\n\nClaudinha-Turn-Id: only-turn-id\n'
+    expect(extractPaneIdFromCommitMessage(legacy)).toBe(null)
+  })
+
+  it('finds the trailer regardless of order vs Turn-Id', () => {
+    const msg = [
+      'subject',
+      '',
+      `${PANE_ID_TRAILER}: pane-first`,
+      `${TURN_ID_TRAILER}: turn-second`,
+      ''
+    ].join('\n')
+    expect(extractPaneIdFromCommitMessage(msg)).toBe('pane-first')
   })
 })
 

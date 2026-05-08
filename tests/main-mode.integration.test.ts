@@ -106,7 +106,7 @@ function commitTurn(repoRoot: string, index: number, summary: string, fileEdit: 
   fileEdit()
   execFileSync('git', ['add', '-A'], { cwd: repoRoot })
   const turnId = `turn-uuid-${index}`
-  execFileSync('git', ['commit', '-m', formatTurnCommitMessage(index, summary, turnId), '-q'], { cwd: repoRoot })
+  execFileSync('git', ['commit', '-m', formatTurnCommitMessage(index, summary, turnId, 'pane-1'), '-q'], { cwd: repoRoot })
   const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).toString().trim()
   return { sha, turnId }
 }

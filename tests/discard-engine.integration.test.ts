@@ -131,7 +131,10 @@ function commitTurn(repoRoot: string, index: number, summary: string, fileEdit: 
   fileEdit()
   execFileSync('git', ['add', '-A'], { cwd: repoRoot })
   const turnId = `turn-uuid-${index}`
-  const msg = formatTurnCommitMessage(index, summary, turnId)
+  // Use 'pane-1' so the trailer matches the pane the test queries with —
+  // turn-projection filters out commits whose Pane-Id trailer points at a
+  // different pane.
+  const msg = formatTurnCommitMessage(index, summary, turnId, 'pane-1')
   execFileSync('git', ['commit', '-m', msg, '-q'], { cwd: repoRoot })
   const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).toString().trim()
   return { sha, turnId }

@@ -175,11 +175,11 @@ function makePaneRepo(): string {
   return root
 }
 
-function commitTurn(repoRoot: string, index: number, summary: string, edit: () => void): string {
+function commitTurn(repoRoot: string, index: number, summary: string, edit: () => void, paneId: string): string {
   edit()
   execFileSync('git', ['add', '-A'], { cwd: repoRoot })
   const turnId = `turn-${index}-${Math.random().toString(36).slice(2)}`
-  execFileSync('git', ['commit', '-m', formatTurnCommitMessage(index, summary, turnId), '-q'], { cwd: repoRoot })
+  execFileSync('git', ['commit', '-m', formatTurnCommitMessage(index, summary, turnId, paneId), '-q'], { cwd: repoRoot })
   return turnId
 }
 
@@ -193,13 +193,13 @@ describe('runBulkAction — discard-all', () => {
     const repoB = makePaneRepo()
     commitTurn(repoA, 1, 'A1', () => {
       fs.writeFileSync(path.join(repoA, 'a1.txt'), 'A1\n')
-    })
+    }, 'pane-A')
     commitTurn(repoA, 2, 'A2', () => {
       fs.writeFileSync(path.join(repoA, 'a2.txt'), 'A2\n')
-    })
+    }, 'pane-A')
     commitTurn(repoB, 1, 'B1', () => {
       fs.writeFileSync(path.join(repoB, 'b1.txt'), 'B1\n')
-    })
+    }, 'pane-B')
 
     const paneA = makePane({ id: 'pane-A', workspaceId: 'ws-1', worktreePath: repoA })
     const paneB = makePane({ id: 'pane-B', workspaceId: 'ws-1', worktreePath: repoB })
@@ -244,7 +244,7 @@ describe('runBulkAction — discard-all', () => {
     const repoA = makePaneRepo()
     commitTurn(repoA, 1, 'A1', () => {
       fs.writeFileSync(path.join(repoA, 'a1.txt'), 'A1\n')
-    })
+    }, 'pane-A')
     const paneA = makePane({ id: 'pane-A', workspaceId: 'ws-1', worktreePath: repoA })
     const stubs = makeStubs([paneA])
 
@@ -271,10 +271,10 @@ describe('runBulkAction — discard-all', () => {
     const repoB = makePaneRepo()
     commitTurn(repoA, 1, 'A1', () => {
       fs.writeFileSync(path.join(repoA, 'a1.txt'), 'A1\n')
-    })
+    }, 'pane-A')
     commitTurn(repoB, 1, 'B1', () => {
       fs.writeFileSync(path.join(repoB, 'b1.txt'), 'B1\n')
-    })
+    }, 'pane-B')
     const paneA = makePane({ id: 'pane-A', workspaceId: 'ws-1', worktreePath: repoA })
     const paneB = makePane({ id: 'pane-B', workspaceId: 'ws-1', worktreePath: repoB })
     const stubs = makeStubs([paneA, paneB])

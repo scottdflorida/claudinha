@@ -38,7 +38,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { BrowserWindow } from 'electron'
 import type { Turn, TurnState, TurnPendingAction, DiscardedTurnsSidecar } from '../shared/types'
-import { extractTurnIdFromCommitMessage } from './turn-recorder'
+import { extractPaneIdFromCommitMessage, extractTurnIdFromCommitMessage } from './turn-recorder'
 import type { WindowManager } from './window-manager'
 import { IPC } from '../shared/ipc-channels'
 import type { TurnsUpdatedPayload } from '../shared/ipc-channels'
@@ -125,6 +125,15 @@ export async function projectTurnsForPane(
     const subject = parts[3] ?? ''
     const body = parts[4] ?? ''
     if (!sha) continue
+    // Filter to commits owned by this pane. Worktree-mode panes share a
+    // branch with no other pane, so the trailer always matches (or is
+    // absent on legacy commits and falls through). Main-mode panes share
+    // a branch — the trailer is what tells us which pane owns each commit.
+    // Legacy commits with no trailer are surfaced for every pane so older
+    // sessions don't lose their visible history; new commits are correctly
+    // scoped from this fix forward.
+    const trailerPaneId = extractPaneIdFromCommitMessage(`${subject}\n\n${body}`)
+    if (trailerPaneId !== null && trailerPaneId !== paneId) continue
     records.push({ sha, parents, authorTime, subject, body })
     if (records.length >= MAX_TURNS_PROJECTED) break
   }
