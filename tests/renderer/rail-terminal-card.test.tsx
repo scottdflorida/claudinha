@@ -71,7 +71,7 @@ describe('RailTerminalCard', () => {
     renderCard({ status: 'planning', groupBy: 'repo' })
     expect(screen.getByText('add-tagline')).toBeTruthy()
     const label = screen.getByText('Planning')
-    expect((label as HTMLElement).style.color).toBe('rgb(71, 151, 140)') // #47978c
+    expect((label as HTMLElement).style.color).toBe('rgb(233, 237, 230)') // #E9EDE6 — matches 'working' (active agent)
   })
 
   it('group by status: shows "repo › agent" + status dot', () => {

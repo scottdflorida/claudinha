@@ -14,7 +14,7 @@ import { resolvePaneDisplayName } from '../../shared/pane-display'
 // theme-appropriate shade (working = #2A2418 dark warm charcoal in light).
 const STATUS_TEXT_VAR: Record<PaneStatus, string> = {
   'awaiting-prompt': 'var(--color-status-awaiting)',
-  'planning':        'var(--color-status-plan)',
+  'planning':        'var(--color-status-working)',
   'plan-ready':      'var(--color-status-plan)',
   'needs-input':     'var(--color-status-needs-input)',
   'working':         'var(--color-status-working)',

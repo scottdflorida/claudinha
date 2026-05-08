@@ -270,7 +270,7 @@ describe('KanbanBoard — status colors match Wall', () => {
     // (the existing semantic name in globals.css).
     const expectedVarByStatus: Partial<Record<PaneStatus, string>> = {
       'awaiting-prompt': 'var(--color-status-awaiting)',
-      'planning':        'var(--color-status-plan)',
+      'planning':        'var(--color-status-working)',
       'plan-ready':      'var(--color-status-plan)',
       'working':         'var(--color-status-working)',
       'needs-input':     'var(--color-status-needs-input)',

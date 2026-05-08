@@ -43,7 +43,7 @@ export const HEADER_BG   = '#1A1F1C'  // = bg-surface-dark
 
 export const STATUS_COLORS: Record<PaneStatus, string> = {
   'awaiting-prompt': '#848D82',  // fg-muted
-  'planning':        '#47978c',  // teal — paired with plan-ready
+  'planning':        '#E9EDE6',  // high-contrast neutral — matches 'working' (active agent)
   'plan-ready':      '#47978c',  // teal — plan awaiting user approval
   'needs-input':     '#b0b9f9',  // soft lavender
   'working':         '#E9EDE6',  // high-contrast neutral
