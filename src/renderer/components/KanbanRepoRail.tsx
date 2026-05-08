@@ -286,11 +286,11 @@ function RepoGroup({ rollup, repoPanes, onOpenRepoChanges, renderCard }: RepoGro
         <button
           type="button"
           onClick={onOpenRepoChanges}
-          aria-label={`Review changes for ${rollup.repoLabel}`}
+          aria-label={`Bulk Change for ${rollup.repoLabel}`}
           title="Review per-agent turns and bulk-publish across this repo"
           className="flex items-center gap-1 text-fg-muted hover:text-fg-primary shrink-0"
         >
-          <span className="text-[11px]">changes</span>
+          <span className="text-[11px]">Bulk Change</span>
           <GitMerge size={12} />
         </button>
       </header>
