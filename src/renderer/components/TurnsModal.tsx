@@ -365,6 +365,7 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
             options={buildPublishOptions({
               t, canPublish, publishPath,
               isMainMode: !!(diagnostic && diagnostic.currentBranch === diagnostic.baseBranch && diagnostic.baseBranch !== null),
+              selectedCount: selectedIds.size,
               onSquash: handlePublishSquash
             })}
             disabled={isWorking || (selectedIds.size === 0) || !allSelectedPublishable}
@@ -694,7 +695,7 @@ function PublishDropdown({ label, options, disabled }: PublishDropdownProps): Re
           className="
             absolute right-0 bottom-full mb-1
             bg-surface border border-[var(--color-border-strong)] rounded-md shadow-lg
-            w-[360px] py-1
+            min-w-[200px] py-1
             z-10
           "
         >
@@ -715,12 +716,7 @@ function PublishDropdown({ label, options, disabled }: PublishDropdownProps): Re
                 disabled:opacity-50 disabled:cursor-not-allowed
               "
             >
-              <div>{opt.label}</div>
-              {opt.tooltip && (
-                <div className="text-[11px] text-fg-muted mt-0.5 leading-tight whitespace-normal">
-                  {opt.tooltip}
-                </div>
-              )}
+              {opt.label}
             </button>
           ))}
         </div>
@@ -868,18 +864,32 @@ interface BuildPublishOptionsArgs {
   canPublish: boolean
   publishPath: PublishPath
   isMainMode: boolean
+  /** When 1, drop the "Squash + " prefix — there's nothing to squash. */
+  selectedCount: number
   onSquash: (path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr') => Promise<void> | void
 }
 
+// Strip the "Squash + " prefix when only one turn is selected. The
+// localized label happens to start with "Squash + " in en + pt-BR; if
+// the prefix isn't present (future locales), the label is returned
+// unchanged.
+function stripSquashPrefix(label: string): string {
+  const trimmed = label.replace(/^Squash\s*\+\s*/i, '')
+  if (trimmed === label) return label
+  // Re-capitalize the first letter so "push branch" → "Push branch".
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
+
 function buildPublishOptions(args: BuildPublishOptionsArgs): PublishOption[] {
-  const { t, canPublish, publishPath, isMainMode, onSquash } = args
+  const { t, canPublish, publishPath, isMainMode, selectedCount, onSquash } = args
   const options: PublishOption[] = []
+  const fmt = (label: string): string => (selectedCount === 1 ? stripSquashPrefix(label) : label)
 
   if (isMainMode) {
     // Main mode: push-branch only.
     options.push({
       key: 'squash-push-branch',
-      label: t.turnsModal.publishSquashAndPush,
+      label: fmt(t.turnsModal.publishSquashAndPush),
       tooltip: t.turnsModal.publishSquashAndPushTooltipMain,
       disabled: !canPublish,
       onSelect: () => onSquash('push-branch')
@@ -891,7 +901,7 @@ function buildPublishOptions(args: BuildPublishOptionsArgs): PublishOption[] {
   if (publishPath === 'direct-merge' || publishPath === 'both') {
     options.push({
       key: 'squash-direct-merge',
-      label: t.turnsModal.publishSquashAndMerge,
+      label: fmt(t.turnsModal.publishSquashAndMerge),
       tooltip: t.turnsModal.publishSquashAndMergeTooltip,
       disabled: !canPublish,
       onSelect: () => onSquash('direct-merge')
@@ -900,14 +910,14 @@ function buildPublishOptions(args: BuildPublishOptionsArgs): PublishOption[] {
   if (publishPath === 'pr' || publishPath === 'both') {
     options.push({
       key: 'squash-pr',
-      label: t.turnsModal.publishSquashAndPr,
+      label: fmt(t.turnsModal.publishSquashAndPr),
       tooltip: t.turnsModal.publishSquashAndPrTooltip,
       disabled: !canPublish,
       onSelect: () => onSquash('pr')
     })
     options.push({
       key: 'squash-draft-pr',
-      label: t.turnsModal.publishSquashAndDraftPr,
+      label: fmt(t.turnsModal.publishSquashAndDraftPr),
       tooltip: t.turnsModal.publishSquashAndDraftPrTooltip,
       disabled: !canPublish,
       onSelect: () => onSquash('draft-pr')
@@ -918,7 +928,7 @@ function buildPublishOptions(args: BuildPublishOptionsArgs): PublishOption[] {
   // configured path drives the *primary* options above.
   options.push({
     key: 'squash-push-branch',
-    label: t.turnsModal.publishSquashAndPush,
+    label: fmt(t.turnsModal.publishSquashAndPush),
     tooltip: t.turnsModal.publishSquashAndPushTooltip,
     disabled: !canPublish,
     onSelect: () => onSquash('push-branch')
