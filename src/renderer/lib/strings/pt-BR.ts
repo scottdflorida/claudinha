@@ -1093,6 +1093,21 @@ export const ptBR: Strings = {
     title: 'Arraste para redimensionar o quadro Kanban'
   },
 
+  railResizeHandle: {
+    aria: 'Redimensionar a barra de repositórios',
+    title: 'Arraste para redimensionar a barra de repositórios'
+  },
+
+  rail: {
+    groupByLabel: 'Agrupar por',
+    groupByRepo: 'Repositório',
+    groupByStatus: 'Status',
+    groupByAria: 'Agrupar a barra por repositório ou status',
+    viewTurns: 'Ver turnos',
+    emptyAgents: 'Nenhum agente neste grupo.',
+    emptyRail: 'Inicie um agente para popular a barra.'
+  },
+
   configError: {
     title: 'Algo deu errado',
     body: 'A Claudinha encontrou um erro inesperado ao renderizar esta tela. Reinicie o app ou reporte via Enviar Feedback.',

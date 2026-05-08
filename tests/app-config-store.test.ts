@@ -44,8 +44,12 @@ vi.mock('electron', () => ({
 import { getAppConfig, setAppConfig, resetAppConfig } from '../src/main/app-config-store'
 import {
   DEFAULT_APP_CONFIG,
+  DEFAULT_RAIL_CONFIG,
   KANBAN_DEFAULT_HEIGHT_PX,
-  KANBAN_MIN_HEIGHT_PX
+  KANBAN_MIN_HEIGHT_PX,
+  RAIL_DEFAULT_WIDTH_PX,
+  RAIL_MAX_WIDTH_PX,
+  RAIL_MIN_WIDTH_PX
 } from '../src/shared/types'
 
 describe('app-config-store', () => {
@@ -205,6 +209,58 @@ describe('app-config-store', () => {
     mockStore.set('app.config', { soundsEnabled: true, defaultViewMode: 'kanban' })
     const cfg = getAppConfig()
     expect(cfg.kanban).toEqual({ heightPx: KANBAN_DEFAULT_HEIGHT_PX })
+  })
+
+  // -----------------------------------------------------------------
+  // Repo rail (widthPx + groupBy)
+  // -----------------------------------------------------------------
+
+  it('seeds rail to DEFAULT_RAIL_CONFIG before any writes', () => {
+    const cfg = getAppConfig()
+    expect(cfg.rail).toEqual(DEFAULT_RAIL_CONFIG)
+  })
+
+  it('round-trips rail.widthPx without affecting other fields', () => {
+    const updated = setAppConfig({ rail: { widthPx: 360, groupBy: 'repo' } })
+    expect(updated.rail.widthPx).toBe(360)
+    expect(updated.rail.groupBy).toBe('repo')
+    expect(updated.kanban.heightPx).toBe(KANBAN_DEFAULT_HEIGHT_PX)
+    expect(updated.soundsEnabled).toBe(DEFAULT_APP_CONFIG.soundsEnabled)
+  })
+
+  it('round-trips rail.groupBy', () => {
+    const updated = setAppConfig({ rail: { widthPx: RAIL_DEFAULT_WIDTH_PX, groupBy: 'status' } })
+    expect(updated.rail.groupBy).toBe('status')
+  })
+
+  it('clamps rail.widthPx below RAIL_MIN_WIDTH_PX', () => {
+    const cfg = setAppConfig({ rail: { widthPx: 40, groupBy: 'repo' } })
+    expect(cfg.rail.widthPx).toBe(RAIL_MIN_WIDTH_PX)
+  })
+
+  it('clamps rail.widthPx above RAIL_MAX_WIDTH_PX', () => {
+    const cfg = setAppConfig({ rail: { widthPx: 9999, groupBy: 'repo' } })
+    expect(cfg.rail.widthPx).toBe(RAIL_MAX_WIDTH_PX)
+  })
+
+  it('falls back rail.groupBy when an unknown value is patched', () => {
+    const cfg = setAppConfig({
+      rail: { widthPx: RAIL_DEFAULT_WIDTH_PX, groupBy: 'mystery' as unknown as 'repo' }
+    })
+    expect(cfg.rail.groupBy).toBe(DEFAULT_RAIL_CONFIG.groupBy)
+  })
+
+  it('preserves rail across unrelated patches', () => {
+    setAppConfig({ rail: { widthPx: 320, groupBy: 'status' } })
+    const after = setAppConfig({ soundsEnabled: false })
+    expect(after.rail).toEqual({ widthPx: 320, groupBy: 'status' })
+    expect(after.soundsEnabled).toBe(false)
+  })
+
+  it('legacy stored config without rail falls back to the default', () => {
+    mockStore.set('app.config', { soundsEnabled: true, defaultViewMode: 'kanban' })
+    const cfg = getAppConfig()
+    expect(cfg.rail).toEqual(DEFAULT_RAIL_CONFIG)
   })
 
   it('round-trips language without affecting other fields', () => {

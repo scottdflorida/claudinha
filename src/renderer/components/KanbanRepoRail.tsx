@@ -1,48 +1,17 @@
-import React, { useCallback, useState } from 'react'
-import { IPC } from '../../shared/ipc-channels'
-import type {
-  CompletionMergeAllPayload,
-  CompletionMergeAllResult,
-  CompletionPrAllPayload,
-  CompletionPrAllResult,
-  RepoPushBaseBranchPayload,
-  RepoPushBaseBranchResult,
-  RepoMergeAndPushPayload,
-  RepoMergeAndPushResult,
-  RepoApprovePlansInSequencePayload,
-  RepoApprovePlansInSequenceResult,
-  RepoStopPlanSequencePayload,
-  RepoStopPlanSequenceResult,
-  RepoRetryFailedMergesPayload,
-  RepoRetryFailedMergesResult
-} from '../../shared/ipc-channels'
-import type { ReadyPaneEntry, RepoRollup } from '../../shared/types'
-import { ipcInvoke } from '../hooks/useIpc'
+import React, { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight, GitMerge } from 'lucide-react'
+import type { PaneStatus, RailGroupBy, ReadyPaneEntry, RepoRollup } from '../../shared/types'
 import { useInspector } from '../hooks/useInspector'
-import { KanbanRepoCard } from './KanbanRepoCard'
-import { ClaudeMdEditorModal } from './ClaudeMdEditorModal'
+import { usePaneState } from '../hooks/usePaneState'
+import { useAppConfig } from '../hooks/useAppConfig'
+import { resolvePaneDisplayName } from '../../shared/pane-display'
+import { RailTerminalCard } from './RailTerminalCard'
+import { RepoChangesModal } from './RepoChangesModal'
+import { TurnsModal } from './TurnsModal'
 import { Button } from './ui/Button'
+import { SegmentedControl } from './ui/SegmentedControl'
 import { useStrings } from '../lib/strings'
-
-/**
- * Push gate. Exported for unit-testing.
- *
- * Pushing the base branch only makes sense when (a) main really is ahead of
- * origin/main AND (b) at least one agent in this repo has been engaged this
- * session — i.e. has moved past `awaiting-prompt`. Without (b), prior
- * unpushed commits the user already has on main (from earlier sessions or
- * out-of-band work) would light Push up the moment a fresh workspace opens,
- * contradicting the "I haven't done anything yet" reading of an
- * all-AWAITING-PROMPT card.
- */
-export function computeCanPush(
-  rollup: Pick<RepoRollup, 'baseAheadOfOrigin'>,
-  repoPanes: ReadonlyArray<Pick<ReadyPaneEntry, 'paneStatus'>>
-): boolean {
-  const baseAhead = rollup.baseAheadOfOrigin ?? 0
-  if (baseAhead <= 0) return false
-  return repoPanes.some((p) => p.paneStatus !== 'awaiting-prompt')
-}
+import type { Strings } from '../lib/strings'
 
 interface KanbanRepoRailProps {
   workspaceId: string | undefined
@@ -55,145 +24,76 @@ interface KanbanRepoRailProps {
 }
 
 /**
- * KanbanRepoRail — bottom-left rail in Kanban view.
- *
- * One card per repo in the workspace. Each card shows rollups, status dots,
- * and a collapsible session list. Bulk-action buttons (Merge / Push /
- * Merge + push) are stubbed in Phase 5 and wired in Phase 6. The CLAUDE.md
- * editor pencil is stubbed in Phase 5 and wired in Phase 7.
- *
- * Subscribes to the workspace's INSPECTOR_SUMMARY broadcast for repo + per-pane
- * data — the same source the Inspector drawer uses, so numbers always agree.
+ * Status order used by the "Group by status" mode. Action-priority first so
+ * the most-attention-needing buckets sit at the top of the rail. Statuses
+ * with zero panes in the workspace are hidden entirely.
  */
-export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onSpawnClick }: KanbanRepoRailProps): React.JSX.Element {
+const STATUS_ORDER: PaneStatus[] = [
+  'changes-ready',
+  'needs-input',
+  'working',
+  'planning',
+  'plan-ready',
+  'awaiting-prompt'
+]
+
+/**
+ * KanbanRepoRail — left rail in Kanban view.
+ *
+ * Top chrome:  [+ Terminal] button, then a Group By segmented control.
+ * Body:        per-pane cards (`RailTerminalCard`), grouped either by repo
+ *              (collapsible repo headers with a "changes" affordance) or by
+ *              status (collapsible status headers in action-priority order).
+ *
+ * Subscribes to:
+ *   - INSPECTOR_SUMMARY via `useInspector` for repo rollups + per-pane
+ *     status/repo/lastActivityAt.
+ *   - PaneState for the live `activeToolName` and `metrics.initialPrompt`
+ *     (the inspector summary doesn't carry these).
+ */
+export function KanbanRepoRail({
+  workspaceId,
+  activePaneId,
+  onSelectSession,
+  onSpawnClick
+}: KanbanRepoRailProps): React.JSX.Element {
   const t = useStrings()
   const { summary } = useInspector(workspaceId ?? null)
-  const [editingRepo, setEditingRepo] = useState<{ repoPath: string; repoLabel: string } | null>(null)
+  const { panes: livePanes } = usePaneState()
+  const { config: appConfig, setConfig: setAppConfig } = useAppConfig()
+  const groupBy: RailGroupBy = appConfig.rail?.groupBy ?? 'repo'
 
-  // Per-repo bulk actions (Phase 6). Each invokes its IPC handler; the UI
-  // updates via INSPECTOR_SUMMARY broadcasts (rollup readyCount + diff stats)
-  // and COMPLETION_STATUS broadcasts (per-pane sync indicator).
-  const triggerMerge = useCallback(async (repoPath: string) => {
-    if (!workspaceId) return
-    const payload: CompletionMergeAllPayload = {
-      scope: 'workspace',
-      workspaceId,
-      strategy: 'rebase-ff',
-      repoPath
-    }
-    try {
-      const result = (await ipcInvoke(IPC.COMPLETION_MERGE_ALL, payload)) as CompletionMergeAllResult
-      if (result.error) console.warn('[KanbanRepoRail] merge failed:', result.error)
-    } catch (err) {
-      console.warn('[KanbanRepoRail] merge invoke failed:', err)
-    }
-  }, [workspaceId])
+  // Modal state — TurnsModal launcher (changes-ready cards) and the per-repo
+  // RepoChangesModal (changes button on a repo group header).
+  const [turnsModalPane, setTurnsModalPane] = useState<{ paneId: string; paneName: string } | null>(null)
+  const [repoModalPath, setRepoModalPath] = useState<string | null>(null)
 
-  const triggerPush = useCallback(async (repoPath: string) => {
-    if (!workspaceId) return
-    const payload: RepoPushBaseBranchPayload = { workspaceId, repoPath }
-    try {
-      const result = (await ipcInvoke(IPC.REPO_PUSH_BASE_BRANCH, payload)) as RepoPushBaseBranchResult
-      if (result.error) console.warn('[KanbanRepoRail] push failed:', result.error)
-    } catch (err) {
-      console.warn('[KanbanRepoRail] push invoke failed:', err)
-    }
-  }, [workspaceId])
+  // Shared "now" that ticks every 30s so every card's age label ages in
+  // lockstep without spawning a per-card interval.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
 
-  const triggerMergeAndPush = useCallback(async (repoPath: string) => {
-    if (!workspaceId) return
-    const payload: RepoMergeAndPushPayload = {
-      workspaceId,
-      repoPath,
-      strategy: 'rebase-ff'
-    }
-    try {
-      const result = (await ipcInvoke(IPC.REPO_MERGE_AND_PUSH, payload)) as RepoMergeAndPushResult
-      if (result.error) console.warn('[KanbanRepoRail] merge+push failed:', result.error)
-      else if (result.pushError) console.warn('[KanbanRepoRail] push leg failed:', result.pushError)
-    } catch (err) {
-      console.warn('[KanbanRepoRail] merge+push invoke failed:', err)
-    }
-  }, [workspaceId])
+  // Lookup map for live RendererPane data (activeToolName, initialPrompt).
+  // The inspector summary's ReadyPaneEntry doesn't carry these fields.
+  const liveByPaneId = useMemo(() => {
+    const map = new Map<string, (typeof livePanes)[number]>()
+    for (const p of livePanes) map.set(p.id, p)
+    return map
+  }, [livePanes])
 
-  const triggerCreatePr = useCallback(async (repoPath: string) => {
-    if (!workspaceId) return
-    const payload: CompletionPrAllPayload = {
-      scope: 'workspace',
-      workspaceId,
-      draft: false,
-      repoPath
-    }
-    try {
-      const result = (await ipcInvoke(IPC.COMPLETION_PR_ALL, payload)) as CompletionPrAllResult
-      if (result.error) console.warn('[KanbanRepoRail] create PR failed:', result.error)
-    } catch (err) {
-      console.warn('[KanbanRepoRail] create PR invoke failed:', err)
-    }
-  }, [workspaceId])
+  const handleGroupByChange = (next: RailGroupBy): void => {
+    if (next === groupBy) return
+    setAppConfig({ rail: { ...(appConfig.rail ?? { widthPx: 280, groupBy: 'repo' }), groupBy: next } })
+      .catch((err) => console.warn('[KanbanRepoRail] persist groupBy failed', err))
+  }
 
-  const triggerApprovePlansInSequence = useCallback(async (repoPath: string) => {
-    if (!workspaceId) return
-    const payload: RepoApprovePlansInSequencePayload = { workspaceId, repoPath }
-    try {
-      const result = (await ipcInvoke(
-        IPC.REPO_APPROVE_PLANS_IN_SEQUENCE,
-        payload
-      )) as RepoApprovePlansInSequenceResult
-      if (result.error) console.warn('[KanbanRepoRail] approve-plans failed:', result.error)
-    } catch (err) {
-      console.warn('[KanbanRepoRail] approve-plans invoke failed:', err)
-    }
-  }, [workspaceId])
-
-  const triggerStopPlanSequence = useCallback(async (repoPath: string) => {
-    if (!workspaceId) return
-    const payload: RepoStopPlanSequencePayload = { workspaceId, repoPath }
-    try {
-      const result = (await ipcInvoke(
-        IPC.REPO_STOP_PLAN_SEQUENCE,
-        payload
-      )) as RepoStopPlanSequenceResult
-      if (result.error) console.warn('[KanbanRepoRail] stop-plan-sequence failed:', result.error)
-    } catch (err) {
-      console.warn('[KanbanRepoRail] stop-plan-sequence invoke failed:', err)
-    }
-  }, [workspaceId])
-
-  const triggerRetryFailedMerges = useCallback(async (repoPath: string) => {
-    if (!workspaceId) return
-    const payload: RepoRetryFailedMergesPayload = {
-      workspaceId,
-      repoPath,
-      strategy: 'rebase-ff'
-    }
-    try {
-      const result = (await ipcInvoke(
-        IPC.REPO_RETRY_FAILED_MERGES,
-        payload
-      )) as RepoRetryFailedMergesResult
-      if (result.error) console.warn('[KanbanRepoRail] retry-failed-merges failed:', result.error)
-    } catch (err) {
-      console.warn('[KanbanRepoRail] retry-failed-merges invoke failed:', err)
-    }
-  }, [workspaceId])
-
-  // Header is rendered above whatever body the rail is showing — empty state,
-  // loading, or the repo cards — so the visual structure is always the same.
+  // Top chrome — rendered above whatever body the rail is showing so
+  // structure is stable across empty / loading / no-workspace states.
   const railHeader = (
-    <header
-      className="shrink-0 px-3 py-2 border-b border-[var(--color-border-subtle)]"
-    >
-      <span className="text-xs font-[600] uppercase tracking-wider text-fg-muted">
-        {t.kanban.railHeader}
-      </span>
-    </header>
-  )
-
-  // + Terminal(s) CTA — shown below the header in every rail state that has
-  // a workspace bound. Opens the AddTerminalsDialog.
-  const railCta = (
-    <div className="shrink-0 px-3 pt-3 pb-2">
+    <div className="shrink-0 px-3 pt-3 pb-2 flex flex-col gap-2 border-b border-[var(--color-border-subtle)]">
       <Button
         type="button"
         variant="primary"
@@ -201,9 +101,19 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
         onClick={onSpawnClick}
         aria-label={t.kanban.newTerminalAria}
         className="w-full"
+        disabled={!workspaceId}
       >
         {t.kanban.railNewTerminalButton}
       </Button>
+      <SegmentedControl<RailGroupBy>
+        size="sm"
+        value={groupBy}
+        onChange={handleGroupByChange}
+        options={[
+          { value: 'repo', label: t.rail.groupByRepo },
+          { value: 'status', label: t.rail.groupByStatus }
+        ]}
+      />
     </div>
   )
 
@@ -220,19 +130,48 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
     return (
       <div className="h-full flex flex-col">
         {railHeader}
-        {railCta}
         <div className="p-4 text-xs text-fg-muted">{t.kanban.railLoading}</div>
       </div>
     )
   }
 
-  if (summary.repos.length === 0) {
+  if (summary.repos.length === 0 || summary.panes.length === 0) {
     return (
       <div className="h-full flex flex-col">
         {railHeader}
-        {railCta}
-        <div className="p-4 text-xs text-fg-muted">Spawn an agent to populate the rail.</div>
+        <div className="p-4 text-xs text-fg-muted">{t.rail.emptyRail}</div>
       </div>
+    )
+  }
+
+  // Card factory shared between both grouping modes.
+  const renderCard = (entry: ReadyPaneEntry): React.JSX.Element => {
+    const live = liveByPaneId.get(entry.paneId)
+    const agentName = live
+      ? resolvePaneDisplayName({
+          worktreeName: live.worktreeName,
+          userName: live.userName,
+          metrics: { sessionTitle: live.metrics.sessionTitle }
+        })
+      : entry.paneName
+    return (
+      <RailTerminalCard
+        key={entry.paneId}
+        paneId={entry.paneId}
+        repoName={entry.repoName}
+        agentName={agentName}
+        status={entry.paneStatus}
+        terminated={live?.terminated ?? false}
+        completionState={entry.completionState}
+        activeToolName={live?.activeToolName ?? null}
+        initialPrompt={live?.metrics.initialPrompt ?? null}
+        lastActivityAt={entry.lastActivityAt}
+        now={now}
+        groupBy={groupBy}
+        isActive={activePaneId === entry.paneId}
+        onClick={() => onSelectSession(entry.paneId)}
+        onViewTurns={() => setTurnsModalPane({ paneId: entry.paneId, paneName: agentName })}
+      />
     )
   }
 
@@ -240,40 +179,164 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
     <>
       <div className="h-full flex flex-col">
         {railHeader}
-        {railCta}
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-3">
-        {summary.repos.map((rollup) => {
-          const repoPanes = summary.panes.filter((p) => p.repoPath === rollup.repoPath)
-          // Enable predicates per concept doc:
-          //   Merge        — readyCount > 0
-          //   Push         — baseAheadOfOrigin > 0 AND ≥1 pane past awaiting-prompt
-          return (
-            <KanbanRepoCard
-              key={rollup.repoPath}
-              rollup={rollup}
-              workspaceId={workspaceId ?? ''}
-              panes={repoPanes}
-              activePaneId={activePaneId}
-              onSelectSession={onSelectSession}
-              onEditClaudeMd={() =>
-                setEditingRepo({ repoPath: rollup.repoPath, repoLabel: rollup.repoLabel })
-              }
-              onApprovePlansInSequence={() => triggerApprovePlansInSequence(rollup.repoPath)}
-              onStopPlanSequence={() => triggerStopPlanSequence(rollup.repoPath)}
-              onRetryFailedMerges={() => triggerRetryFailedMerges(rollup.repoPath)}
-            />
-          )
-        })}
+        <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2">
+          {groupBy === 'repo'
+            ? summary.repos.map((rollup) => {
+                const repoPanes = summary.panes.filter((p) => p.repoPath === rollup.repoPath)
+                return (
+                  <RepoGroup
+                    key={rollup.repoPath}
+                    rollup={rollup}
+                    repoPanes={repoPanes}
+                    onOpenRepoChanges={() => setRepoModalPath(rollup.repoPath)}
+                    renderCard={renderCard}
+                  />
+                )
+              })
+            : STATUS_ORDER.map((status) => {
+                const statusPanes = summary.panes.filter((p) => p.paneStatus === status)
+                if (statusPanes.length === 0) return null
+                statusPanes.sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+                return (
+                  <StatusGroup
+                    key={status}
+                    status={status}
+                    label={STATUS_GROUP_LABEL[status](t)}
+                    panes={statusPanes}
+                    renderCard={renderCard}
+                  />
+                )
+              })}
         </div>
       </div>
-      {editingRepo && workspaceId && (
-        <ClaudeMdEditorModal
+      {repoModalPath && workspaceId && (
+        <RepoChangesModal
           workspaceId={workspaceId}
-          repoPath={editingRepo.repoPath}
-          repoLabel={editingRepo.repoLabel}
-          onClose={() => setEditingRepo(null)}
+          repoPath={repoModalPath}
+          onClose={() => setRepoModalPath(null)}
+        />
+      )}
+      {turnsModalPane && (
+        <TurnsModal
+          paneId={turnsModalPane.paneId}
+          paneName={turnsModalPane.paneName}
+          workspaceId={workspaceId ?? null}
+          onClose={() => setTurnsModalPane(null)}
         />
       )}
     </>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Repo group (Group by Repo)
+// ---------------------------------------------------------------------------
+
+interface RepoGroupProps {
+  rollup: RepoRollup
+  repoPanes: ReadyPaneEntry[]
+  onOpenRepoChanges: () => void
+  renderCard: (entry: ReadyPaneEntry) => React.JSX.Element
+}
+
+function RepoGroup({ rollup, repoPanes, onOpenRepoChanges, renderCard }: RepoGroupProps): React.JSX.Element {
+  const t = useStrings()
+  const [expanded, setExpanded] = useState(true)
+  const baseBranch =
+    repoPanes.find((p) => p.branchName === 'main' || p.branchName === 'master')?.branchName ?? null
+
+  return (
+    <section
+      className="rounded-md bg-overlay border border-[var(--color-border-subtle)] overflow-hidden flex flex-col"
+      aria-label={t.kanban.repoCardAriaFmt(rollup.repoLabel)}
+    >
+      <header className="shrink-0 flex items-center justify-between gap-2 px-2 py-1.5 border-b border-[var(--color-border-subtle)]">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-label={expanded ? t.kanban.collapseSessionList : t.kanban.expandSessionList}
+          aria-expanded={expanded}
+          className="flex items-center gap-1.5 min-w-0 text-fg-muted hover:text-fg-primary"
+        >
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          <span className="text-xs font-[600] text-fg-primary truncate" title={rollup.repoLabel}>
+            {rollup.repoLabel}
+          </span>
+          {baseBranch && (
+            <span className="text-[11px] text-fg-muted truncate" title={baseBranch}>
+              · {baseBranch}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onOpenRepoChanges}
+          aria-label={`Review changes for ${rollup.repoLabel}`}
+          title="Review per-agent turns and bulk-publish across this repo"
+          className="flex items-center gap-1 text-fg-muted hover:text-fg-primary shrink-0"
+        >
+          <span className="text-[11px]">changes</span>
+          <GitMerge size={12} />
+        </button>
+      </header>
+      {expanded && (
+        <ul className="flex flex-col py-1 px-1 gap-0.5">
+          {repoPanes.length === 0 ? (
+            <li className="text-[11px] text-fg-muted px-2 py-1">{t.kanban.noActiveAgents}</li>
+          ) : (
+            repoPanes.map((entry) => <li key={entry.paneId}>{renderCard(entry)}</li>)
+          )}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Status group (Group by Status)
+// ---------------------------------------------------------------------------
+
+interface StatusGroupProps {
+  status: PaneStatus
+  label: string
+  panes: ReadyPaneEntry[]
+  renderCard: (entry: ReadyPaneEntry) => React.JSX.Element
+}
+
+function StatusGroup({ label, panes, renderCard }: StatusGroupProps): React.JSX.Element {
+  const [expanded, setExpanded] = useState(true)
+  return (
+    <section className="rounded-md bg-overlay border border-[var(--color-border-subtle)] overflow-hidden flex flex-col">
+      <header className="shrink-0 flex items-center justify-between gap-2 px-2 py-1.5 border-b border-[var(--color-border-subtle)]">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="flex items-center gap-1.5 min-w-0 text-fg-muted hover:text-fg-primary"
+        >
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          <span className="text-xs font-[600] uppercase tracking-wide text-fg-primary truncate">
+            {label}
+          </span>
+          <span className="text-[11px] text-fg-muted tabular-nums">{panes.length}</span>
+        </button>
+      </header>
+      {expanded && (
+        <ul className="flex flex-col py-1 px-1 gap-0.5">
+          {panes.map((entry) => <li key={entry.paneId}>{renderCard(entry)}</li>)}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+// Reuses the existing kanban column strings so the rail and the (still-
+// present) kanban board agree on every status's display name.
+const STATUS_GROUP_LABEL: Record<PaneStatus, (t: Strings) => string> = {
+  'awaiting-prompt': (t) => t.kanban.columnAwaitingOrders,
+  planning: (t) => t.kanban.columnPlanning,
+  'plan-ready': (t) => t.kanban.columnPlanReady,
+  'needs-input': (t) => t.kanban.columnNeedsInput,
+  working: (t) => t.kanban.columnWorking,
+  'changes-ready': (t) => t.kanban.columnChangesReady
 }

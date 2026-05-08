@@ -38,8 +38,12 @@ import type { EffortLevel, WorkspaceType, WorkspaceConstraint, TerminalSnapshot,
 import {
   KANBAN_MIN_HEIGHT_PX,
   KANBAN_DEFAULT_HEIGHT_PX,
-  TERMINAL_RESERVED_PX
+  TERMINAL_RESERVED_PX,
+  RAIL_DEFAULT_WIDTH_PX,
+  RAIL_MIN_WIDTH_PX,
+  PANE_GRID_RESERVED_PX
 } from '../../shared/types'
+import { RailResizeHandle } from './RailResizeHandle'
 import type { PaneCloseWorktreeResult, PaneMergeAndCloseResult, CloseSequencePaneDescriptor } from '../../shared/ipc-channels'
 import type { PaneCloseDescriptor } from '../lib/pane-close-options'
 import { buildPaneCloseOptions } from '../lib/pane-close-options'
@@ -179,6 +183,45 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
       })
     },
     [setAppConfig]
+  )
+
+  // ---------- Repo rail width (draggable) ----------
+  //
+  // Mirrors the kanban-height block on the X axis. Persisted in
+  // AppConfig.rail.widthPx; live drag preview in railDragWidth; max width
+  // depends on the row container's clientWidth so the pane grid keeps
+  // PANE_GRID_RESERVED_PX of room.
+  const persistedRailWidth = appConfig.rail?.widthPx ?? RAIL_DEFAULT_WIDTH_PX
+  const [railDragWidth, setRailDragWidth] = useState<number | null>(null)
+  const railRowRef = useRef<HTMLDivElement | null>(null)
+  const [railRowWidth, setRailRowWidth] = useState<number>(0)
+  const railRowMounted = panes.length > 0
+  useEffect(() => {
+    const el = railRowRef.current
+    if (!el) return
+    setRailRowWidth(el.clientWidth)
+    const ro = new ResizeObserver(() => {
+      setRailRowWidth(el.clientWidth)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [viewMode, railRowMounted])
+  const railMaxWidth = Math.max(
+    railRowWidth > 0 ? railRowWidth - PANE_GRID_RESERVED_PX : persistedRailWidth,
+    RAIL_MIN_WIDTH_PX
+  )
+  const railVisibleWidth = Math.min(
+    railDragWidth ?? persistedRailWidth,
+    railMaxWidth
+  )
+  const onRailResizeCommit = useCallback(
+    (nextPx: number) => {
+      const nextRail = { ...(appConfig.rail ?? { widthPx: RAIL_DEFAULT_WIDTH_PX, groupBy: 'repo' as const }), widthPx: nextPx }
+      setAppConfig({ rail: nextRail }).finally(() => {
+        setRailDragWidth(null)
+      })
+    },
+    [setAppConfig, appConfig.rail]
   )
 
   // Kanban single-active-pane selection. Optimistic local state mirrored to
@@ -953,27 +996,35 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
                 />
               </>
             )}
-            <div className="flex-1 min-h-0 flex flex-row relative">
+            <div ref={railRowRef} className="flex-1 min-h-0 flex flex-row relative">
               {viewMode === 'kanban' && (
-                <div
-                  className="shrink-0 min-h-0 p-2"
-                  style={{ width: 280, background: 'var(--color-bg-surface)' }}
-                >
-                  {/* Raised rounded card floats on the rail surface — content
-                      sits on --color-bg-raised, chrome on --color-bg-surface,
-                      crisped by a subtle border so both themes read cleanly. */}
+                <>
                   <div
-                    className="h-full rounded-lg overflow-hidden"
-                    style={{ background: 'var(--color-bg-raised)', border: '1px solid var(--color-border-subtle)' }}
+                    className="shrink-0 min-h-0 p-2"
+                    style={{ width: railVisibleWidth, background: 'var(--color-bg-surface)' }}
                   >
-                    <KanbanRepoRail
-                      workspaceId={workspaceId}
-                      activePaneId={activePaneId}
-                      onSelectSession={selectActivePane}
-                      onSpawnClick={openSpawnDialog}
-                    />
+                    {/* Raised rounded card floats on the rail surface — content
+                        sits on --color-bg-raised, chrome on --color-bg-surface,
+                        crisped by a subtle border so both themes read cleanly. */}
+                    <div
+                      className="h-full rounded-lg overflow-hidden"
+                      style={{ background: 'var(--color-bg-raised)', border: '1px solid var(--color-border-subtle)' }}
+                    >
+                      <KanbanRepoRail
+                        workspaceId={workspaceId}
+                        activePaneId={activePaneId}
+                        onSelectSession={selectActivePane}
+                        onSpawnClick={openSpawnDialog}
+                      />
+                    </div>
                   </div>
-                </div>
+                  <RailResizeHandle
+                    persistedWidthPx={persistedRailWidth}
+                    maxWidthPx={railMaxWidth}
+                    onDrag={setRailDragWidth}
+                    onCommit={onRailResizeCommit}
+                  />
+                </>
               )}
               <div className="flex-1 min-h-0 min-w-0">
                 <PaneGrid

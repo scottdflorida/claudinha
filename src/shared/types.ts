@@ -512,6 +512,10 @@ export interface AppConfig {
   /** Persisted board height in Kanban view, shared across workspace windows. */
   kanban: KanbanConfig
 
+  // Repo rail (Kanban view)
+  /** Persisted rail width + Group By choice, shared across workspace windows. */
+  rail: RailConfig
+
   /**
    * UI theme. 'system' follows OS prefers-color-scheme (the legacy default,
    * preserved for users who never click the title-bar toggle). 'dark' / 'light'
@@ -598,6 +602,29 @@ export const DEFAULT_KANBAN_CONFIG: KanbanConfig = {
   heightPx: KANBAN_DEFAULT_HEIGHT_PX
 }
 
+/**
+ * Repo rail width + grouping. The rail lives left of the kanban board and
+ * pane grid. Width is clamped at the IPC boundary by RAIL_MIN/MAX; the live
+ * max is also clamped in the renderer so the pane grid keeps a usable
+ * minimum (PANE_GRID_RESERVED_PX).
+ */
+export const RAIL_MIN_WIDTH_PX = 220
+export const RAIL_MAX_WIDTH_PX = 600
+export const RAIL_DEFAULT_WIDTH_PX = 280
+export const PANE_GRID_RESERVED_PX = 320
+
+export type RailGroupBy = 'repo' | 'status'
+
+export interface RailConfig {
+  widthPx: number
+  groupBy: RailGroupBy
+}
+
+export const DEFAULT_RAIL_CONFIG: RailConfig = {
+  widthPx: RAIL_DEFAULT_WIDTH_PX,
+  groupBy: 'repo'
+}
+
 export const DEFAULT_APP_CONFIG: AppConfig = {
   autoRestoreLastSession: false,
   soundsEnabled: true,
@@ -609,6 +636,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   inspector: DEFAULT_GROVE_KEEPER_CONFIG,
   defaultViewMode: 'kanban',
   kanban: DEFAULT_KANBAN_CONFIG,
+  rail: DEFAULT_RAIL_CONFIG,
   theme: 'system',
   language: 'en',
   claudeMdPushDefaults: {}

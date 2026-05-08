@@ -1089,6 +1089,21 @@ export const en = {
     title: 'Drag to resize Kanban board'
   },
 
+  railResizeHandle: {
+    aria: 'Resize repo rail',
+    title: 'Drag to resize repo rail'
+  },
+
+  rail: {
+    groupByLabel: 'Group by',
+    groupByRepo: 'Repo',
+    groupByStatus: 'Status',
+    groupByAria: 'Group rail by repo or status',
+    viewTurns: 'View turns',
+    emptyAgents: 'No agents in this group.',
+    emptyRail: 'Spawn an agent to populate the rail.'
+  },
+
   configError: {
     title: 'Something went wrong',
     body: 'Claudinha hit an unexpected error rendering this view. Restart the app or report it via Submit Feedback.',

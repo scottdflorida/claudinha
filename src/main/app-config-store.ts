@@ -1,7 +1,13 @@
 import Store from 'electron-store'
 import { app } from 'electron'
 import type { AppConfig } from '../shared/types'
-import { DEFAULT_APP_CONFIG, KANBAN_MIN_HEIGHT_PX } from '../shared/types'
+import {
+  DEFAULT_APP_CONFIG,
+  DEFAULT_RAIL_CONFIG,
+  KANBAN_MIN_HEIGHT_PX,
+  RAIL_MAX_WIDTH_PX,
+  RAIL_MIN_WIDTH_PX
+} from '../shared/types'
 
 // Detect the renderer language to seed on true first launch. Any locale that
 // looks Brazilian Portuguese (pt-BR / pt_BR / pt) starts the user in Português;
@@ -92,6 +98,23 @@ export function setAppConfig(patch: Partial<AppConfig>): AppConfig {
   if (next.kanban && typeof next.kanban.heightPx === 'number') {
     next.kanban = { ...next.kanban }
     if (next.kanban.heightPx < KANBAN_MIN_HEIGHT_PX) next.kanban.heightPx = KANBAN_MIN_HEIGHT_PX
+  }
+  // Repo rail width + group-by. Width is clamped to the absolute soft range
+  // [RAIL_MIN, RAIL_MAX]; the live container-relative max is enforced in the
+  // renderer during drag. Group-by is validated against the known string set.
+  if (next.rail) {
+    next.rail = { ...DEFAULT_RAIL_CONFIG, ...next.rail }
+    if (typeof next.rail.widthPx === 'number') {
+      if (next.rail.widthPx < RAIL_MIN_WIDTH_PX) next.rail.widthPx = RAIL_MIN_WIDTH_PX
+      if (next.rail.widthPx > RAIL_MAX_WIDTH_PX) next.rail.widthPx = RAIL_MAX_WIDTH_PX
+    } else {
+      next.rail.widthPx = DEFAULT_RAIL_CONFIG.widthPx
+    }
+    if (next.rail.groupBy !== 'repo' && next.rail.groupBy !== 'status') {
+      next.rail.groupBy = DEFAULT_RAIL_CONFIG.groupBy
+    }
+  } else {
+    next.rail = DEFAULT_RAIL_CONFIG
   }
   // Validate theme at the IPC boundary (L-016) — only accept the three known
   // string values; anything else falls back to the default.
