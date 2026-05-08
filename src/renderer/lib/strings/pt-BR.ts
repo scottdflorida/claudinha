@@ -1100,8 +1100,8 @@ export const ptBR: Strings = {
 
   rail: {
     groupByLabel: 'Agrupar por',
-    groupByRepo: 'Repositório',
-    groupByStatus: 'Status',
+    groupByRepo: 'Agrupar por Repositório',
+    groupByStatus: 'Agrupar por Status',
     groupByAria: 'Agrupar a barra por repositório ou status',
     viewTurns: 'Ver turnos',
     emptyAgents: 'Nenhum agente neste grupo.',

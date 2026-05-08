@@ -29,7 +29,7 @@
  *     queued targets land instantly while still being drained in order.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { KANBAN_SLIDE_MS } from '../lib/kanbanMotion'
 import { prefersReducedMotion } from '../lib/reducedMotion'
 
@@ -62,8 +62,12 @@ export function useKanbanActiveTransition(
   const baseRef = useRef<string | null>(null)
   const rafRef = useRef<number | null>(null)
 
-  // Drive the queue when activePaneId changes.
-  useEffect(() => {
+  // Drive the queue when activePaneId changes. useLayoutEffect (rather than
+  // useEffect) so the initial slide-state update — which sets the new pane's
+  // wrapper to translateY(100%) — runs synchronously before the browser
+  // paints. With useEffect, PaneGrid's fallback path would paint the new
+  // pane in its landed position for one frame before the slide kicked in.
+  useLayoutEffect(() => {
     if (activePaneId === null) return
 
     if (disableTransitions) {

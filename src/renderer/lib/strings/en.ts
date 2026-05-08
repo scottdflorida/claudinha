@@ -1096,8 +1096,8 @@ export const en = {
 
   rail: {
     groupByLabel: 'Group by',
-    groupByRepo: 'Repo',
-    groupByStatus: 'Status',
+    groupByRepo: 'Group by Repo',
+    groupByStatus: 'Group by Status',
     groupByAria: 'Group rail by repo or status',
     viewTurns: 'View turns',
     emptyAgents: 'No agents in this group.',
