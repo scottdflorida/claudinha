@@ -310,7 +310,10 @@ async function scriptedRebaseSquash(args: {
     // attempt; index.lock contention during a publish is rare because the
     // user just selected turns to publish in the modal — the poller's
     // typical contention windows are short.
-    await execFileAsync('git', ['rebase', '-i', parent], {
+    // `--autostash` so the rebase doesn't refuse on a dirty working tree.
+    // The user may have edited files between the auto-commit and clicking
+    // Publish; git stashes those before the rebase and restores after.
+    await execFileAsync('git', ['rebase', '-i', '--autostash', parent], {
       cwd: worktreePath,
       env: {
         ...process.env,
@@ -572,13 +575,25 @@ async function runSplitChoreography(args: {
     //    the success path is: exit 0 + a rebase-in-progress directory
     //    (`.git/rebase-merge/`). A non-zero exit (or exit 0 without an
     //    in-progress rebase) means our editor script failed to match.
+    // `--autostash` lets the rebase start even when the working tree has
+    // unstaged changes — git stashes them first and pops them after the
+    // rebase completes. Critical for UX: users can hit Split mid-turn
+    // (e.g., they edited a file after the auto-commit fired but before
+    // opening the modal) and the stash round-trip preserves that work.
+    // If the stash pop conflicts at the end (rare — the user's dirty
+    // state would have to overlap with the new tip), the stash stays in
+    // `git stash list` and surfaces in the rebase output.
     let rebaseStartErr: string | null = null
     try {
-      await execFileAsync('git', ['rebase', '-i', target.parentCommitSha], {
-        cwd: worktreePath,
-        env,
-        maxBuffer: 4 * 1024 * 1024
-      })
+      await execFileAsync(
+        'git',
+        ['rebase', '-i', '--autostash', target.parentCommitSha],
+        {
+          cwd: worktreePath,
+          env,
+          maxBuffer: 4 * 1024 * 1024
+        }
+      )
     } catch (err) {
       const e = err as { stderr?: string; message?: string }
       rebaseStartErr = (e.stderr ?? e.message ?? 'rebase failed').trim().slice(0, 400)

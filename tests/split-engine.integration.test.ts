@@ -262,6 +262,48 @@ describe('splitTurn — mid-branch turn with non-conflicting dependents', () => 
   })
 })
 
+describe('splitTurn — dirty working tree (regression)', () => {
+  it('succeeds when the user has unstaged edits at split time (--autostash)', async () => {
+    // User-reported scenario: a turn was committed, then the user (or
+    // Claude after auto-commit toggled off) edited another file, then
+    // clicked Split. Without --autostash the rebase refused with
+    // "cannot rebase: You have unstaged changes."
+    const t1 = commitTurn(1, 'Add a.txt and b.txt', () => {
+      fs.writeFileSync(path.join(repoRoot, 'a.txt'), 'A\n')
+      fs.writeFileSync(path.join(repoRoot, 'b.txt'), 'B\n')
+    })
+    // Dirty the worktree with an unrelated edit.
+    fs.writeFileSync(path.join(repoRoot, 'unstaged.txt'), 'mid-flight work\n')
+
+    const pane = makeStubPane(repoRoot)
+    const stubs = makeStubs(pane)
+
+    const result = await splitTurn({
+      worktreePath: repoRoot,
+      paneId: pane.id,
+      windowId: pane.windowId,
+      windowManager: stubs.windowManager,
+      sessionRegistry: stubs.sessionRegistry,
+      turnId: t1.turnId,
+      hunkSelections: [
+        { file: 'a.txt', leftHunkIndexes: [0] },
+        { file: 'b.txt', leftHunkIndexes: [] }
+      ],
+      leftMessage: 'left',
+      rightMessage: 'right'
+    })
+
+    expect(result.ok).toBe(true)
+    // After the rebase + autostash pop, the unstaged edit is back in the
+    // working tree intact.
+    expect(fs.existsSync(path.join(repoRoot, 'unstaged.txt'))).toBe(true)
+    expect(fs.readFileSync(path.join(repoRoot, 'unstaged.txt'), 'utf8')).toBe('mid-flight work\n')
+    // Branch has the two split commits, the dirty edit isn't in either.
+    const subjects = listSubjects()
+    expect(subjects).toEqual(['left', 'right'])
+  })
+})
+
 describe('splitTurn — guard rails', () => {
   it('rejects when no hunks are selected for the LEFT side', async () => {
     const t1 = commitTurn(1, 'Add a.txt', () => {

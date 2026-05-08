@@ -120,12 +120,20 @@ export async function discardTurn(args: {
   setPendingAction(sessionRegistry, paneId, pending)
   broadcastPendingAction(windowManager, windowId, paneId, pending)
 
+  // The user may have unstaged changes in the working tree (edits made
+  // after the auto-commit fired). git's `reset --hard` would destroy
+  // them, and `rebase --onto` would refuse outright. Stash them first;
+  // pop after the discard so the user's mid-flight work is preserved.
+  // If nothing's dirty, the stash push is a no-op.
+  const stashed = await pushDirtyStash(worktreePath)
+
   try {
     let droppedTurns: Turn[] = []
 
     if (isTipDiscard) {
       // No dependents — just reset to the parent. Cheaper than a rebase
-      // and has no possible conflict path.
+      // and has no possible conflict path. The pre-stash above already
+      // saved any dirty content; the pop after will restore it.
       const resetErr = await runGitWithLockRetry(
         ['reset', '--hard', target.parentCommitSha],
         { cwd: worktreePath }
@@ -143,14 +151,13 @@ export async function discardTurn(args: {
       droppedTurns = [target, ...dependents]
     } else {
       // First attempt: try to drop the target and replay dependents on top.
-      // Use --keep-empty so a no-op rebase doesn't surface as a failure.
-      // Use GIT_EDITOR=true so any prompt (e.g. authored-by squash messages)
-      // resolves non-interactively.
+      // `--autostash` is redundant given our explicit pre-stash above,
+      // but harmless and safer if pre-stash was a no-op for any reason.
       const env = { ...process.env, GIT_EDITOR: 'true' }
       try {
         await execFileAsync(
           'git',
-          ['rebase', '--onto', target.parentCommitSha, target.commitSha],
+          ['rebase', '--autostash', '--onto', target.parentCommitSha, target.commitSha],
           { cwd: worktreePath, env, maxBuffer: 4 * 1024 * 1024 }
         )
         droppedTurns = [target]
@@ -197,8 +204,54 @@ export async function discardTurn(args: {
 
     return { ok: true }
   } finally {
+    // Restore any pre-discard dirty state. If the pop conflicts (e.g.,
+    // the user's dirty edits overlap with the new tip after reset),
+    // the stash stays in `git stash list` and we surface a non-fatal
+    // warning in the log — the discard itself succeeded.
+    if (stashed) {
+      const popErr = await runGitWithLockRetry(['stash', 'pop'], { cwd: worktreePath })
+      if (popErr) {
+        console.warn(
+          `[discard-engine] pre-discard stash pop conflicted; the stash remains in 'git stash list'. ` +
+          `Resolve manually with 'git stash pop'. Detail: ${popErr.slice(0, 200)}`
+        )
+      }
+    }
     setPendingAction(sessionRegistry, paneId, null)
     broadcastPendingAction(windowManager, windowId, paneId, null)
+  }
+}
+
+/**
+ * Push any current working-tree dirty state into a stash so a
+ * subsequent `git reset --hard` / `git rebase` doesn't refuse or
+ * destroy the user's edits.
+ *
+ * Returns `true` when a stash was created (so the caller knows to pop
+ * after), `false` when the tree was clean (the stash command would
+ * have surfaced "No local changes to save" — we treat that as a no-op).
+ *
+ * Includes untracked files (`-u`) so net-new files in the worktree
+ * survive the round-trip.
+ */
+async function pushDirtyStash(worktreePath: string): Promise<boolean> {
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      'git',
+      ['stash', 'push', '-u', '-m', 'claudinha:pre-discard-dirty', '--quiet'],
+      { cwd: worktreePath, maxBuffer: 1024 * 1024 }
+    )
+    const out = (stdout + stderr).toLowerCase()
+    return !out.includes('no local changes')
+  } catch (err) {
+    // `git stash` returns non-zero with `--quiet` only on real errors.
+    // "No local changes" is a normal exit-0 path on modern git; the
+    // older "no local changes" non-zero exit is what we'd see on a
+    // clean tree. Either way, treat as "no stash needed."
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.toLowerCase().includes('no local changes')) return false
+    console.warn('[discard-engine] pre-discard stash push failed:', msg)
+    return false
   }
 }
 
