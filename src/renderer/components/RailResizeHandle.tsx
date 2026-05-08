@@ -19,15 +19,17 @@ function clamp(n: number, min: number, max: number): number {
   return n
 }
 
+const HIT_WIDTH = 8
+const LINE_WIDTH = 2
+
 /**
- * Vertical drag handle on the right edge of the repo rail. Mirrors
- * KanbanResizeHandle for the X axis: local state tracks the drag at native
- * cadence, persisted state is written only on mouseup so we don't firehose
- * APP_CONFIG_SET.
+ * Subtle vertical resize handle on the right edge of the repo rail.
  *
- * Visual: a 6px dark strip bracketed by left/right hairlines so the strip
- * reads as a divider with a grip pill in the middle. The strip is its own
- * hit area; the cursor change is the primary affordance.
+ * Visual: a thin 2px line in the subtle border color, centered in an 8px
+ * transparent hit area. Cursor switches to `grab` on hover and `grabbing`
+ * while the user is actively dragging — the body cursor is overridden for
+ * the duration of the drag so the grabbing icon sticks even when the
+ * pointer leaves the strip.
  */
 export function RailResizeHandle({
   persistedWidthPx,
@@ -42,6 +44,11 @@ export function RailResizeHandle({
       const startX = e.clientX
       const startWidth = persistedWidthPx
       let latest = startWidth
+      // Lock the cursor to "grabbing" for the whole drag — even when the
+      // pointer moves off the narrow handle and over the rail or pane grid,
+      // the user is still resizing, so the cursor should still say so.
+      const previousCursor = document.body.style.cursor
+      document.body.style.cursor = 'grabbing'
       const handleMove = (evt: MouseEvent): void => {
         const dx = evt.clientX - startX
         latest = clamp(startWidth + dx, RAIL_MIN_WIDTH_PX, maxWidthPx)
@@ -50,6 +57,7 @@ export function RailResizeHandle({
       const handleUp = (): void => {
         window.removeEventListener('mousemove', handleMove)
         window.removeEventListener('mouseup', handleUp)
+        document.body.style.cursor = previousCursor
         if (latest !== startWidth) {
           onCommit(latest)
         } else {
@@ -69,23 +77,22 @@ export function RailResizeHandle({
       aria-orientation="vertical"
       aria-label={t.railResizeHandle.aria}
       title={t.railResizeHandle.title}
-      className="shrink-0 relative flex items-center justify-center select-none"
+      className="shrink-0 relative select-none"
       style={{
-        width: 6,
-        cursor: 'ew-resize',
-        background: '#1a1a19',
-        borderLeft: '1px solid #575754',
-        borderRight: '1px solid #575754',
+        width: HIT_WIDTH,
+        cursor: 'grab',
         zIndex: 10
       }}
     >
       <span
         aria-hidden="true"
         style={{
-          width: 2,
-          height: 32,
-          borderRadius: 2,
-          background: 'rgba(255, 255, 255, 0.35)'
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: (HIT_WIDTH - LINE_WIDTH) / 2,
+          width: LINE_WIDTH,
+          background: 'var(--color-border-subtle)'
         }}
       />
     </div>

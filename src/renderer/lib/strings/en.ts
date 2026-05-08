@@ -96,10 +96,10 @@ export const en = {
     defaultModelShortLabel: 'Default model for new terminals',
     defaultModelShortHint: 'Pre-selects the model in the launch form. You can still override per terminal.',
     defaultViewModeLabel: 'Default view mode for new workspaces',
-    defaultViewModeHint: 'Pre-selects the Wall/Kanban tile on the launch form. Each workspace can still be toggled from its titlebar.',
+    defaultViewModeHint: 'Pre-selects the Wall/ADE tile on the launch form. Each workspace can still be toggled from its titlebar.',
     modelNone: 'None',
     viewModeWall: 'Wall',
-    viewModeKanban: 'Kanban',
+    viewModeKanban: 'ADE',
     resumeHint: 'On launch, re-open the most recently closed workspace and resume its active terminals.',
     needsInputLabel: 'When a terminal needs input',
     finishedLabel: 'When a terminal finishes',
@@ -188,7 +188,7 @@ export const en = {
     publishPathHintBoth:
       'Both options surface in the publish menu — pick per action. Recommended if you have a mix of repos.',
     viewModeLabel: 'View mode',
-    viewModeKanban: 'Kanban',
+    viewModeKanban: 'ADE',
     viewModeWall: 'Wall',
     advancedSetup: 'Advanced Setup',
     terminalLocationLabel: 'Terminal location',
@@ -313,7 +313,7 @@ export const en = {
     pauseWorkspace: 'Pause workspace',
     closeWorkspace: 'Close workspace',
     viewWall: 'Wall',
-    viewKanban: 'Kanban',
+    viewKanban: 'ADE',
     themeLight: 'Switch to light theme',
     themeDark: 'Switch to dark theme'
   },
@@ -573,7 +573,7 @@ export const en = {
     openPrMenu: 'Open PR menu',
     toggleInspector: 'Toggle inspector',
     submitFeedback: 'Submit feedback',
-    toggleViewMode: 'Toggle Wall/Kanban view'
+    toggleViewMode: 'Toggle Wall/ADE view'
   },
 
   inspectorDrawer: {

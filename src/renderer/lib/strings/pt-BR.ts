@@ -108,10 +108,10 @@ export const ptBR: Strings = {
     defaultModelShortLabel: 'Modelo padrão para novos terminais',
     defaultModelShortHint: 'Pré-seleciona o modelo no formulário de criação. Você ainda pode trocar por terminal.',
     defaultViewModeLabel: 'Modo de visualização padrão para novos espaços de trabalho',
-    defaultViewModeHint: 'Pré-seleciona o bloco Mural/Kanban no formulário de criação. Cada espaço de trabalho ainda pode ser alternado pela barra de título.',
+    defaultViewModeHint: 'Pré-seleciona o bloco Mural/ADE no formulário de criação. Cada espaço de trabalho ainda pode ser alternado pela barra de título.',
     modelNone: 'Nenhum',
     viewModeWall: 'Mural',
-    viewModeKanban: 'Kanban',
+    viewModeKanban: 'ADE',
     resumeHint:
       'Ao iniciar, reabrir o último espaço de trabalho fechado e retomar seus terminais ativos.',
     needsInputLabel: 'Quando um terminal precisa de entrada',
@@ -201,7 +201,7 @@ export const ptBR: Strings = {
     publishPathHintBoth:
       'Ambas as opções aparecem no menu de publicação — escolha por ação. Recomendado se você tem uma mistura de repositórios.',
     viewModeLabel: 'Modo de visualização',
-    viewModeKanban: 'Kanban',
+    viewModeKanban: 'ADE',
     viewModeWall: 'Mural',
     advancedSetup: 'Configuração avançada',
     terminalLocationLabel: 'Localização dos terminais',
@@ -328,7 +328,7 @@ export const ptBR: Strings = {
     pauseWorkspace: 'Pausar espaço de trabalho',
     closeWorkspace: 'Fechar espaço de trabalho',
     viewWall: 'Mural',
-    viewKanban: 'Kanban',
+    viewKanban: 'ADE',
     themeLight: 'Mudar para o tema claro',
     themeDark: 'Mudar para o tema escuro'
   },
@@ -588,7 +588,7 @@ export const ptBR: Strings = {
     openPrMenu: 'Abrir menu de PR',
     toggleInspector: 'Alternar inspector',
     submitFeedback: 'Enviar feedback',
-    toggleViewMode: 'Alternar visão Mural/Kanban'
+    toggleViewMode: 'Alternar visão Mural/ADE'
   },
 
   inspectorDrawer: {
