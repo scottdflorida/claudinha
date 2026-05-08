@@ -1,11 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, FileText } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText, GitMerge } from 'lucide-react'
 import type { ReadyPaneEntry, RepoRollup } from '../../shared/types'
 import { KanbanRepoSessionRow } from './KanbanRepoSessionRow'
+import { RepoChangesModal } from './RepoChangesModal'
 import { useStrings } from '../lib/strings'
 
 interface KanbanRepoCardProps {
   rollup: RepoRollup
+  /** Workspace this repo card lives in — needed to open the per-repo
+   *  RepoChangesModal which scopes its aggregation by (workspace, repo). */
+  workspaceId: string
   /** All workspace panes belonging to this repo (filtered upstream). */
   panes: ReadyPaneEntry[]
   /** Currently active pane in the workspace; used to highlight the matching row. */
@@ -39,6 +43,7 @@ interface KanbanRepoCardProps {
  */
 export function KanbanRepoCard({
   rollup,
+  workspaceId,
   panes,
   activePaneId,
   onSelectSession,
@@ -49,6 +54,7 @@ export function KanbanRepoCard({
 }: KanbanRepoCardProps): React.JSX.Element {
   const t = useStrings()
   const [expanded, setExpanded] = useState(true) // default expanded (decision 2)
+  const [repoModalOpen, setRepoModalOpen] = useState(false)
   const baseBranch =
     panes.find((p) => p.branchName === 'main' || p.branchName === 'master')?.branchName ?? null
 
@@ -104,18 +110,37 @@ export function KanbanRepoCard({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={onEditClaudeMd}
-          disabled={editDisabled}
-          aria-label={t.kanban.editClaudeMdAria}
-          title={editDisabled ? t.kanban.editClaudeMdDisabled : t.kanban.editClaudeMdEnabled}
-          className="shrink-0 flex items-center gap-1 text-fg-muted hover:text-fg-primary disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <span className="text-[11px]">claude.md</span>
-          <FileText size={12} />
-        </button>
+        <div className="shrink-0 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setRepoModalOpen(true)}
+            aria-label={`Review changes for ${rollup.repoLabel}`}
+            title="Review per-agent turns and bulk-publish across this repo"
+            className="flex items-center gap-1 text-fg-muted hover:text-fg-primary"
+          >
+            <span className="text-[11px]">changes</span>
+            <GitMerge size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={onEditClaudeMd}
+            disabled={editDisabled}
+            aria-label={t.kanban.editClaudeMdAria}
+            title={editDisabled ? t.kanban.editClaudeMdDisabled : t.kanban.editClaudeMdEnabled}
+            className="flex items-center gap-1 text-fg-muted hover:text-fg-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <span className="text-[11px]">claude.md</span>
+            <FileText size={12} />
+          </button>
+        </div>
       </header>
+      {repoModalOpen && (
+        <RepoChangesModal
+          workspaceId={workspaceId}
+          repoPath={rollup.repoPath}
+          onClose={() => setRepoModalOpen(false)}
+        />
+      )}
 
       {/* Recovery affordances — only render when their narrow conditions
           hold (a plan-approval pile-up, or one or more trees in a failed

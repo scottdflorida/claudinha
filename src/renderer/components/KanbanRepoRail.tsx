@@ -251,6 +251,7 @@ export function KanbanRepoRail({ workspaceId, activePaneId, onSelectSession, onS
             <KanbanRepoCard
               key={rollup.repoPath}
               rollup={rollup}
+              workspaceId={workspaceId ?? ''}
               panes={repoPanes}
               activePaneId={activePaneId}
               onSelectSession={onSelectSession}

@@ -217,6 +217,9 @@ export const IPC = {
   WORKSPACE_DEFAULT_PATH_SET: 'workspace:default-path-set',
   WORKSPACE_DEFAULT_PATH_GET: 'workspace:default-path-get',
 
+  // renderer → main (invoke/reply) — Repo-level aggregation (M5)
+  REPO_TURNS_GET: 'repo-turns:get',
+
   // renderer → main (invoke/reply) — bulk operations
   BULK_RUN: 'bulk:run',
   BULK_CANCEL: 'bulk:cancel',
@@ -1792,6 +1795,48 @@ export interface WorkspaceDefaultPathGetResult {
 export interface WorkspaceDefaultPathSetPayload {
   workspaceId: string
   value: PublishPath
+}
+
+// ---------------------------------------------------------------------------
+// Repo-level aggregation (M5 RepoChangesModal)
+// ---------------------------------------------------------------------------
+
+export interface RepoTurnsGetPayload {
+  /** Identifies the repo by the absolute path the kanban surfaces use
+   *  (`PaneState.repoPath`). The aggregation collects every pane in the
+   *  workspace that resolves to this repo. */
+  repoPath: string
+  workspaceId: string
+}
+
+/** One pane's slice of the per-repo aggregation. The renderer renders one
+ *  section per entry, mostly the same UX as the per-terminal TurnsModal. */
+export interface RepoPaneTurns {
+  paneId: string
+  paneName: string
+  worktreeName: string
+  /** Branch the pane is on. May equal baseBranch for main-mode panes. */
+  currentBranch: string | null
+  baseBranch: string | null
+  isWorktree: boolean
+  autoCommitEnabled: boolean
+  pendingAction: TurnPendingAction | null
+  turns: Turn[]
+  /** Diagnostic when `turns` is empty (helps the user understand why). */
+  diagnostic?: TurnsBranchDiagnostic
+}
+
+export interface RepoTurnsGetResult {
+  error: string | null
+  /** Resolved repo label for header display. */
+  repoLabel: string
+  /** Per-pane sections, ordered by pane creation time (stable for
+   *  keyboard nav). Empty array is OK and means "no panes in this repo
+   *  have any turns or active state to surface." */
+  panes: RepoPaneTurns[]
+  /** Resolved publish-path for the repo (workspace default if no
+   *  per-repo override). Drives the bulk-actions enablement. */
+  publishPath: PublishPath
 }
 
 // ---------------------------------------------------------------------------

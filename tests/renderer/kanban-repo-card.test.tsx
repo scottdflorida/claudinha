@@ -165,6 +165,22 @@ describe('KanbanRepoCard', () => {
     expect(within(container).getByText('−3')).toBeTruthy()
   })
 
+  it('renders a "changes" affordance for opening the repo-level RepoChangesModal', () => {
+    const { getByLabelText } = render(
+      <KanbanRepoCard
+        rollup={makeRollup({ repoLabel: 'demo' })}
+        panes={[]}
+        activePaneId={null}
+        onSelectSession={() => {}}
+      />
+    )
+    // The button is keyed off the repo label. M5 surfaces it next to the
+    // claude.md pencil; click opens the per-repo modal (we only assert
+    // that the affordance exists here — modal IPC mocking lives in its
+    // own test file).
+    expect(getByLabelText('Review changes for demo')).toBeTruthy()
+  })
+
   it('falls back to a last-activity age on session rows with no diff', () => {
     const fiveMinAgo = Date.now() - 5 * 60_000
     const { getByText, queryByText } = render(

@@ -3286,6 +3286,84 @@ export function registerIpcHandlers(
     return { error: null }
   })
 
+  // M5: Repo-level aggregation. The RepoChangesModal opens with one
+  // round-trip rather than fanning out N TURNS_GETs from the renderer.
+  ipcMain.handle(IPC.REPO_TURNS_GET, async (_event, payload: import('../shared/ipc-channels').RepoTurnsGetPayload): Promise<import('../shared/ipc-channels').RepoTurnsGetResult> => {
+    const { aggregateRepoTurns } = await import('./repo-aggregation')
+    return aggregateRepoTurns({
+      sessionRegistry,
+      workspaceId: payload.workspaceId,
+      repoPath: payload.repoPath
+    })
+  })
+
+  // M5: Bulk action runner. Returns the runId immediately; per-pane
+  // results stream back via BULK_PROGRESS, with a final BULK_COMPLETED
+  // payload when the pipeline drains.
+  ipcMain.handle(IPC.BULK_RUN, async (_event, payload: import('../shared/ipc-channels').BulkRunPayload): Promise<import('../shared/ipc-channels').BulkRunResult> => {
+    const { runBulkAction } = await import('./bulk-action-pipeline')
+    return runBulkAction({
+      workspaceId: payload.workspaceId,
+      repoPath: payload.repoPath,
+      paneIds: payload.paneIds,
+      action: payload.action,
+      sessionRegistry,
+      windowManager,
+      sideCloneManager
+    })
+  })
+
+  ipcMain.handle(IPC.BULK_CANCEL, async (_event, payload: import('../shared/ipc-channels').BulkCancelPayload): Promise<{ error: string | null }> => {
+    const { cancelBulkRun } = await import('./bulk-action-pipeline')
+    const cancelled = cancelBulkRun(payload.runId)
+    return { error: cancelled ? null : 'run not found or already completed' }
+  })
+
+  // M5: Multi-conflict modal — per-row resolution. MVP scope:
+  //   - 'manual': no-op; the renderer hides the row, expects the user
+  //     to fix the conflict in their editor and re-publish.
+  //   - 'discard': drop the conflicting work via the discard engine
+  //     (cascade-confirmed because the user already opted in by picking
+  //     this resolution).
+  //   - 'punt-to-claude': not yet wired; returns an error in MVP and the
+  //     M6 polish pass implements the agent hand-off.
+  ipcMain.handle(IPC.MERGE_CONFLICT_RESOLVE, async (_event, payload: import('../shared/ipc-channels').MergeConflictResolvePayload): Promise<import('../shared/ipc-channels').MergeConflictResolveResult> => {
+    const pane = sessionRegistry.getPane(payload.paneId)
+    if (!pane) return { error: 'pane not found' }
+    if (payload.resolution.kind === 'manual') {
+      return { error: null }
+    }
+    if (payload.resolution.kind === 'punt-to-claude') {
+      return { error: 'punt-to-claude is not implemented yet' }
+    }
+    if (payload.resolution.kind === 'discard') {
+      // Drop every publishable turn on the pane, tip-down. Same shape as
+      // the bulk pipeline's discard-all path so the two stay consistent.
+      const baseBranch = await detectMainBranch(pane.worktreePath).catch(() => null)
+      const currentBranch = await getCurrentBranch(pane.worktreePath).catch(() => null)
+      if (!baseBranch || !currentBranch) return { error: 'could not resolve branch' }
+      const projection = await projectTurnsForPane(
+        pane.worktreePath, payload.paneId, baseBranch, currentBranch
+      )
+      const publishable = projection.filter((t) => t.state === 'open' || t.state === 'pushed')
+      const { discardTurn } = await import('./discard-engine')
+      for (const turn of [...publishable].reverse()) {
+        const result = await discardTurn({
+          worktreePath: pane.worktreePath,
+          paneId: payload.paneId,
+          windowId: pane.windowId,
+          windowManager,
+          sessionRegistry,
+          turnId: turn.id,
+          cascadeConfirmed: true
+        })
+        if (!result.ok) return { error: result.error ?? 'discard failed' }
+      }
+      return { error: null }
+    }
+    return { error: 'unknown resolution kind' }
+  })
+
   // Per-session auto-commit toggle. Persists on the in-memory PaneState so
   // it survives subsequent Stop hooks but resets on app restart (per
   // research §6 decision — toggle is session-scoped, not workspace-scoped).
