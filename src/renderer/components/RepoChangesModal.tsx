@@ -75,6 +75,21 @@ export function RepoChangesModal({ workspaceId, repoPath, onClose }: RepoChanges
       return
     }
     setData(result)
+    // Prune the selection to only panes that are still actionable
+    // after the refresh. Stops a pane that just landed in `shipped`
+    // (because someone else merged it, or we did via direct-merge from
+    // the per-terminal modal) from staying in the selection set and
+    // getting bundled into the next bulk dispatch.
+    setSelectedPaneIds((prev) => {
+      if (prev.size === 0) return prev
+      const stillActionable = new Set<string>()
+      for (const pane of result.panes) {
+        if (prev.has(pane.paneId) && paneIsActionable(pane)) {
+          stillActionable.add(pane.paneId)
+        }
+      }
+      return stillActionable
+    })
   }, [workspaceId, repoPath])
 
   useEffect(() => { void refresh() }, [refresh])
@@ -137,9 +152,17 @@ export function RepoChangesModal({ workspaceId, repoPath, onClose }: RepoChanges
 
   const handleBulk = async (action: BulkActionKind): Promise<void> => {
     if (selectedPaneIds.size === 0 || running !== null || !data) return
+    // Belt-and-braces: only forward panes that are still actionable.
+    // The refresh-prune above keeps `selectedPaneIds` tidy; this
+    // filter defends against a stale selection captured between a
+    // refresh tick and the click.
     const paneIds = data.panes
-      .filter((p) => selectedPaneIds.has(p.paneId))
+      .filter((p) => selectedPaneIds.has(p.paneId) && paneIsActionable(p))
       .map((p) => p.paneId)
+    if (paneIds.length === 0) {
+      setLoadError('Selected agents have no publishable turns. Refresh and pick agents with open work.')
+      return
+    }
     const payload: BulkRunPayload = { repoPath, workspaceId, paneIds, action }
     const raw = await ipcInvoke(IPC.BULK_RUN, payload)
     const result = raw as BulkRunResult
@@ -148,6 +171,15 @@ export function RepoChangesModal({ workspaceId, repoPath, onClose }: RepoChanges
       return
     }
     setRunning({ runId: result.runId, total: paneIds.length, completed: 0 })
+  }
+
+  const handleCancel = async (): Promise<void> => {
+    if (!running) return
+    await ipcInvoke(IPC.BULK_CANCEL, { runId: running.runId })
+    // Don't clear `running` here — wait for BULK_COMPLETED so the
+    // results array (with `cancelled` markers) flows back through the
+    // multi-conflict modal. If the in-flight pane never returns the
+    // user can close the modal and re-open later.
   }
 
   const handleClose = (): void => dialogRef.current?.close()
@@ -245,6 +277,7 @@ export function RepoChangesModal({ workspaceId, repoPath, onClose }: RepoChanges
         selectedCount={selectedPaneIds.size}
         running={running}
         onAction={handleBulk}
+        onCancel={handleCancel}
         onClose={handleClose}
       />
 
@@ -378,26 +411,47 @@ interface BulkActionsBarProps {
   selectedCount: number
   running: { runId: string; total: number; completed: number } | null
   onAction: (action: BulkActionKind) => Promise<void> | void
+  onCancel: () => Promise<void> | void
   onClose: () => void
 }
 
 function BulkActionsBar({
-  publishPath, selectedCount, running, onAction, onClose
+  publishPath, selectedCount, running, onAction, onCancel, onClose
 }: BulkActionsBarProps): React.JSX.Element {
   const disabled = selectedCount === 0 || running !== null
-  return (
-    <footer className="flex-shrink-0 border-t border-[var(--color-border-subtle)] px-5 py-3 flex items-center gap-2 bg-bg-elevated">
-      {running ? (
+  // While running, swap the action buttons for a Cancel + Close so the
+  // user is never trapped in a "Running… 0/N" state with no recourse.
+  if (running) {
+    return (
+      <footer className="flex-shrink-0 border-t border-[var(--color-border-subtle)] px-5 py-3 flex items-center gap-2 bg-bg-elevated">
         <div className="flex-1 text-[11px] text-fg-secondary tabular-nums">
           Running… {running.completed}/{running.total} done
         </div>
-      ) : (
-        <div className="flex-1 text-[11px] text-fg-muted">
-          {selectedCount === 0
-            ? 'Select agents above to act on them in bulk.'
-            : `${selectedCount} agent${selectedCount === 1 ? '' : 's'} selected.`}
-        </div>
-      )}
+        <button
+          type="button"
+          onClick={() => void onCancel()}
+          className="text-[12px] px-3 py-1 rounded border border-warning-fg/60 text-warning-fg hover:bg-warning-fg/10"
+          title="Stop the bulk pipeline. The pane currently mid-action finishes; remaining panes are skipped."
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[12px] px-3 py-1 rounded border border-[var(--color-border-subtle)] text-fg-secondary hover:text-fg-primary hover:bg-overlay"
+        >
+          Close
+        </button>
+      </footer>
+    )
+  }
+  return (
+    <footer className="flex-shrink-0 border-t border-[var(--color-border-subtle)] px-5 py-3 flex items-center gap-2 bg-bg-elevated">
+      <div className="flex-1 text-[11px] text-fg-muted">
+        {selectedCount === 0
+          ? 'Select agents above to act on them in bulk.'
+          : `${selectedCount} agent${selectedCount === 1 ? '' : 's'} selected.`}
+      </div>
       <div className="flex items-center gap-2">
         {(publishPath === 'direct-merge' || publishPath === 'both') && (
           <BulkActionButton
