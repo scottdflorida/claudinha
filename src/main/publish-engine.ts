@@ -390,10 +390,24 @@ async function scriptedRebaseSquash(args: {
     // attempt; index.lock contention during a publish is rare because the
     // user just selected turns to publish in the modal — the poller's
     // typical contention windows are short.
-    // `--autostash` so the rebase doesn't refuse on a dirty working tree.
-    // The user may have edited files between the auto-commit and clicking
-    // Publish; git stashes those before the rebase and restores after.
-    await execFileAsync('git', ['rebase', '-i', '--autostash', parent], {
+    //
+    // Flags:
+    //   `--autostash` so the rebase doesn't refuse on a dirty working tree.
+    //   `-c core.hooksPath=/dev/null` disables every git hook for the
+    //     duration of the rebase. The squash step writes a NEW commit
+    //     (combining the picked commits) and that commit fires
+    //     pre-commit / commit-msg / post-commit hooks. If the user has a
+    //     hook that runs tests, prompts for input, or makes a network
+    //     call, the rebase blocks indefinitely with no way to cancel.
+    //     We don't need their hooks to run — the wip-commits already
+    //     passed them, and the user explicitly opted into a publish via
+    //     the modal. Skipping hooks during the squash matches the
+    //     `--no-verify` we use on the post-rebase amend.
+    //
+    // `timeout: 60_000` is a hard cap so a hung rebase fails loudly
+    // instead of silently parking the modal. Most rebases finish in
+    // <2s; 60s is a generous ceiling.
+    await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', 'rebase', '-i', '--autostash', parent], {
       cwd: worktreePath,
       env: {
         ...process.env,
@@ -401,9 +415,13 @@ async function scriptedRebaseSquash(args: {
         // Force a non-interactive editor for any prompts that fall through
         // (e.g. squash combined-message editor — `git commit --amend` after
         // the rebase replaces the message anyway).
-        GIT_EDITOR: 'true'
+        GIT_EDITOR: 'true',
+        // Belt-and-braces: refuse credential prompts on any git step
+        // the rebase happens to invoke (e.g., a fetch from a hook).
+        GIT_TERMINAL_PROMPT: '0'
       },
-      maxBuffer: 4 * 1024 * 1024
+      maxBuffer: 4 * 1024 * 1024,
+      timeout: 60_000
     })
     return null
   } catch (err) {
@@ -645,7 +663,8 @@ async function runSplitChoreography(args: {
   const env = {
     ...process.env,
     GIT_SEQUENCE_EDITOR: scriptPath,
-    GIT_EDITOR: 'true'
+    GIT_EDITOR: 'true',
+    GIT_TERMINAL_PROMPT: '0'
   }
 
   try {
@@ -663,15 +682,24 @@ async function runSplitChoreography(args: {
     // If the stash pop conflicts at the end (rare — the user's dirty
     // state would have to overlap with the new tip), the stash stays in
     // `git stash list` and surfaces in the rebase output.
+    // `-c core.hooksPath=/dev/null` disables every git hook for the
+    // duration of the rebase so user-installed pre-commit / commit-msg
+    // / post-commit hooks (husky, etc.) can't block on tests, prompts,
+    // or network calls. Matches the `--no-verify` we already pass on
+    // the LEFT/RIGHT commits below.
+    // `timeout: 60_000` is a hard cap on the start step; replay can
+    // take longer on a long dependent chain so `--continue` keeps its
+    // own (longer) timeout below.
     let rebaseStartErr: string | null = null
     try {
       await execFileAsync(
         'git',
-        ['rebase', '-i', '--autostash', target.parentCommitSha],
+        ['-c', 'core.hooksPath=/dev/null', 'rebase', '-i', '--autostash', target.parentCommitSha],
         {
           cwd: worktreePath,
           env,
-          maxBuffer: 4 * 1024 * 1024
+          maxBuffer: 4 * 1024 * 1024,
+          timeout: 60_000
         }
       )
     } catch (err) {
@@ -746,10 +774,11 @@ async function runSplitChoreography(args: {
 
     // 7. Continue the rebase to replay dependents.
     try {
-      await execFileAsync('git', ['rebase', '--continue'], {
+      await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', 'rebase', '--continue'], {
         cwd: worktreePath,
         env,
-        maxBuffer: 4 * 1024 * 1024
+        maxBuffer: 4 * 1024 * 1024,
+        timeout: 120_000
       })
     } catch (err) {
       // Replay conflict — abort. The caller will reset to preHead.
