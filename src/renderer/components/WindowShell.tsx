@@ -55,6 +55,13 @@ import { stripAnsi } from '../../shared/strip-ansi'
 // Flip to false to restore the drawer (also re-add a toggle affordance).
 const INSPECTOR_HIDDEN = true
 
+// Kanban board (the top-stripe of cards in Kanban view) is hidden from the
+// UI. The component, its resize handle, and all tests are intact; flipping
+// this flag back to false restores the board strip above the rail + pane
+// row. With the board hidden, the rail and the active terminal pane each
+// span the full window height in Kanban view.
+const KANBAN_BOARD_HIDDEN = true
+
 interface WindowShellProps {
   workspaceId?: string
   workspaceName?: string
@@ -971,7 +978,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
               The PaneGrid host div is rendered unconditionally; only the
               surrounding chrome differs by viewMode. */}
           <div ref={kanbanColumnRef} className="flex-1 min-h-0 flex flex-col relative">
-            {viewMode === 'kanban' && (
+            {viewMode === 'kanban' && !KANBAN_BOARD_HIDDEN && (
               <>
                 <div
                   className="shrink-0 border-b overflow-hidden"
