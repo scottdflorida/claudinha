@@ -5,6 +5,8 @@ import { useInspector } from '../hooks/useInspector'
 import { usePaneState } from '../hooks/usePaneState'
 import { useAppConfig } from '../hooks/useAppConfig'
 import { resolvePaneDisplayName } from '../../shared/pane-display'
+import { bucketPaneStatus } from '../../shared/pane-status-bucket'
+import { STATUS_COLORS } from '../lib/constants'
 import { RailTerminalCard } from './RailTerminalCard'
 import { RepoChangesModal } from './RepoChangesModal'
 import { TurnsModal } from './TurnsModal'
@@ -144,6 +146,16 @@ export function KanbanRepoRail({
     )
   }
 
+  // Resolve the bucketed status the rail should display + group by. Mirrors
+  // the kanban board's bucketFor: a pane in plan mode runs `working` tools
+  // but belongs in the Planning bucket. Falls back to `entry.paneStatus`
+  // when the live pane hasn't been seeded yet (e.g. mid-spawn race).
+  const bucketedStatusFor = (entry: ReadyPaneEntry): PaneStatus => {
+    const live = liveByPaneId.get(entry.paneId)
+    const mode = live?.permissionMode ?? 'normal'
+    return bucketPaneStatus(entry.paneStatus, mode)
+  }
+
   // Card factory shared between both grouping modes.
   const renderCard = (entry: ReadyPaneEntry): React.JSX.Element => {
     const live = liveByPaneId.get(entry.paneId)
@@ -160,7 +172,7 @@ export function KanbanRepoRail({
         paneId={entry.paneId}
         repoName={entry.repoName}
         agentName={agentName}
-        status={entry.paneStatus}
+        status={bucketedStatusFor(entry)}
         terminated={live?.terminated ?? false}
         completionState={entry.completionState}
         activeToolName={live?.activeToolName ?? null}
@@ -194,7 +206,9 @@ export function KanbanRepoRail({
                 )
               })
             : STATUS_ORDER.map((status) => {
-                const statusPanes = summary.panes.filter((p) => p.paneStatus === status)
+                const statusPanes = summary.panes.filter(
+                  (p) => bucketedStatusFor(p) === status
+                )
                 if (statusPanes.length === 0) return null
                 statusPanes.sort((a, b) => b.lastActivityAt - a.lastActivityAt)
                 return (
@@ -202,6 +216,7 @@ export function KanbanRepoRail({
                     key={status}
                     status={status}
                     label={STATUS_GROUP_LABEL[status](t)}
+                    color={STATUS_COLORS[status]}
                     panes={statusPanes}
                     renderCard={renderCard}
                   />
@@ -299,11 +314,14 @@ function RepoGroup({ rollup, repoPanes, onOpenRepoChanges, renderCard }: RepoGro
 interface StatusGroupProps {
   status: PaneStatus
   label: string
+  /** Status color — applied to the section header label so each status reads
+   *  in its own hue (the same hue used by the kanban column titles). */
+  color: string
   panes: ReadyPaneEntry[]
   renderCard: (entry: ReadyPaneEntry) => React.JSX.Element
 }
 
-function StatusGroup({ label, panes, renderCard }: StatusGroupProps): React.JSX.Element {
+function StatusGroup({ label, color, panes, renderCard }: StatusGroupProps): React.JSX.Element {
   const [expanded, setExpanded] = useState(true)
   return (
     <section className="rounded-md bg-overlay border border-[var(--color-border-subtle)] overflow-hidden flex flex-col">
@@ -315,7 +333,10 @@ function StatusGroup({ label, panes, renderCard }: StatusGroupProps): React.JSX.
           className="flex items-center gap-1.5 min-w-0 text-fg-muted hover:text-fg-primary"
         >
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span className="text-xs font-[600] uppercase tracking-wide text-fg-primary truncate">
+          <span
+            className="text-xs font-[600] uppercase tracking-wide truncate"
+            style={{ color }}
+          >
             {label}
           </span>
           <span className="text-[11px] text-fg-muted tabular-nums">{panes.length}</span>

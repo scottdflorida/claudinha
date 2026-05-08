@@ -7,6 +7,7 @@ import { KanbanColumn } from './KanbanColumn'
 import { ConflictResolveModal } from './ConflictResolveModal'
 import { TurnsModal } from './TurnsModal'
 import { resolvePaneDisplayName } from '../../shared/pane-display'
+import { bucketPaneStatus } from '../../shared/pane-status-bucket'
 import { useStrings } from '../lib/strings'
 import { useKanbanCardMoves } from '../hooks/useKanbanCardMoves'
 import { useColumnOrder } from '../hooks/useColumnOrder'
@@ -43,15 +44,7 @@ const COLUMN_STATUSES: PaneStatus[] = [
 ]
 
 function bucketFor(pane: RendererPane): PaneStatus {
-  // Plan-mode tool work shows in Planning, not Working — composing a plan is
-  // a distinct activity from building code, even though both run tools.
-  // (Plan-ready is owned by hook-listener's routeStopStatus and arrives via
-  // pane.status === 'plan-ready' on Stop; this branch is only the
-  // mid-composition case.)
-  if (pane.status === 'working' && pane.permissionMode === 'plan') {
-    return 'planning'
-  }
-  return pane.status
+  return bucketPaneStatus(pane.status, pane.permissionMode)
 }
 
 export function KanbanBoard({ panes, activePaneId, workspaceId, onCardClick, onCloseCard }: KanbanBoardProps): React.JSX.Element {
