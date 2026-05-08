@@ -816,12 +816,26 @@ export const ptBR: Strings = {
       `${files === 1 ? '1 arquivo' : `${files} arquivos`}  +${added}/-${removed}`,
     publishMenuLabel: 'Publicar',
     publishSquashAndPush: 'Squash + push branch',
+    publishSquashAndPushTooltip:
+      'Faz squash dos turnos selecionados em um commit e empurra a branch da worktree para o origin. Sem merge na branch base e sem PR — útil para entregar a branch fora do fluxo padrão.',
+    publishSquashAndPushTooltipMain:
+      'Faz squash dos commits selecionados e empurra para origin/<base>. Recusa quando o origin divergiu.',
     publishSquashAndMerge: 'Squash + merge direto',
+    publishSquashAndMergeTooltip:
+      'Faz squash dos turnos e mescla direto na branch base via clone lateral, depois empurra base para origin. Pula o PR. Ideal para trabalho solo.',
     publishSquashAndPr: 'Squash + abrir PR',
+    publishSquashAndPrTooltip:
+      'Faz squash dos turnos e abre um pull request normal via `gh`. A branch é empurrada para origin e a review acontece no GitHub.',
     publishSquashAndDraftPr: 'Squash + abrir draft PR',
+    publishSquashAndDraftPrTooltip:
+      'Igual ao Squash + abrir PR, mas cria o PR em modo rascunho (não notifica revisores nem dispara checks obrigatórios até você marcar como pronto).',
     publishIndividual: 'Publicar cada turno individualmente',
     publishSplit: 'Dividir um turno…',
+    splitAction: 'Dividir',
+    splitTooltip: 'Divide este turno em dois commits por hunk. Útil quando o turno mexeu em vários arquivos e você quer commits separados.',
+    splitDisabledHint: 'Dividir só se aplica a turnos abertos que mexem em mais de um arquivo.',
     discardAction: 'Descartar',
+    discardTooltip: 'Remove este turno da branch da worktree. Turnos já enviados são removidos do origin também via force-push.',
     discardConfirmTitle: 'Descartar este turno?',
     discardConfirmBodyFmt: (turn: number): string =>
       `O turno ${turn} será removido do branch da worktree. O reflog ainda mantém por ~30 dias, mas o Claudinha não vai mostrar de novo.`,

@@ -48,9 +48,23 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
   const dialogRef = useRef<HTMLDialogElement>(null)
   const { turns, pendingAction, autoCommitEnabled, loading, error, diagnostic, refresh } = useTurns(paneId)
 
-  // Selection state — Set of turn ids. Cleared on every refresh-clearing
-  // action (publish success). The user can toggle individual rows.
+  // Selection state — Set of turn ids. Defaults to "every publishable
+  // turn" so the typical "publish everything" case is one click. The
+  // user uncheck rows to peel off a subset. Cleared after a successful
+  // publish.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // Track whether we've seeded selection at least once for this set of
+  // turns, so we don't re-seed every render after the user clears it.
+  const seededTurnIdsRef = useRef<string>('')
+  useEffect(() => {
+    const key = turns.map((t) => t.id).join(',')
+    if (key !== seededTurnIdsRef.current) {
+      seededTurnIdsRef.current = key
+      setSelectedIds(new Set(
+        turns.filter((tu) => tu.state === 'open' || tu.state === 'pushed').map((tu) => tu.id)
+      ))
+    }
+  }, [turns])
   const [commitMessage, setCommitMessage] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -153,10 +167,25 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
       pendingAction.kind === 'opening-pr'
     )
 
+  // All selected turns must be in a publishable state. Once a turn is
+  // `merged` or `shipped`, the publish actions become invalid (the work
+  // is already on base / origin/base). Trying to re-publish would
+  // either no-op or rewrite shared history; refuse up front.
+  const allSelectedPublishable = useMemo(() => {
+    if (selectedIds.size === 0) return false
+    for (const id of selectedIds) {
+      const tu = turns.find((x) => x.id === id)
+      if (!tu) return false
+      if (tu.state !== 'open' && tu.state !== 'pushed') return false
+    }
+    return true
+  }, [selectedIds, turns])
+
   const canPublish =
     !isWorking &&
     selectedIds.size > 0 &&
     selectionContiguous &&
+    allSelectedPublishable &&
     commitMessage.trim().length > 0
 
   const handlePublishSquash = async (path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr'): Promise<void> => {
@@ -298,6 +327,7 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
                 selected={selectedIds.has(turn.id)}
                 onToggle={() => toggleSelect(turn.id)}
                 onDiscard={() => handleStartDiscard(turn)}
+                onSplit={() => setSplitTurnTarget(turn)}
                 disabled={isWorking}
               />
             ))}
@@ -333,25 +363,11 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
           <PublishDropdown
             label={t.turnsModal.publishMenuLabel}
             options={buildPublishOptions({
-              t, canPublish, isWorking, publishPath,
+              t, canPublish, publishPath,
               isMainMode: !!(diagnostic && diagnostic.currentBranch === diagnostic.baseBranch && diagnostic.baseBranch !== null),
-              onSquash: handlePublishSquash,
-              splitDisabled:
-                isWorking ||
-                selectedIds.size !== 1 ||
-                (() => {
-                  const id = [...selectedIds][0]!
-                  const tu = turns.find((x) => x.id === id)
-                  return !tu || tu.state !== 'open'
-                })(),
-              onSplit: () => {
-                const id = [...selectedIds][0]
-                if (!id) return
-                const target = turns.find((tu) => tu.id === id)
-                if (target) setSplitTurnTarget(target)
-              }
+              onSquash: handlePublishSquash
             })}
-            disabled={isWorking || (selectedIds.size === 0)}
+            disabled={isWorking || (selectedIds.size === 0) || !allSelectedPublishable}
           />
           <button
             type="button"
@@ -467,14 +483,21 @@ interface TurnRowProps {
   selected: boolean
   onToggle: () => void
   onDiscard: () => void
+  onSplit: () => void
   disabled: boolean
 }
 
-function TurnRow({ turn, selected, onToggle, onDiscard, disabled }: TurnRowProps): React.JSX.Element {
+function TurnRow({ turn, selected, onToggle, onDiscard, onSplit, disabled }: TurnRowProps): React.JSX.Element {
   const t = useStrings()
   // Discard is only valid for `open` and `pushed` turns. Everything else
   // (merged/shipped/pr-open) is shared work; superseded/discarded are gone.
   const canDiscard = turn.state === 'open' || turn.state === 'pushed'
+  // Split requires the turn to be `open` (the rebase rewrites local-only
+  // history) AND to touch more than one file (a single-file turn most
+  // likely has only one hunk; the picker would have nothing meaningful
+  // to split). Single-file multi-hunk turns are rare; the user can fall
+  // back to git from the terminal for those.
+  const canSplit = turn.state === 'open' && turn.filesChanged > 1
   return (
     <li
       className={`
@@ -505,13 +528,35 @@ function TurnRow({ turn, selected, onToggle, onDiscard, disabled }: TurnRowProps
           <StateBadge state={turn.state} />
         </div>
       </div>
+      {turn.state === 'open' && (
+        <button
+          type="button"
+          onClick={onSplit}
+          disabled={disabled || !canSplit}
+          aria-label={`Split ${t.turnsModal.turnNumberFmt(turn.index)}`}
+          title={
+            canSplit
+              ? t.turnsModal.splitTooltip
+              : t.turnsModal.splitDisabledHint
+          }
+          className="
+            flex-shrink-0 text-[11px] px-2 py-1 rounded border border-[var(--color-border-subtle)]
+            text-fg-muted hover:text-fg-primary hover:border-[var(--color-border-strong)]
+            opacity-0 group-hover/row:opacity-100 focus:opacity-100
+            transition-[opacity,colors] duration-[80ms]
+            disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-fg-muted disabled:hover:border-[var(--color-border-subtle)]
+          "
+        >
+          {t.turnsModal.splitAction}
+        </button>
+      )}
       {canDiscard && (
         <button
           type="button"
           onClick={onDiscard}
           disabled={disabled}
           aria-label={`${t.turnsModal.discardAction} ${t.turnsModal.turnNumberFmt(turn.index)}`}
-          title={t.turnsModal.discardAction}
+          title={t.turnsModal.discardTooltip}
           className="
             flex-shrink-0 text-[11px] px-2 py-1 rounded border border-[var(--color-border-subtle)]
             text-fg-muted hover:text-danger-fg hover:border-danger-fg/60
@@ -597,6 +642,9 @@ function AutoCommitPill({ enabled, disabled, onToggle, label, ariaLabel, onLabel
 interface PublishOption {
   key: string
   label: string
+  /** Long-form description shown via `title=` on the menu item, so the
+   *  user understands exactly what each path does before clicking. */
+  tooltip?: string
   disabled: boolean
   onSelect: () => Promise<void> | void
 }
@@ -646,7 +694,7 @@ function PublishDropdown({ label, options, disabled }: PublishDropdownProps): Re
           className="
             absolute right-0 bottom-full mb-1
             bg-surface border border-[var(--color-border-strong)] rounded-md shadow-lg
-            min-w-[200px] py-1
+            w-[360px] py-1
             z-10
           "
         >
@@ -656,6 +704,7 @@ function PublishDropdown({ label, options, disabled }: PublishDropdownProps): Re
               type="button"
               role="menuitem"
               disabled={opt.disabled}
+              title={opt.tooltip}
               onClick={() => {
                 setIsOpen(false)
                 void opt.onSelect()
@@ -666,7 +715,12 @@ function PublishDropdown({ label, options, disabled }: PublishDropdownProps): Re
                 disabled:opacity-50 disabled:cursor-not-allowed
               "
             >
-              {opt.label}
+              <div>{opt.label}</div>
+              {opt.tooltip && (
+                <div className="text-[11px] text-fg-muted mt-0.5 leading-tight whitespace-normal">
+                  {opt.tooltip}
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -812,16 +866,13 @@ function DiscardConfirmDialog({
 interface BuildPublishOptionsArgs {
   t: ReturnType<typeof useStrings>
   canPublish: boolean
-  isWorking: boolean
   publishPath: PublishPath
   isMainMode: boolean
   onSquash: (path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr') => Promise<void> | void
-  splitDisabled: boolean
-  onSplit: () => void
 }
 
 function buildPublishOptions(args: BuildPublishOptionsArgs): PublishOption[] {
-  const { t, canPublish, isWorking, publishPath, isMainMode, onSquash, splitDisabled, onSplit } = args
+  const { t, canPublish, publishPath, isMainMode, onSquash } = args
   const options: PublishOption[] = []
 
   if (isMainMode) {
@@ -829,55 +880,50 @@ function buildPublishOptions(args: BuildPublishOptionsArgs): PublishOption[] {
     options.push({
       key: 'squash-push-branch',
       label: t.turnsModal.publishSquashAndPush,
+      tooltip: t.turnsModal.publishSquashAndPushTooltipMain,
       disabled: !canPublish,
       onSelect: () => onSquash('push-branch')
     })
-  } else {
-    // Worktree mode: shape by publishPath.
-    if (publishPath === 'direct-merge' || publishPath === 'both') {
-      options.push({
-        key: 'squash-direct-merge',
-        label: t.turnsModal.publishSquashAndMerge,
-        disabled: !canPublish,
-        onSelect: () => onSquash('direct-merge')
-      })
-    }
-    if (publishPath === 'pr' || publishPath === 'both') {
-      options.push({
-        key: 'squash-pr',
-        label: t.turnsModal.publishSquashAndPr,
-        disabled: !canPublish,
-        onSelect: () => onSquash('pr')
-      })
-      options.push({
-        key: 'squash-draft-pr',
-        label: t.turnsModal.publishSquashAndDraftPr,
-        disabled: !canPublish,
-        onSelect: () => onSquash('draft-pr')
-      })
-    }
-    // Push-branch is always available as an "advanced / fallback" option
-    // — useful when the user wants to publish without merging or PRing
-    // (e.g., handing the branch off for review out-of-band). The repo's
-    // configured path drives the *primary* options above; this is the
-    // escape hatch.
-    options.push({
-      key: 'squash-push-branch',
-      label: t.turnsModal.publishSquashAndPush,
-      disabled: !canPublish,
-      onSelect: () => onSquash('push-branch')
-    })
+    return options
   }
 
+  // Worktree mode: shape by publishPath.
+  if (publishPath === 'direct-merge' || publishPath === 'both') {
+    options.push({
+      key: 'squash-direct-merge',
+      label: t.turnsModal.publishSquashAndMerge,
+      tooltip: t.turnsModal.publishSquashAndMergeTooltip,
+      disabled: !canPublish,
+      onSelect: () => onSquash('direct-merge')
+    })
+  }
+  if (publishPath === 'pr' || publishPath === 'both') {
+    options.push({
+      key: 'squash-pr',
+      label: t.turnsModal.publishSquashAndPr,
+      tooltip: t.turnsModal.publishSquashAndPrTooltip,
+      disabled: !canPublish,
+      onSelect: () => onSquash('pr')
+    })
+    options.push({
+      key: 'squash-draft-pr',
+      label: t.turnsModal.publishSquashAndDraftPr,
+      tooltip: t.turnsModal.publishSquashAndDraftPrTooltip,
+      disabled: !canPublish,
+      onSelect: () => onSquash('draft-pr')
+    })
+  }
+  // Push-branch is always available as a fallback — useful for handing
+  // the branch off out-of-band without merging or PRing. The repo's
+  // configured path drives the *primary* options above.
   options.push({
-    key: 'split-turn',
-    label: t.turnsModal.publishSplit,
-    disabled: splitDisabled,
-    onSelect: onSplit
+    key: 'squash-push-branch',
+    label: t.turnsModal.publishSquashAndPush,
+    tooltip: t.turnsModal.publishSquashAndPushTooltip,
+    disabled: !canPublish,
+    onSelect: () => onSquash('push-branch')
   })
 
-  // Reference unused params so they don't get linted away in tightenings.
-  void isWorking
   return options
 }
 

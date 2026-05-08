@@ -198,7 +198,7 @@ export function HunkPickerModal({ paneId, turn, onClose, onSplit }: HunkPickerMo
       <footer className="flex-shrink-0 border-t border-[var(--color-border-subtle)] px-5 py-3 flex flex-col gap-2 bg-bg-elevated">
         <div className="flex items-center gap-3 text-[11px] text-fg-muted">
           <span>
-            {leftHunkCount} of {totalHunks} hunks → first commit
+            {leftHunkCount} → first · {totalHunks - leftHunkCount} → second
           </span>
           {leftHunkCount === 0 && (
             <span className="text-warning-fg">Pick at least one hunk for the first commit.</span>
@@ -308,7 +308,7 @@ function FileBlock({ file, selected, onToggle, disabled }: FileBlockProps): Reac
           {file.path}
         </span>
         <span className="text-[11px] text-fg-muted">
-          {selected.size}/{file.hunks.length} → first
+          {fileSplitSummary(file.hunks.length, selected.size)}
         </span>
       </header>
       {file.hunks.length === 0 ? (
@@ -359,6 +359,23 @@ function FileBlock({ file, selected, onToggle, disabled }: FileBlockProps): Reac
       )}
     </li>
   )
+}
+
+/**
+ * Compose a per-file summary for the hunk-picker header. Shows where
+ * each hunk is going so the user doesn't have to mentally invert the
+ * "first" count when most hunks are heading to the second commit.
+ *
+ * Examples:
+ *   total=1, selected=1 → "→ first"           (whole file → first)
+ *   total=1, selected=0 → "→ second"          (whole file → second)
+ *   total=4, selected=3 → "3 first · 1 second" (split)
+ */
+function fileSplitSummary(total: number, selected: number): string {
+  if (total === 0) return ''
+  if (selected === total) return '→ first'
+  if (selected === 0) return '→ second'
+  return `${selected} first · ${total - selected} second`
 }
 
 /**

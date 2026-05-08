@@ -134,9 +134,38 @@ export async function projectTurnsForPane(
   //    We populate `additions` / `deletions` / `filesChanged`.
   const numstat = await collectNumstatsForRange(worktreePath, range)
 
-  // 4. Determine `pushed` set. M1 only checks origin/<branch>; M4 will fold
-  //    in PR + merged/shipped probes.
+  // 4. Determine the per-turn state set. We check three conditions for
+  //    each turn commit:
+  //      - reachable from `origin/<base>`     → shipped (the strongest
+  //                                            terminal: it's on the
+  //                                            authoritative remote
+  //                                            base ref)
+  //      - reachable from local `<base>`       → merged (locally landed
+  //                                            but not yet on origin —
+  //                                            best-effort ff after a
+  //                                            direct-merge may or may
+  //                                            not have moved local)
+  //      - reachable from `origin/<branch>`   → pushed (worktree-mode
+  //                                            only; for main mode the
+  //                                            projection's range
+  //                                            already excludes pushed
+  //                                            commits)
+  //    Priority on overlap: shipped > merged > pushed > open.
   const pushedShas = await collectPushedShas(worktreePath, currentBranch)
+  // Main-mode (currentBranch === baseBranch) skips merged/shipped
+  // detection: the projection range is already `origin/<base>..HEAD`,
+  // so every commit in scope is by definition local-only and `open`.
+  // Running the is-ancestor checks would flag every commit as `merged`
+  // (because they're all on local <base>, since HEAD == base in main
+  // mode) and the modal would mis-report state.
+  const isMainModeForState = currentBranch === baseBranch
+  const reachability = isMainModeForState
+    ? { shipped: new Set<string>(), merged: new Set<string>() }
+    : await collectStateReachability({
+        worktreePath,
+        commits: records.map((r) => r.sha),
+        baseBranch
+      })
 
   // 5. Read discarded-turns sidecar so we can mark `superseded` / future
   //    `discarded` rows. M1 doesn't need to surface discarded yet (M2 builds
@@ -150,11 +179,18 @@ export async function projectTurnsForPane(
     const supersededBy =
       Object.values(sidecar.discarded).find((entry) => entry.commitSha === rec.sha)?.supersededBy
 
-    const state: TurnState = supersededBy && supersededBy.length > 0
-      ? 'superseded'
-      : pushedShas.has(rec.sha)
-        ? 'pushed'
-        : 'open'
+    let state: TurnState
+    if (supersededBy && supersededBy.length > 0) {
+      state = 'superseded'
+    } else if (reachability.shipped.has(rec.sha)) {
+      state = 'shipped'
+    } else if (reachability.merged.has(rec.sha)) {
+      state = 'merged'
+    } else if (pushedShas.has(rec.sha)) {
+      state = 'pushed'
+    } else {
+      state = 'open'
+    }
 
     const stats = numstat.get(rec.sha) ?? { filesChanged: 0, additions: 0, deletions: 0 }
 
@@ -285,6 +321,73 @@ async function collectNumstatsForRange(
     }
   }
   return out
+}
+
+/**
+ * Per-turn reachability sets used to derive `merged` / `shipped` state.
+ *
+ * For each turn commit we ask `git merge-base --is-ancestor <commit>
+ * <ref>`. If the ref doesn't exist (no remote, no local base, freshly
+ * initialised repo), the corresponding set stays empty and that state
+ * never fires — the projection falls back to `pushed` / `open`.
+ *
+ * Per-turn calls keep the implementation simple. For repos with dozens
+ * of turns this is dozens of lightweight git invocations; we can
+ * memoise reachability across calls in M6 if it becomes a hotspot.
+ */
+async function collectStateReachability(args: {
+  worktreePath: string
+  commits: string[]
+  baseBranch: string
+}): Promise<{
+  /** Reachable from origin/<base> — terminal `shipped` state. */
+  shipped: Set<string>
+  /** Reachable from local <base> but not origin/<base> — `merged`. */
+  merged: Set<string>
+}> {
+  const { worktreePath, commits, baseBranch } = args
+  const shipped = new Set<string>()
+  const merged = new Set<string>()
+  if (commits.length === 0) return { shipped, merged }
+
+  const originRefExists = await refExists(worktreePath, `refs/remotes/origin/${baseBranch}`)
+  const localRefExists = await refExists(worktreePath, `refs/heads/${baseBranch}`)
+
+  for (const sha of commits) {
+    if (originRefExists && await isAncestor(worktreePath, sha, `origin/${baseBranch}`)) {
+      shipped.add(sha)
+      continue // shipped subsumes merged
+    }
+    if (localRefExists && await isAncestor(worktreePath, sha, baseBranch)) {
+      merged.add(sha)
+    }
+  }
+  return { shipped, merged }
+}
+
+async function refExists(worktreePath: string, ref: string): Promise<boolean> {
+  try {
+    await execFileAsync('git', ['rev-parse', '--verify', ref], { cwd: worktreePath })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function isAncestor(worktreePath: string, commit: string, ref: string): Promise<boolean> {
+  try {
+    await execFileAsync(
+      'git',
+      ['merge-base', '--is-ancestor', commit, ref],
+      { cwd: worktreePath }
+    )
+    return true
+  } catch {
+    // Non-zero exit means "not an ancestor." Real errors (bad refs)
+    // also land here; we treat them as "not an ancestor" since the
+    // safer fallback is to leave the turn in `open` / `pushed`.
+    return false
+  }
 }
 
 /**

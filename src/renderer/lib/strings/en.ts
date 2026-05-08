@@ -799,12 +799,26 @@ export const en = {
       `${files === 1 ? '1 file' : `${files} files`}  +${added}/-${removed}`,
     publishMenuLabel: 'Publish',
     publishSquashAndPush: 'Squash + push branch',
+    publishSquashAndPushTooltip:
+      'Squash the selected turns into one commit and push the worktree branch to origin. No merge into the base branch and no PR — useful for handing the branch off out-of-band.',
+    publishSquashAndPushTooltipMain:
+      'Squash the selected commits and push to origin/<base>. Refused when origin has diverged.',
     publishSquashAndMerge: 'Squash + direct merge',
+    publishSquashAndMergeTooltip:
+      'Squash the selected turns and merge them straight into the base branch via a side-clone, then push base to origin. Skips the PR step entirely. Best for solo work.',
     publishSquashAndPr: 'Squash + open PR',
+    publishSquashAndPrTooltip:
+      'Squash the selected turns and open a regular pull request via `gh`. The branch is pushed to origin and you finish review on GitHub.',
     publishSquashAndDraftPr: 'Squash + open draft PR',
+    publishSquashAndDraftPrTooltip:
+      'Same as Squash + open PR, but creates the PR in draft mode (won\'t auto-notify reviewers or trigger required checks until you mark it ready).',
     publishIndividual: 'Publish each turn individually',
     publishSplit: 'Split a turn…',
+    splitAction: 'Split',
+    splitTooltip: 'Split this turn into two commits by hunk. Useful when the turn touched multiple files and you want to land them as separate commits.',
+    splitDisabledHint: 'Splitting only applies to open turns that touch more than one file.',
     discardAction: 'Discard',
+    discardTooltip: 'Drop this turn from the worktree branch. Already-pushed turns will be force-removed from origin too.',
     discardConfirmTitle: 'Discard this turn?',
     discardConfirmBodyFmt: (turn: number): string =>
       `Turn ${turn} will be removed from the worktree branch. The reflog still has it for ~30 days, but Claudinha won't show it again.`,
