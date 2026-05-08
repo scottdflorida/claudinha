@@ -192,16 +192,28 @@ export async function getGitStatus(worktreePath: string): Promise<GitStatus | nu
  * Returns 0 on any error.
  */
 async function getCommitsAhead(worktreePath: string): Promise<number> {
-  // Try main first, then master
+  // The right "is this work upstream?" question is "ahead of
+  // origin/<base>", not "ahead of local <base>". A direct-merge from
+  // the bulk modal advances origin/<base> via the side-clone but only
+  // best-effort fast-forwards the user's primary local main (skipped
+  // on a dirty tree). Without checking origin first, the close
+  // confirm flags "1 commit ahead of main" on a worktree whose work
+  // already landed on origin/main and is just waiting for the user's
+  // next pull to FF locally.
+  //
+  // Prefer `origin/<base>` if the ref exists; fall back to local
+  // `<base>` (covers offline-only / freshly-init repos with no remote).
   for (const base of ['main', 'master']) {
-    try {
-      const result = await execFileAsync(
-        'git', ['rev-list', '--count', `${base}..HEAD`],
-        { cwd: worktreePath, timeout: GIT_TIMEOUT }
-      )
-      return parseInt(result.stdout.trim(), 10) || 0
-    } catch {
-      // Branch doesn't exist, try next
+    for (const ref of [`origin/${base}`, base]) {
+      try {
+        const result = await execFileAsync(
+          'git', ['rev-list', '--count', `${ref}..HEAD`],
+          { cwd: worktreePath, timeout: GIT_TIMEOUT }
+        )
+        return parseInt(result.stdout.trim(), 10) || 0
+      } catch {
+        // Ref doesn't exist (no remote, no such branch) — try next.
+      }
     }
   }
   return 0

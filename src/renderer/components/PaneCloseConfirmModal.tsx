@@ -82,8 +82,10 @@ export function PaneCloseConfirmModal({
   const cancelLabel = sequenceControls?.cancelLabel ?? t.paneCloseConfirm.cancelKeepOpen
   // Widen the dialog when a close sequence is active so the banner has room
   // for both the breadcrumb and the override button, and the footer has room
-  // for the four-button done-unmerged case.
-  const dialogSize: 'md' | 'lg' = sequenceControls ? 'lg' : 'md'
+  // for the four-button done-unmerged case. Sequence-close renders up
+  // to four buttons (Cancel + Keep / Prune / Merge); 720px (`lg`)
+  // wraps the row, so bump to `xl` (900px) for the sequence mode.
+  const dialogSize: 'md' | 'xl' = sequenceControls ? 'xl' : 'md'
 
   return (
     <Dialog

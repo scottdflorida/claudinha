@@ -587,6 +587,11 @@ function TurnRow({ turn, selected, focused, onToggle, onDiscard, onSplit, disabl
   // to split). Single-file multi-hunk turns are rare; the user can fall
   // back to git from the terminal for those.
   const canSplit = turn.state === 'open' && turn.filesChanged > 1
+  // Selection is only meaningful for publishable turns. Already-shipped /
+  // merged / superseded / discarded / pr-open rows show their state
+  // badge but the checkbox is disabled (and visibly faint) so the user
+  // can't tick them only to learn they're refused at publish time.
+  const canSelect = turn.state === 'open' || turn.state === 'pushed'
   return (
     <li
       className={`
@@ -599,10 +604,10 @@ function TurnRow({ turn, selected, focused, onToggle, onDiscard, onSplit, disabl
       <input
         type="checkbox"
         checked={selected}
-        disabled={disabled}
+        disabled={disabled || !canSelect}
         onChange={onToggle}
         aria-label={`Select ${t.turnsModal.turnNumberFmt(turn.index)}`}
-        className="mt-1 flex-shrink-0"
+        className="mt-1 flex-shrink-0 disabled:opacity-25 disabled:cursor-not-allowed"
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
