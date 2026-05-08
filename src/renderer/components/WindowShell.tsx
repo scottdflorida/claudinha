@@ -820,7 +820,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
         {/* Centered title — absolute so traffic lights don't offset it.
             Click the name to rename the workspace inline; Enter commits, Esc cancels,
             blank reverts to the default `Workspace N`. */}
-        <div className="absolute inset-x-0 flex justify-center items-center gap-2 pointer-events-none">
+        <div className="absolute inset-x-0 flex justify-center items-center gap-0 pointer-events-none">
           {workspaceId ? (
             <>
               <span className="text-[16px] font-[600] text-fg-secondary select-none">Claudinha:</span>
@@ -846,7 +846,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
                   onClick={startEditingGroveName}
                   title="Click to rename workspace"
                   aria-label={`Rename workspace (currently ${displayName || 'unnamed'})`}
-                  className="pointer-events-auto text-[16px] font-[600] text-fg-secondary hover:text-fg-primary px-2 py-0.5 rounded hover:bg-raised transition-colors duration-[80ms] select-none"
+                  className="pointer-events-auto text-[16px] font-[600] text-fg-secondary hover:text-fg-primary pl-0.5 pr-2 py-0.5 rounded hover:bg-raised transition-colors duration-[80ms] select-none"
                   style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
                 >
                   {displayName || 'unnamed'}

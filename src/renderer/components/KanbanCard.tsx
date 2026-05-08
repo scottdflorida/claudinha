@@ -240,7 +240,8 @@ export function KanbanCard({
             type="button"
             onClick={(e) => { e.stopPropagation(); onPillClick() }}
             className="
-              text-[11px] text-warning-fg underline underline-offset-2 hover:no-underline
+              text-[11px] text-warning-fg/70 underline underline-offset-2 decoration-warning-fg/70
+              hover:text-warning-fg hover:decoration-warning-fg
               transition-colors duration-[80ms]
             "
           >
