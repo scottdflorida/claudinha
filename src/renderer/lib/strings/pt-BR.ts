@@ -848,8 +848,6 @@ export const ptBR: Strings = {
     splitTitleFmt: (turn: number): string => `Dividir turno ${turn}`,
     splitBodyHint:
       'Selecione quais hunks vão para o PRIMEIRO commit. O resto vai para o SEGUNDO.',
-    splitLeftMessageLabel: 'Mensagem do primeiro commit',
-    splitRightMessageLabel: 'Mensagem do segundo commit',
     splitConfirmButton: 'Dividir',
     splitCancelButton: 'Cancelar',
     pendingActionLabel: 'Trabalhando…',

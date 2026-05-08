@@ -831,8 +831,6 @@ export const en = {
     splitTitleFmt: (turn: number): string => `Split turn ${turn}`,
     splitBodyHint:
       'Pick which hunks go to the FIRST commit. The rest go to the SECOND.',
-    splitLeftMessageLabel: 'First commit message',
-    splitRightMessageLabel: 'Second commit message',
     splitConfirmButton: 'Split',
     splitCancelButton: 'Cancel',
     pendingActionLabel: 'Working…',

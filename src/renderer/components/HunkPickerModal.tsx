@@ -213,38 +213,34 @@ export function HunkPickerModal({ paneId, turn, onClose, onSplit }: HunkPickerMo
           <div className="text-[11px] text-danger-fg">{actionError}</div>
         )}
         <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-fg-muted">{t.turnsModal.splitLeftMessageLabel}</span>
-            <input
-              type="text"
-              value={leftMessage}
-              onChange={(e) => setLeftMessage(e.target.value)}
-              disabled={submitting}
-              className="
-                text-[12px] px-2 py-1 rounded border border-[var(--color-border-subtle)]
-                bg-canvas text-fg-primary placeholder:text-fg-muted
-                focus:outline-none focus-visible:outline-accent
-                disabled:opacity-50
-              "
-              placeholder="First commit message"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-fg-muted">{t.turnsModal.splitRightMessageLabel}</span>
-            <input
-              type="text"
-              value={rightMessage}
-              onChange={(e) => setRightMessage(e.target.value)}
-              disabled={submitting}
-              className="
-                text-[12px] px-2 py-1 rounded border border-[var(--color-border-subtle)]
-                bg-canvas text-fg-primary placeholder:text-fg-muted
-                focus:outline-none focus-visible:outline-accent
-                disabled:opacity-50
-              "
-              placeholder="Second commit message"
-            />
-          </label>
+          <input
+            type="text"
+            value={leftMessage}
+            onChange={(e) => setLeftMessage(e.target.value)}
+            disabled={submitting}
+            className="
+              text-[12px] px-2 py-1 rounded border border-[var(--color-border-subtle)]
+              bg-canvas text-fg-primary placeholder:text-fg-muted
+              focus:outline-none focus-visible:outline-accent
+              disabled:opacity-50
+            "
+            placeholder="First commit message"
+            aria-label="First commit message"
+          />
+          <input
+            type="text"
+            value={rightMessage}
+            onChange={(e) => setRightMessage(e.target.value)}
+            disabled={submitting}
+            className="
+              text-[12px] px-2 py-1 rounded border border-[var(--color-border-subtle)]
+              bg-canvas text-fg-primary placeholder:text-fg-muted
+              focus:outline-none focus-visible:outline-accent
+              disabled:opacity-50
+            "
+            placeholder="Second commit message"
+            aria-label="Second commit message"
+          />
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <button
@@ -315,49 +311,99 @@ function FileBlock({ file, selected, onToggle, disabled }: FileBlockProps): Reac
         <p className="text-[11px] text-fg-muted italic">binary or empty</p>
       ) : (
         <ul className="flex flex-col gap-1">
-          {file.hunks.map((hunk) => (
-            <li
-              key={hunk.index}
-              className={`
-                rounded border border-[var(--color-border-subtle)]
-                ${selected.has(hunk.index) ? 'bg-success-fg/5' : ''}
-              `}
-            >
-              <label
+          {file.hunks.map((hunk) => {
+            const isFirst = selected.has(hunk.index)
+            return (
+              <li
+                key={hunk.index}
                 className={`
-                  flex items-start gap-2 px-2 py-1.5 cursor-pointer select-none
-                  ${disabled ? 'opacity-60 cursor-not-allowed' : ''}
+                  rounded border border-[var(--color-border-subtle)]
+                  ${isFirst ? 'bg-success-fg/5' : 'bg-info-fg/5'}
                 `}
               >
-                <input
-                  type="checkbox"
-                  checked={selected.has(hunk.index)}
-                  disabled={disabled}
-                  onChange={() => onToggle(hunk.index)}
-                  className="mt-0.5"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 text-[11px] text-fg-muted">
-                    <span className="font-mono truncate">{hunk.header}</span>
-                    <span className="ml-auto tabular-nums">
-                      <span className="text-success-fg">+{hunk.additions}</span>
-                      {' '}
-                      <span className="text-danger-fg">−{hunk.deletions}</span>
-                    </span>
+                <div
+                  className={`
+                    flex items-start gap-2 px-2 py-1.5
+                    ${disabled ? 'opacity-60' : ''}
+                  `}
+                >
+                  <FirstSecondToggle
+                    isFirst={isFirst}
+                    disabled={disabled}
+                    onToggle={() => onToggle(hunk.index)}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 text-[11px] text-fg-muted">
+                      <span className="font-mono truncate">{hunk.header}</span>
+                      <span className="ml-auto tabular-nums">
+                        <span className="text-success-fg">+{hunk.additions}</span>
+                        {' '}
+                        <span className="text-danger-fg">−{hunk.deletions}</span>
+                      </span>
+                    </div>
+                    <pre className="
+                      mt-1 text-[10.5px] font-mono leading-tight
+                      whitespace-pre overflow-x-auto
+                      bg-canvas/40 rounded px-2 py-1
+                      text-fg-secondary
+                    ">{renderHunkBody(hunk.body)}</pre>
                   </div>
-                  <pre className="
-                    mt-1 text-[10.5px] font-mono leading-tight
-                    whitespace-pre overflow-x-auto
-                    bg-canvas/40 rounded px-2 py-1
-                    text-fg-secondary
-                  ">{renderHunkBody(hunk.body)}</pre>
                 </div>
-              </label>
-            </li>
-          ))}
+              </li>
+            )
+          })}
         </ul>
       )}
     </li>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// FirstSecondToggle — segmented "first / second" replacement for the old
+// binary checkbox. "first" maps to membership in the LEFT set (the same
+// thing the checkbox used to mean); "second" maps to absence.
+// ----------------------------------------------------------------------------
+
+interface FirstSecondToggleProps {
+  isFirst: boolean
+  disabled: boolean
+  onToggle: () => void
+}
+
+function FirstSecondToggle({ isFirst, disabled, onToggle }: FirstSecondToggleProps): React.JSX.Element {
+  const baseSeg =
+    'text-[10px] font-medium px-1.5 py-0.5 select-none transition-colors duration-[80ms]'
+  const activeFirst = 'bg-success-fg/25 text-success-fg'
+  const activeSecond = 'bg-info-fg/25 text-info-fg'
+  const idle = 'text-fg-muted hover:text-fg-primary'
+  return (
+    <div
+      role="group"
+      aria-label="First or second commit"
+      className={`
+        mt-0.5 inline-flex rounded border border-[var(--color-border-subtle)] overflow-hidden
+        ${disabled ? 'opacity-60 cursor-not-allowed' : ''}
+      `}
+    >
+      <button
+        type="button"
+        aria-pressed={isFirst}
+        disabled={disabled}
+        onClick={() => { if (!isFirst) onToggle() }}
+        className={`${baseSeg} ${isFirst ? activeFirst : idle} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        first
+      </button>
+      <button
+        type="button"
+        aria-pressed={!isFirst}
+        disabled={disabled}
+        onClick={() => { if (isFirst) onToggle() }}
+        className={`${baseSeg} border-l border-[var(--color-border-subtle)] ${!isFirst ? activeSecond : idle} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        second
+      </button>
+    </div>
   )
 }
 
