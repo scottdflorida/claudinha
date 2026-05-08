@@ -902,7 +902,7 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
               workspaceType={workspaceType}
             />
           </div>
-          {workspaceId && pausedTerminals.length > 0 && (
+          {workspaceId && pausedTerminals.length > 0 && viewMode !== 'kanban' && (
             <PausedTerminalsPanel workspaceId={workspaceId} pausedTerminals={pausedTerminals} />
           )}
         </>
@@ -990,8 +990,9 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
             </div>
           </div>
 
-          {/* Dormant panes panel — collapsible, below pane grid */}
-          {workspaceId && pausedTerminals.length > 0 && (
+          {/* Dormant panes panel — collapsible, below pane grid. Hidden in
+              kanban view; the kanban repo rail surfaces dormant sessions. */}
+          {workspaceId && pausedTerminals.length > 0 && viewMode !== 'kanban' && (
             <PausedTerminalsPanel workspaceId={workspaceId} pausedTerminals={pausedTerminals} />
           )}
         </>
