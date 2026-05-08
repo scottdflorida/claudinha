@@ -86,7 +86,7 @@ describe('RepoChangesModal', () => {
 
     // Merge button is rendered (publishPath = 'both') but disabled
     // before any pane is selected.
-    const mergeButton = getByText('Merge').closest('button') as HTMLButtonElement
+    const mergeButton = getByText('Merge to origin/main').closest('button') as HTMLButtonElement
     expect(mergeButton.disabled).toBe(true)
   })
 
@@ -106,7 +106,7 @@ describe('RepoChangesModal', () => {
     fireEvent.click(getByLabelText('Select agent-A'))
     expect(getByText('1 selected')).toBeTruthy()
 
-    const mergeButton = getByText('Merge').closest('button') as HTMLButtonElement
+    const mergeButton = getByText('Merge to origin/main').closest('button') as HTMLButtonElement
     expect(mergeButton.disabled).toBe(false)
 
     // "select all" should add only agent-A — agent-B has no turns so its
@@ -137,7 +137,7 @@ describe('RepoChangesModal', () => {
     await waitFor(() => expect(getByText('agent-A')).toBeTruthy())
     fireEvent.click(getByLabelText('Select agent-A'))
 
-    fireEvent.click(getByText('Merge'))
+    fireEvent.click(getByText('Merge to origin/main'))
 
     await waitFor(() => {
       const calls = api.invoke.mock.calls.filter((c: unknown[]) => c[0] === IPC.BULK_RUN)

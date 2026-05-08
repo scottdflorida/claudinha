@@ -803,7 +803,8 @@ export const en = {
       'Squash the selected turns into one commit and push the worktree branch to origin. No merge into the base branch and no PR — useful for handing the branch off out-of-band.',
     publishSquashAndPushTooltipMain:
       'Squash the selected commits and push to origin/<base>. Refused when origin has diverged.',
-    publishSquashAndMerge: 'Squash + direct merge',
+    publishSquashAndMerge: 'Squash + merge to origin',
+    publishSquashAndMergeFmt: (base: string): string => `Squash + merge to origin/${base}`,
     publishSquashAndMergeTooltip:
       'Squash the selected turns and merge them straight into the base branch via a side-clone, then push base to origin. Skips the PR step entirely. Best for solo work.',
     publishSquashAndPr: 'Squash + open PR',

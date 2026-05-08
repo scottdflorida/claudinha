@@ -274,6 +274,7 @@ export function RepoChangesModal({ workspaceId, repoPath, onClose }: RepoChanges
       {/* Bulk actions bar */}
       <BulkActionsBar
         publishPath={data?.publishPath ?? 'both'}
+        baseBranch={data?.panes.find((p) => p.baseBranch)?.baseBranch ?? null}
         selectedCount={selectedPaneIds.size}
         running={running}
         onAction={handleBulk}
@@ -408,6 +409,12 @@ function FilterChipButton({
 
 interface BulkActionsBarProps {
   publishPath: PublishPath
+  /** Resolved base branch for the repo — interpolated into the
+   *  Merge button label so the destination ("origin/<base>") is
+   *  visible without reading the tooltip. Null if no pane in the
+   *  repo has reported a base branch yet (rare; falls back to a
+   *  generic label). */
+  baseBranch: string | null
   selectedCount: number
   running: { runId: string; total: number; completed: number } | null
   onAction: (action: BulkActionKind) => Promise<void> | void
@@ -416,7 +423,7 @@ interface BulkActionsBarProps {
 }
 
 function BulkActionsBar({
-  publishPath, selectedCount, running, onAction, onCancel, onClose
+  publishPath, baseBranch, selectedCount, running, onAction, onCancel, onClose
 }: BulkActionsBarProps): React.JSX.Element {
   const disabled = selectedCount === 0 || running !== null
   // While running, swap the action buttons for a Cancel + Close so the
@@ -458,9 +465,9 @@ function BulkActionsBar({
             onClick={() => void onAction('merge')}
             disabled={disabled}
             tone="success"
-            title="Squash + merge each selected agent's work into the base branch (via the side-clone)"
+            title={`For each selected agent: squash its turns, merge the result into ${baseBranch ?? 'the base branch'} via the side-clone, and push origin/${baseBranch ?? '<base>'}.`}
           >
-            Merge
+            {baseBranch ? `Merge to origin/${baseBranch}` : 'Merge'}
           </BulkActionButton>
         )}
         {(publishPath === 'pr' || publishPath === 'both') && (

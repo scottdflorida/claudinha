@@ -390,6 +390,7 @@ export function TurnsModal({ paneId, paneName, workspaceId, onClose }: TurnsModa
             options={buildPublishOptions({
               t, canPublish, publishPath,
               isMainMode: !!(diagnostic && diagnostic.currentBranch === diagnostic.baseBranch && diagnostic.baseBranch !== null),
+              baseBranch: diagnostic?.baseBranch ?? null,
               selectedCount: selectedIds.size,
               onSquash: handlePublishSquash
             })}
@@ -885,6 +886,10 @@ interface BuildPublishOptionsArgs {
   canPublish: boolean
   publishPath: PublishPath
   isMainMode: boolean
+  /** Base branch the merge action targets — interpolated into the
+   *  "Squash + merge to origin/<base>" label so the destination is
+   *  obvious without reading the tooltip. */
+  baseBranch: string | null
   /** When 1, drop the "Squash + " prefix — there's nothing to squash. */
   selectedCount: number
   onSquash: (path: 'push-branch' | 'direct-merge' | 'pr' | 'draft-pr') => Promise<void> | void
@@ -902,9 +907,12 @@ function stripSquashPrefix(label: string): string {
 }
 
 function buildPublishOptions(args: BuildPublishOptionsArgs): PublishOption[] {
-  const { t, canPublish, publishPath, isMainMode, selectedCount, onSquash } = args
+  const { t, canPublish, publishPath, isMainMode, baseBranch, selectedCount, onSquash } = args
   const options: PublishOption[] = []
   const fmt = (label: string): string => (selectedCount === 1 ? stripSquashPrefix(label) : label)
+  const mergeLabel = baseBranch
+    ? t.turnsModal.publishSquashAndMergeFmt(baseBranch)
+    : t.turnsModal.publishSquashAndMerge
 
   if (isMainMode) {
     // Main mode: push-branch only.
@@ -922,7 +930,7 @@ function buildPublishOptions(args: BuildPublishOptionsArgs): PublishOption[] {
   if (publishPath === 'direct-merge' || publishPath === 'both') {
     options.push({
       key: 'squash-direct-merge',
-      label: fmt(t.turnsModal.publishSquashAndMerge),
+      label: fmt(mergeLabel),
       tooltip: t.turnsModal.publishSquashAndMergeTooltip,
       disabled: !canPublish,
       onSelect: () => onSquash('direct-merge')

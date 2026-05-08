@@ -820,7 +820,8 @@ export const ptBR: Strings = {
       'Faz squash dos turnos selecionados em um commit e empurra a branch da worktree para o origin. Sem merge na branch base e sem PR — útil para entregar a branch fora do fluxo padrão.',
     publishSquashAndPushTooltipMain:
       'Faz squash dos commits selecionados e empurra para origin/<base>. Recusa quando o origin divergiu.',
-    publishSquashAndMerge: 'Squash + merge direto',
+    publishSquashAndMerge: 'Squash + merge para origin',
+    publishSquashAndMergeFmt: (base: string): string => `Squash + merge para origin/${base}`,
     publishSquashAndMergeTooltip:
       'Faz squash dos turnos e mescla direto na branch base via clone lateral, depois empurra base para origin. Pula o PR. Ideal para trabalho solo.',
     publishSquashAndPr: 'Squash + abrir PR',
