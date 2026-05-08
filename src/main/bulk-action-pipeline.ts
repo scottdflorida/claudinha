@@ -95,6 +95,15 @@ export async function runBulkAction(args: {
             errorKind: 'unknown',
             errorMessage: 'cancelled'
           })
+          // Cancellation still emits a progress tick so the renderer
+          // counter doesn't stall on a half-drained run.
+          broadcastToAllWindows(windowManager, IPC.BULK_PROGRESS, {
+            runId,
+            paneId: paneIds[i]!,
+            result: results[results.length - 1]!,
+            completed: i + 1,
+            total
+          } satisfies BulkProgressPayload)
           continue
         }
         const paneId = paneIds[i]!
@@ -106,23 +115,17 @@ export async function runBulkAction(args: {
           sideCloneManager
         })
         results.push(result)
-        const window = pickAnyWindow(windowManager)
-        if (window) {
-          const progress: BulkProgressPayload = {
-            runId, paneId, result,
-            completed: i + 1,
-            total
-          }
-          window.webContents.send(IPC.BULK_PROGRESS, progress)
-        }
+        broadcastToAllWindows(windowManager, IPC.BULK_PROGRESS, {
+          runId, paneId, result,
+          completed: i + 1,
+          total
+        } satisfies BulkProgressPayload)
       }
     } finally {
       ACTIVE.delete(runId)
-      const window = pickAnyWindow(windowManager)
-      if (window) {
-        const completed: BulkCompletedPayload = { runId, results }
-        window.webContents.send(IPC.BULK_COMPLETED, completed)
-      }
+      broadcastToAllWindows(windowManager, IPC.BULK_COMPLETED, {
+        runId, results
+      } satisfies BulkCompletedPayload)
     }
   })()
 
@@ -252,13 +255,17 @@ function bulkActionToPublishPath(action: BulkActionKind):
   }
 }
 
-function pickAnyWindow(windowManager: WindowManager) {
-  // The bulk pipeline doesn't know which window opened the modal. In
-  // practice there's one per workspace and progress events are
-  // workspace-scoped (the renderer filters by runId). Send to the
-  // first non-destroyed window the manager knows about.
+/**
+ * Broadcast a payload to every non-destroyed BrowserWindow. The
+ * pipeline doesn't know which window opened the modal, and a
+ * single-window pick can land on the wrong one in multi-window
+ * setups, leaving the modal's counter stuck. Renderers filter by
+ * runId so duplicate delivery is harmless.
+ */
+function broadcastToAllWindows(windowManager: WindowManager, channel: string, payload: unknown): void {
   for (const w of windowManager.getAllWindows().values()) {
-    if (!w.isDestroyed()) return w
+    if (!w.isDestroyed()) {
+      w.webContents.send(channel, payload)
+    }
   }
-  return null
 }
