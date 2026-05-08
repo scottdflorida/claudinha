@@ -47,20 +47,48 @@ interface JsonlEntry {
 type JsonlMessageContent = string | Array<{ type?: string; text?: string }> | undefined
 
 /**
+ * When the user invokes a Claude Code slash command, the JSONL `user` entry
+ * stores the message as XML-tagged metadata, e.g.
+ *
+ *   <command-name>/plan</command-name>
+ *   <command-message>plan</command-message>
+ *   <command-args>add one more story</command-args>
+ *
+ * The raw blob is unhelpful in a card; we want "/plan add one more story".
+ * Returns null if the text doesn't look like a slash-command wrapper, in
+ * which case the caller falls back to the trimmed original.
+ */
+function parseSlashCommand(text: string): string | null {
+  const nameMatch = text.match(/<command-name>\s*([^<]*?)\s*<\/command-name>/i)
+  if (!nameMatch) return null
+  const name = nameMatch[1].trim()
+  if (!name) return null
+  const argsMatch = text.match(/<command-args>\s*([\s\S]*?)\s*<\/command-args>/i)
+  const args = argsMatch ? argsMatch[1].trim() : ''
+  return args ? `${name} ${args}` : name
+}
+
+/**
  * Extract a plain-text representation of a JSONL message's `content` field.
  * Returns null when there is no usable text (empty string, tool-result-only
  * arrays, etc.) so the caller can skip non-prompt entries.
+ *
+ * Slash-command turns whose content is the XML wrapper Claude Code emits
+ * are unwrapped into a human-readable "/<name> <args>" form; everything
+ * else is returned as-is.
  */
 function extractMessageText(content: JsonlMessageContent): string | null {
   if (typeof content === 'string') {
     const trimmed = content.trim()
-    return trimmed.length > 0 ? trimmed : null
+    if (trimmed.length === 0) return null
+    return parseSlashCommand(trimmed) ?? trimmed
   }
   if (Array.isArray(content)) {
     for (const block of content) {
       if (block && block.type === 'text' && typeof block.text === 'string') {
         const trimmed = block.text.trim()
-        if (trimmed.length > 0) return trimmed
+        if (trimmed.length === 0) continue
+        return parseSlashCommand(trimmed) ?? trimmed
       }
     }
   }

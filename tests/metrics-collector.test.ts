@@ -817,6 +817,47 @@ describe('MetricsCollector', () => {
       expect(metrics.initialPrompt).toBe('The actual first prompt')
     })
 
+    it('unwraps slash-command markup into "/<name> <args>"', async () => {
+      // Claude Code stores `/plan adding one new story` as XML-tagged
+      // metadata. Without unwrapping, the rail card shows the markup.
+      setupForJsonl(
+        makeJsonl({
+          type: 'user',
+          message: {
+            role: 'user',
+            content:
+              '<command-name>/plan</command-name>\n' +
+              '            <command-message>plan</command-message>\n' +
+              '            <command-args>adding one new story to this repo</command-args>'
+          }
+        })
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.initialPrompt).toBe('/plan adding one new story to this repo')
+    })
+
+    it('returns just the slash-command name when args are empty', async () => {
+      setupForJsonl(
+        makeJsonl({
+          type: 'user',
+          message: {
+            role: 'user',
+            content:
+              '<command-name>/clear</command-name>\n' +
+              '            <command-args></command-args>'
+          }
+        })
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.initialPrompt).toBe('/clear')
+    })
+
     it('preserves existing initialPrompt when JSONL has no user message', async () => {
       setupForJsonl(
         makeJsonl({ type: 'assistant', message: { usage: { input_tokens: 100, output_tokens: 50 } } }),
