@@ -3105,26 +3105,12 @@ export function registerIpcHandlers(
       }
     }
     const lastSkipReason = turnRecorder.getLastSkipReason(payload.paneId)
-    if (!pane.isWorktree) {
-      return {
-        error: null,
-        turns: [],
-        pendingAction: null,
-        autoCommitEnabled: false,
-        diagnostic: {
-          isWorktree: false,
-          currentBranch: null,
-          baseBranch: null,
-          lastSkipReason
-        }
-      }
-    }
-    const baseBranch = await detectMainBranch(pane.worktreePath)
-    const currentBranch = await getCurrentBranch(pane.worktreePath)
     const paneExt = pane as {
       autoCommitEnabled?: boolean
       pendingAction?: TurnPendingActionType | null
     }
+    const baseBranch = await detectMainBranch(pane.worktreePath)
+    const currentBranch = await getCurrentBranch(pane.worktreePath)
     if (!baseBranch || !currentBranch) {
       return {
         error: null,
@@ -3132,13 +3118,19 @@ export function registerIpcHandlers(
         pendingAction: null,
         autoCommitEnabled: paneExt.autoCommitEnabled !== false,
         diagnostic: {
-          isWorktree: true,
+          isWorktree: pane.isWorktree,
           currentBranch: currentBranch ?? null,
           baseBranch: baseBranch ?? null,
           lastSkipReason
         }
       }
     }
+    // Per M2.5: main-mode panes (currentBranch === baseBranch, often the
+    // case when isWorktree=false) run the same projection path with the
+    // range automatically narrowing to `origin/<base>..HEAD`. Don't
+    // short-circuit on `isWorktree` — the projection knows what to do
+    // and the recorder commits to local <base> just as it does to a
+    // worktree branch.
     const turns = await projectTurnsForPane(pane.worktreePath, payload.paneId, baseBranch, currentBranch)
     return {
       error: null,
@@ -3146,7 +3138,7 @@ export function registerIpcHandlers(
       pendingAction: paneExt.pendingAction ?? null,
       autoCommitEnabled: paneExt.autoCommitEnabled !== false,
       diagnostic: {
-        isWorktree: true,
+        isWorktree: pane.isWorktree,
         currentBranch,
         baseBranch,
         lastSkipReason
