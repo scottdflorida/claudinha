@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { CompletionActionState, PaneStatus, RailGroupBy } from '../../shared/types'
 import { STATUS_COLORS } from '../lib/constants'
 import { formatAge } from '../lib/format-age'
@@ -137,16 +137,7 @@ export function RailTerminalCard({
   } else {
     const prompt = initialPrompt?.trim() ?? ''
     secondRowContent = prompt ? (
-      <span
-        className="text-[11px] text-fg-muted truncate min-w-0"
-        title={prompt}
-        style={{
-          maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent)',
-          WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent)'
-        }}
-      >
-        {prompt}
-      </span>
+      <FadingPrompt text={prompt} />
     ) : (
       <span className="text-[11px] text-fg-muted italic">—</span>
     )
@@ -176,5 +167,46 @@ export function RailTerminalCard({
         </span>
       </div>
     </button>
+  )
+}
+
+/**
+ * Renders the second-row prompt text with a right-edge alpha-fade mask, but
+ * only when the text would otherwise overflow its container. When the prompt
+ * fits, the mask is suppressed so short prompts don't appear artificially
+ * faded against the age label.
+ */
+function FadingPrompt({ text }: { text: string }): React.JSX.Element {
+  const ref = useRef<HTMLSpanElement | null>(null)
+  const [overflowing, setOverflowing] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = (): void => {
+      // +1 forgives sub-pixel rounding so we don't oscillate the mask on or
+      // off when scrollWidth and clientWidth are within a fractional pixel.
+      setOverflowing(el.scrollWidth > el.clientWidth + 1)
+    }
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [text])
+  return (
+    <span
+      ref={ref}
+      className="text-[11px] text-fg-muted min-w-0 overflow-hidden whitespace-nowrap"
+      title={text}
+      style={
+        overflowing
+          ? {
+              maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent)',
+              WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent)'
+            }
+          : undefined
+      }
+    >
+      {text}
+    </span>
   )
 }

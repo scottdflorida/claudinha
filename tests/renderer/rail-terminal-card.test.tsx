@@ -5,10 +5,24 @@
 // errored panes paint red regardless of status. Tests pin the wiring.
 
 import React from 'react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { RailTerminalCard } from '../../src/renderer/components/RailTerminalCard'
 import { STATUS_COLORS } from '../../src/renderer/lib/constants'
+
+// jsdom doesn't ship ResizeObserver. The card uses it to detect prompt
+// overflow; the no-op stub is enough for unit tests since they don't exercise
+// container resizes.
+beforeAll(() => {
+  if (typeof globalThis.ResizeObserver === 'undefined') {
+    class ResizeObserverStub {
+      observe(): void { /* no-op */ }
+      unobserve(): void { /* no-op */ }
+      disconnect(): void { /* no-op */ }
+    }
+    ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver = ResizeObserverStub
+  }
+})
 
 const ERROR_COLOR = '#DB4D3F'
 
