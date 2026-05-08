@@ -208,7 +208,7 @@ export function RepoChangesModal({ workspaceId, repoPath, onClose }: RepoChanges
       <header className="flex-shrink-0 px-5 py-4 border-b border-[var(--color-border-subtle)] flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h2 id="repo-changes-modal-title" className="text-sm font-[600] text-fg-primary truncate">
-            {data ? `Changes · ${data.repoLabel}` : 'Changes'}
+            {data ? `Changes in Repo: ${data.repoLabel}` : 'Changes'}
           </h2>
           <p className="text-[11px] text-fg-muted mt-0.5">
             {data ? `${data.panes.length} agent${data.panes.length === 1 ? '' : 's'} · publish-path: ${data.publishPath}` : 'Loading…'}
@@ -384,7 +384,7 @@ function PaneSection({ pane, selected, onToggle, disabled }: PaneSectionProps): 
           onChange={onToggle}
           disabled={disabled || !actionable}
           aria-label={`Select ${pane.paneName}`}
-          className="mt-1 flex-shrink-0"
+          className="mt-1 flex-shrink-0 disabled:opacity-25 disabled:cursor-not-allowed"
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
@@ -422,8 +422,8 @@ function PaneSection({ pane, selected, onToggle, disabled }: PaneSectionProps): 
           {pane.turns.map((turn) => (
             <li key={turn.id} className="flex items-baseline gap-2 text-[11px]">
               <span className="text-fg-muted tabular-nums">T{turn.index}</span>
-              <span className="flex-1 text-fg-primary truncate" title={turn.summary}>{turn.summary}</span>
               <StateBadge state={turn.state} />
+              <span className="flex-1 text-fg-primary truncate" title={turn.summary}>{turn.summary}</span>
             </li>
           ))}
         </ul>
@@ -483,36 +483,38 @@ function BulkActionsBar({
   // user is never trapped in a "Running… 0/N" state with no recourse.
   if (running) {
     return (
-      <footer className="flex-shrink-0 border-t border-[var(--color-border-subtle)] px-5 py-3 flex items-center gap-2 bg-bg-elevated">
-        <div className="flex-1 text-[11px] text-fg-secondary tabular-nums">
+      <footer className="flex-shrink-0 border-t border-[var(--color-border-subtle)] px-5 py-3 flex flex-col gap-2 bg-bg-elevated">
+        <div className="text-[11px] text-fg-secondary tabular-nums">
           Running… {running.completed}/{running.total} done
         </div>
-        <button
-          type="button"
-          onClick={() => void onCancel()}
-          className="text-[12px] px-3 py-1 rounded border border-warning-fg/60 text-warning-fg hover:bg-warning-fg/10"
-          title="Stop the bulk pipeline. The pane currently mid-action finishes; remaining panes are skipped."
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-[12px] px-3 py-1 rounded border border-[var(--color-border-subtle)] text-fg-secondary hover:text-fg-primary hover:bg-overlay"
-        >
-          Close
-        </button>
+        <div className="flex items-center gap-2 justify-end">
+          <button
+            type="button"
+            onClick={() => void onCancel()}
+            className="text-[12px] px-3 py-1 rounded border border-warning-fg/60 text-warning-fg hover:bg-warning-fg/10"
+            title="Stop the bulk pipeline. The pane currently mid-action finishes; remaining panes are skipped."
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[12px] px-3 py-1 rounded border border-[var(--color-border-subtle)] text-fg-secondary hover:text-fg-primary hover:bg-overlay"
+          >
+            Close
+          </button>
+        </div>
       </footer>
     )
   }
   return (
-    <footer className="flex-shrink-0 border-t border-[var(--color-border-subtle)] px-5 py-3 flex items-center gap-2 bg-bg-elevated">
-      <div className="flex-1 text-[11px] text-fg-muted">
+    <footer className="flex-shrink-0 border-t border-[var(--color-border-subtle)] px-5 py-3 flex flex-col gap-2 bg-bg-elevated">
+      <div className="text-[11px] text-fg-muted">
         {selectedCount === 0
           ? 'Select agents above to act on them in bulk.'
           : `${selectedCount} agent${selectedCount === 1 ? '' : 's'} selected.`}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center flex-wrap gap-2 justify-end">
         {(publishPath === 'direct-merge' || publishPath === 'both') && (
           <BulkActionButton
             onClick={() => void onAction('merge')}

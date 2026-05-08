@@ -230,16 +230,17 @@ export function KanbanCard({
         </div>
       )}
 
-      {/* Next-step pill — only on changes-ready cards. Opens the per-
-          terminal TurnsModal. Mirrors the wall-mode "Changes ready" CTA. */}
+      {/* Next-step link — only on changes-ready cards. Opens the per-
+          terminal TurnsModal. Rendered as plain underlined text rather
+          than a bordered pill so it reads as a hyperlink and doesn't
+          fight the card's border for attention. */}
       {pane.status === 'changes-ready' && onPillClick && (
         <div className="flex items-center min-w-0">
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onPillClick() }}
             className="
-              inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] tabular-nums
-              text-warning-fg border-warning-fg/60 hover:bg-warning-fg/10
+              text-[11px] text-warning-fg underline underline-offset-2 hover:no-underline
               transition-colors duration-[80ms]
             "
           >

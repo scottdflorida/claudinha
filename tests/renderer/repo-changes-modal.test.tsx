@@ -79,7 +79,7 @@ describe('RepoChangesModal', () => {
       <RepoChangesModal workspaceId="ws-1" repoPath="/repos/demo" onClose={() => {}} />
     )
 
-    await waitFor(() => expect(getByText(/Changes · demo/)).toBeTruthy())
+    await waitFor(() => expect(getByText(/Changes in Repo: demo/)).toBeTruthy())
     expect(getByText('agent-A')).toBeTruthy()
     expect(getByText('agent-B')).toBeTruthy()
     expect(getByText('Add a.txt')).toBeTruthy()
