@@ -56,7 +56,7 @@ function makePane(overrides: Partial<RendererPane> = {}): RendererPane {
       linesRemoved: null,
       sessionTitle: null,
       agentName: null,
-      initialPrompt: null
+      initialPrompt: null, lastMessage: null
     },
     terminated: false,
     hasUnseenStatusChange: false,
@@ -112,7 +112,7 @@ describe('KanbanCard — fixed height', () => {
             linesRemoved: 3,
             sessionTitle: null,
             agentName: null,
-            initialPrompt: null
+            initialPrompt: null, lastMessage: null
           },
           gitStatus: {
             hasUncommittedChanges: true,

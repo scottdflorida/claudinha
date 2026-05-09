@@ -44,7 +44,7 @@ function makeStubPane(worktreePath: string): PaneState {
       totalTokens: null, contextPercent: null, toolsUsed: null,
       totalCostUsd: null, durationMs: null, modelDisplayName: null,
       linesAdded: null, linesRemoved: null, sessionTitle: null,
-      agentName: null, initialPrompt: null
+      agentName: null, initialPrompt: null, lastMessage: null
     },
     createdAt: Date.now(), gitStatus: null, isWorktree: false,
     completionActionStatus: null, autoCommitEnabled: true

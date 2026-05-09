@@ -32,6 +32,7 @@ interface OverrideProps {
   completionState?: 'success' | 'error' | 'conflict' | 'dirty-main' | null
   activeToolName?: string | null
   initialPrompt?: string | null
+  lastMessage?: string | null
   groupBy?: 'repo' | 'status'
   isActive?: boolean
   onClick?: () => void
@@ -54,6 +55,7 @@ function renderCard(overrides: OverrideProps = {}): {
       completionState={overrides.completionState ?? null}
       activeToolName={overrides.activeToolName ?? null}
       initialPrompt={overrides.initialPrompt ?? null}
+      lastMessage={overrides.lastMessage ?? null}
       lastActivityAt={1_000_000}
       now={1_000_000 + 5 * 60_000} // 5 minutes
       groupBy={overrides.groupBy ?? 'repo'}
@@ -85,6 +87,7 @@ describe('RailTerminalCard', () => {
         completionState={null}
         activeToolName={null}
         initialPrompt={null}
+        lastMessage={null}
         lastActivityAt={1_000_000}
         now={1_000_000 + 5 * 60_000}
         groupBy="status"
@@ -103,30 +106,48 @@ describe('RailTerminalCard', () => {
     expect(STATUS_COLORS.working).toBe('#E9EDE6')
   })
 
-  it('changes-ready: renders View turns link that fires its handler without selecting the card', () => {
+  it('changes-ready: status label itself is the underlined link that opens the turns modal', () => {
     const onClick = vi.fn()
     const onViewTurns = vi.fn()
-    renderCard({ status: 'changes-ready', onClick, onViewTurns })
-    const link = screen.getByText('View turns')
-    fireEvent.click(link)
+    renderCard({
+      status: 'changes-ready',
+      onClick,
+      onViewTurns,
+      lastMessage: 'I finished the migration.'
+    })
+    // The status label "Changes ready" is now a button — not a span — and
+    // clicking it opens the turns modal without activating the card.
+    const label = screen.getByRole('button', { name: 'View turns' })
+    expect(label.tagName).toBe('BUTTON')
+    expect(label.className).toContain('underline')
+    fireEvent.click(label)
     expect(onViewTurns).toHaveBeenCalledTimes(1)
     expect(onClick).not.toHaveBeenCalled() // stopPropagation
+    // Second row shows the last message; the old "View turns" body link is gone.
+    expect(screen.getByText('I finished the migration.')).toBeTruthy()
+    expect(screen.queryByText('View turns')).toBeNull()
   })
 
-  it('working: renders the formatted active tool verb', () => {
-    renderCard({ status: 'working', activeToolName: 'Edit' })
-    // "Editing" appears twice: once as the colored status label (top-right
-    // when grouped by repo) and once as the second-row activity verb.
-    const matches = screen.getAllByText('Editing')
-    expect(matches.length).toBe(2)
+  it('working: second row shows the last message, not the tool verb', () => {
+    renderCard({
+      status: 'working',
+      activeToolName: 'Edit',
+      lastMessage: 'Updating the importer module.'
+    })
+    expect(screen.getByText('Updating the importer module.')).toBeTruthy()
+    // The status-label slot still shows "Editing" (top-right), but the
+    // second-row activity verb is gone — only the last message remains.
+    expect(screen.getAllByText('Editing').length).toBe(1)
   })
 
-  it('working with no tool: falls back to "Working…" in the activity row', () => {
-    renderCard({ status: 'working', activeToolName: null })
-    // Status-label slot: formatStatusLabel returns "Working" (no ellipsis).
-    // Activity row: falls back to t.kanban.working = "Working…".
-    expect(screen.getByText('Working')).toBeTruthy()
-    expect(screen.getByText('Working…')).toBeTruthy()
+  it('any status: falls back to initialPrompt when lastMessage is null', () => {
+    renderCard({
+      status: 'working',
+      activeToolName: null,
+      initialPrompt: 'Refactor the importer',
+      lastMessage: null
+    })
+    expect(screen.getByText('Refactor the importer')).toBeTruthy()
   })
 
   it('awaiting-prompt: shows the trimmed initial prompt', () => {
@@ -161,6 +182,7 @@ describe('RailTerminalCard', () => {
         completionState={null}
         activeToolName={null}
         initialPrompt="hi"
+        lastMessage={null}
         lastActivityAt={0}
         now={3 * 60 * 60_000 + 12 * 60_000}
         groupBy="repo"
@@ -181,7 +203,7 @@ describe('RailTerminalCard', () => {
       terminated: false,
       completionState: null,
       activeToolName: null,
-      initialPrompt: null,
+      initialPrompt: null, lastMessage: null,
       lastActivityAt: 1_000_000,
       now: 1_000_000 + 5 * 60_000,
       groupBy: 'repo' as const,

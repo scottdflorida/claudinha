@@ -349,6 +349,7 @@ export class MetricsCollector {
       sessionTitle: existingMetrics.sessionTitle,
       agentName: existingMetrics.agentName,
       initialPrompt: existingMetrics.initialPrompt,
+      lastMessage: existingMetrics.lastMessage,
 
       // Statusline-derived fields
       contextPercent: data.context_window?.used_percentage ?? existingMetrics.contextPercent,
@@ -461,6 +462,7 @@ export class MetricsCollector {
     let sessionTitle: string | null = null
     let agentName: string | null = null
     let initialPrompt: string | null = null
+    let lastMessage: string | null = null
     const toolCounts: ToolUsageSummary = new Map()
 
     for (const line of lines) {
@@ -497,6 +499,17 @@ export class MetricsCollector {
       ) {
         const text = extractMessageText(entry.message.content)
         if (text) initialPrompt = text
+      }
+
+      // Track the most recent message (user or assistant) for the rail card
+      // subtitle. Skip system-injected (`isMeta`) user entries and tool-result
+      // payloads with no text content; latest non-empty wins.
+      if (
+        (entry.type === 'user' && !entry.isMeta && entry.message?.role === 'user') ||
+        (entry.type === 'assistant' && entry.message?.role === 'assistant')
+      ) {
+        const text = extractMessageText(entry.message?.content)
+        if (text) lastMessage = text
       }
 
       // Count tool usage
@@ -553,6 +566,7 @@ export class MetricsCollector {
       sessionTitle: sessionTitle ?? existingMetrics.sessionTitle,
       agentName: agentName ?? existingMetrics.agentName,
       initialPrompt: initialPrompt ?? existingMetrics.initialPrompt,
+      lastMessage: lastMessage ?? existingMetrics.lastMessage,
       // Statusline-derived (preserved)
       totalCostUsd: existingMetrics.totalCostUsd,
       durationMs: existingMetrics.durationMs,

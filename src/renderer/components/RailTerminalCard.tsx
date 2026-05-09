@@ -3,7 +3,6 @@ import type { CompletionActionState, PaneStatus, RailGroupBy } from '../../share
 import { STATUS_COLORS } from '../lib/constants'
 import { formatAge } from '../lib/format-age'
 import { formatStatusLabel } from './StatusOverlay'
-import { formatToolActivity } from '../../shared/tool-activity'
 import { useStrings } from '../lib/strings'
 
 const ERROR_COLOR = '#DB4D3F'
@@ -21,8 +20,10 @@ interface RailTerminalCardProps {
   completionState: CompletionActionState | null
   /** Live tool name when status === 'working'; populates the activity row. */
   activeToolName: string | null
-  /** First user message in the session — fallback content for the second row. */
+  /** First user message in the session — fallback content for the second row when no later message exists yet. */
   initialPrompt: string | null
+  /** Most recent message (user or assistant) — primary content for the second row. */
+  lastMessage: string | null
   /** Epoch ms of the pane's most recent status transition. */
   lastActivityAt: number
   /** Shared ticker so all cards age in lockstep without per-row intervals. */
@@ -49,14 +50,15 @@ interface RailTerminalCardProps {
  *   - 'repo'   → agent name (left) · colored status label (right)
  *   - 'status' → "repo › agent" (left) · 8px colored dot (right)
  *
- * Second-row content depends on status:
- *   - changes-ready → "View turns" link (opens TurnsModal for this pane)
- *   - working       → formatToolActivity(activeToolName) or "Working" fallback
- *   - everything else → initialPrompt, single line, fading to alpha 0 at the
- *     right edge so a long prompt feathers out instead of hard-clipping.
+ * Second row is uniform across all statuses: the most recent message in the
+ * session (`lastMessage`) on the left, falling back to `initialPrompt` for
+ * panes that haven't produced a later message yet, and a compact mixed-unit
+ * age label ("3h12m") on the right. Long text fades to alpha 0 at the right
+ * edge instead of hard-clipping.
  *
- * The right edge of the second row is reserved for a compact mixed-unit age
- * label ("3h12m") so the user can see staleness at a glance.
+ * On `changes-ready` panes the top-right status label itself becomes an
+ * underlined link that opens the TurnsModal — the previous "View turns"
+ * second-row button has been removed.
  *
  * Errored / terminated panes paint their status color red (matches the
  * existing kanban convention) so a failed agent is visible in either layout.
@@ -69,6 +71,7 @@ export function RailTerminalCard({
   completionState,
   activeToolName,
   initialPrompt,
+  lastMessage,
   lastActivityAt,
   now,
   groupBy,
@@ -92,6 +95,23 @@ export function RailTerminalCard({
   )
 
   const animateLabel = !errored && (status === 'planning' || status === 'working')
+  const linkifyLabel = !errored && status === 'changes-ready'
+
+  const labelContent = (
+    <>
+      {statusLabel}
+      {animateLabel && (
+        // Reserve a fixed width for up to 3 dots so the label doesn't
+        // shift left/right as the ellipsis cycles.
+        <span
+          aria-hidden="true"
+          style={{ display: 'inline-block', width: '0.9em', textAlign: 'left' }}
+        >
+          {'.'.repeat(animatedDots)}
+        </span>
+      )}
+    </>
+  )
 
   const topRow =
     groupBy === 'repo' ? (
@@ -99,23 +119,26 @@ export function RailTerminalCard({
         <span className="flex-1 text-xs font-[500] text-fg-primary truncate" title={agentName}>
           {agentName}
         </span>
-        <span
-          className="text-[11px] font-[500] shrink-0 truncate max-w-[55%]"
-          style={{ color: accentColor }}
-          title={statusLabel}
-        >
-          {statusLabel}
-          {animateLabel && (
-            // Reserve a fixed width for up to 3 dots so the label doesn't
-            // shift left/right as the ellipsis cycles.
-            <span
-              aria-hidden="true"
-              style={{ display: 'inline-block', width: '0.9em', textAlign: 'left' }}
-            >
-              {'.'.repeat(animatedDots)}
-            </span>
-          )}
-        </span>
+        {linkifyLabel ? (
+          <button
+            type="button"
+            onClick={handleViewTurns}
+            className="text-[11px] font-[500] shrink-0 truncate max-w-[55%] underline hover:text-fg-primary transition-colors duration-[80ms] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded-sm"
+            style={{ color: accentColor }}
+            title={statusLabel}
+            aria-label={t.rail.viewTurns}
+          >
+            {labelContent}
+          </button>
+        ) : (
+          <span
+            className="text-[11px] font-[500] shrink-0 truncate max-w-[55%]"
+            style={{ color: accentColor }}
+            title={statusLabel}
+          >
+            {labelContent}
+          </span>
+        )}
       </div>
     ) : (
       <div className="flex items-center gap-2 min-w-0">
@@ -135,32 +158,12 @@ export function RailTerminalCard({
       </div>
     )
 
-  let secondRowContent: React.ReactNode
-  if (status === 'changes-ready' && !errored) {
-    secondRowContent = (
-      <button
-        type="button"
-        onClick={handleViewTurns}
-        className="text-[11px] underline text-warning-fg hover:text-fg-primary transition-colors duration-[80ms]"
-      >
-        {t.rail.viewTurns}
-      </button>
-    )
-  } else if (status === 'working' && !errored) {
-    const verb = activeToolName ? formatToolActivity(activeToolName) : t.kanban.working
-    secondRowContent = (
-      <span className="text-[11px] text-fg-secondary truncate" title={verb}>
-        {verb}
-      </span>
-    )
-  } else {
-    const prompt = initialPrompt?.trim() ?? ''
-    secondRowContent = prompt ? (
-      <FadingPrompt text={prompt} />
-    ) : (
-      <span className="text-[11px] text-fg-muted italic">—</span>
-    )
-  }
+  const subtitle = (lastMessage ?? initialPrompt ?? '').trim()
+  const secondRowContent: React.ReactNode = subtitle ? (
+    <FadingPrompt text={subtitle} />
+  ) : (
+    <span className="text-[11px] text-fg-muted italic">—</span>
+  )
 
   return (
     <button

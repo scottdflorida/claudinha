@@ -300,6 +300,8 @@ export interface PaneMetrics {
   agentName: string | null
   /** First user message extracted from the JSONL transcript (used as the dormant card subtitle) */
   initialPrompt: string | null
+  /** Most recent message (user or assistant) extracted from the JSONL transcript — used as the rail card subtitle. */
+  lastMessage: string | null
 }
 
 // ---------------------------------------------------------------------------

@@ -66,7 +66,7 @@ function makeStubPane(worktreePath: string): PaneState {
       linesRemoved: null,
       sessionTitle: null,
       agentName: null,
-      initialPrompt: null
+      initialPrompt: null, lastMessage: null
     },
     createdAt: Date.now(),
     gitStatus: null,

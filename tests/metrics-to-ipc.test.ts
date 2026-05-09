@@ -13,7 +13,7 @@ function makeMetrics(overrides?: Partial<PaneMetrics>): PaneMetrics {
     linesRemoved: null,
     sessionTitle: null,
     agentName: null,
-    initialPrompt: null,
+    initialPrompt: null, lastMessage: null,
     ...overrides
   }
 }

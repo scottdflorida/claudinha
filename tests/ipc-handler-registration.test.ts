@@ -254,7 +254,7 @@ describe('PANE_LIST_GET handler', () => {
       linesAdded: 0,
       linesRemoved: 0,
       sessionTitle: null,
-      initialPrompt: null
+      initialPrompt: null, lastMessage: null
     },
     createdAt: Date.now(),
     terminated: false,

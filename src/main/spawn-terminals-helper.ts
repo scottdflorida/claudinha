@@ -396,7 +396,7 @@ export function spawnTerminalsIntoWorkspace(
         totalTokens: null, contextPercent: null, toolsUsed: null,
         totalCostUsd: null, durationMs: null, modelDisplayName: null,
         linesAdded: null, linesRemoved: null, sessionTitle: null,
-        agentName: null, initialPrompt: null
+        agentName: null, initialPrompt: null, lastMessage: null
       }
 
       const paneState: PaneState = {

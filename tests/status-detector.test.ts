@@ -36,7 +36,7 @@ function makeMetrics() {
     linesAdded: null,
     linesRemoved: null,
     sessionTitle: null,
-    initialPrompt: null
+    initialPrompt: null, lastMessage: null
   }
 }
 

@@ -188,6 +188,7 @@ export function KanbanRepoRail({
         completionState={entry.completionState}
         activeToolName={live?.activeToolName ?? null}
         initialPrompt={live?.metrics.initialPrompt ?? null}
+        lastMessage={live?.metrics.lastMessage ?? null}
         lastActivityAt={entry.lastActivityAt}
         now={now}
         groupBy={groupBy}

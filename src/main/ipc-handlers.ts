@@ -652,7 +652,7 @@ export function registerIpcHandlers(
       linesRemoved: null,
       sessionTitle: null,
       agentName: null,
-      initialPrompt: null
+      initialPrompt: null, lastMessage: null
     }
 
     // Resolve workspaceId — use payload's workspaceId, or the window's existing workspace,
@@ -2815,7 +2815,7 @@ export function registerIpcHandlers(
             totalTokens: null, contextPercent: null, toolsUsed: null,
             totalCostUsd: null, durationMs: null, modelDisplayName: null,
             linesAdded: null, linesRemoved: null, sessionTitle: null,
-            agentName: null, initialPrompt: null
+            agentName: null, initialPrompt: null, lastMessage: null
           }
 
           const paneState: PaneState = {

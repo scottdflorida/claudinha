@@ -65,7 +65,7 @@ function makePane(overrides: Partial<PaneState> = {}): PaneState {
       linesAdded: null,
       linesRemoved: null,
       sessionTitle: null,
-      initialPrompt: null
+      initialPrompt: null, lastMessage: null
     },
     createdAt: 0,
     gitStatus: null,

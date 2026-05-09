@@ -62,7 +62,7 @@ function makeMetrics() {
     linesRemoved: null,
     sessionTitle: null,
     agentName: null,
-    initialPrompt: null
+    initialPrompt: null, lastMessage: null
   }
 }
 
@@ -856,6 +856,29 @@ describe('MetricsCollector', () => {
 
       const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
       expect(metrics.initialPrompt).toBe('/clear')
+    })
+
+    it('extracts lastMessage as the most recent user or assistant message text', async () => {
+      // Walks user → assistant → user → assistant; lastMessage tracks the
+      // final message regardless of role. Tool-result-only entries (no text
+      // content) don't overwrite lastMessage.
+      setupForJsonl(
+        makeJsonl(
+          { type: 'user', message: { role: 'user', content: 'first prompt' } },
+          { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'first reply' }], usage: { input_tokens: 1, output_tokens: 1 } } },
+          { type: 'user', message: { role: 'user', content: 'second prompt' } },
+          { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'final reply' }], usage: { input_tokens: 1, output_tokens: 1 } } },
+          // Tool-result-style user entry with no text — must not overwrite.
+          { type: 'user', message: { role: 'user', content: [{ type: 'tool_result' }] } }
+        )
+      )
+
+      await runAndFlush()
+
+      const metrics = vi.mocked(registry.updatePaneMetrics).mock.calls[0][1]
+      expect(metrics.lastMessage).toBe('final reply')
+      // initialPrompt still pins the first user message.
+      expect(metrics.initialPrompt).toBe('first prompt')
     })
 
     it('preserves existing initialPrompt when JSONL has no user message', async () => {

@@ -363,6 +363,7 @@ export interface PaneMetricsIpc {
   sessionTitle: string | null
   agentName: string | null
   initialPrompt: string | null
+  lastMessage: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +386,8 @@ export function metricsToIpc(metrics: PaneMetrics): PaneMetricsIpc {
     linesRemoved: metrics.linesRemoved,
     sessionTitle: metrics.sessionTitle,
     agentName: metrics.agentName,
-    initialPrompt: metrics.initialPrompt
+    initialPrompt: metrics.initialPrompt,
+    lastMessage: metrics.lastMessage
   }
 }
 

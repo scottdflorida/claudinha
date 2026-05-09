@@ -123,7 +123,7 @@ const emptyMetrics: PaneMetricsIpc = {
   linesRemoved: null,
   sessionTitle: null,
   agentName: null,
-  initialPrompt: null
+  initialPrompt: null, lastMessage: null
 }
 
 export function paneReducer(state: PaneStoreState, action: PaneAction): PaneStoreState {

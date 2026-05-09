@@ -57,7 +57,7 @@ function makePane(overrides: Partial<RendererPane> = {}): RendererPane {
       linesRemoved: null,
       sessionTitle: null,
       agentName: null,
-      initialPrompt: null
+      initialPrompt: null, lastMessage: null
     },
     terminated: false,
     hasUnseenStatusChange: false,
