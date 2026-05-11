@@ -1,11 +1,8 @@
 # Claudinha
 
-**A desktop companion for Claude Code,** with auto-tiled "Wall" view of many terminals, "Kanban" view with agent status, and other helpful visibility and orchestration features (and the whole app in Portuguese pra minhas brasileiras :)
+**A desktop companion for Claude Code,** with auto-tiled "Wall" view of many terminals, "ADE" view with agent status, and other helpful visibility and orchestration features (and the whole app in Portuguese pra minhas brasileiras :)
 
 macOS, Windows, and Linux.
-
-<!-- Replace with a real screenshot or GIF before v0.2.0 -->
-<!-- ![Claudinha screenshot](docs/screenshot.png) -->
 
 ---
 
@@ -83,17 +80,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
 1. Launch Claudinha.
 2. Create a **workspace** by pointing it at a project directory (any git repo).
 3. Spawn a **terminal** in the workspace (or 8 Terminals): Claudinha creates a git worktree for each and starts a Claude Code session inside.
-4. The Kanban view is my personal favorite, but the wall is also fun (I mostly built it because of Andrej Karpathy's tweet on March 10: https://x.com/karpathy/status/2031616709560610993?s=20).
+4. The ADE view is my personal favorite, but the wall is also fun (I mostly built it because of Andrej Karpathy's tweet on March 10: https://x.com/karpathy/status/2031616709560610993?s=20).
 
 Terminology: a **workspace** is a project you've opened which can contain unlimited Terminals from multiple repos; a **terminal** (also called a session) is a single Claude Code instance running in its own worktree under that workspace.
 
-### Kanban view: agent status at a glance
+### ADE view: agent status at a glance
 
-The Kanban view is Claudinha's default layout: it groups every session across every workspace by repository and shows where each agent is in its loop — **idle**, **working**, **awaiting permission**, **done**, or **failed**. The repo rail on the left lets you zoom into a single project; the board updates live as Claude Code hooks fire. It's the fastest way to answer "which of my sessions need me right now?" when you're running six of them in parallel. Or 20 of them.
+The ADE view is Claudinha's default layout: it groups every session across every workspace by repository and shows where each agent is in its loop — **idle**, **working**, **planning**, **awaiting orders**, **changes ready**, or **failed**. The repo rail on the left zooms into a single project, with per-pane cards that surface the agent's last message and a **Changes Ready** link straight into the Turns modal. The board updates live as Claude Code hooks fire. It's the fastest way to answer "which of my sessions need me right now?" when you're running six of them in parallel. Or 20 of them.
+
+### Bulk Change: turn agent work into commits, in bulk
+
+When a pane has work to ship, the rail card shows a **Changes Ready** link. Opening it brings up a per-pane Turns modal listing every Claude-Code-authored turn since the base branch — split (including at the hunk level), discard with cascade rebase, reorder, or punt unfinished work back to Claude. From the repo header, the **Bulk Change** modal aggregates every pane in the repo and runs your selected bulk actions (merge, push, open PR) sequentially with per-pane progress, multi-conflict handling, and PR URL surfacing. It's the difference between hand-merging six worktrees one at a time and reviewing the whole repo in one pass.
 
 ### Wall view: every terminal, all at once
 
-The Wall is an auto-tiled grid that packs every terminal in the workspace into the window. Spawn more terminals and the grid re-tiles to fit; close one and the remaining panes expand. No manual resizing, no window juggling. Each pane shows its git branch, live agent status, and a header with focus/close/move controls. Drag the resize handles if you want custom proportions; hit the toggle to flip the whole workspace into Kanban.
+The Wall is an auto-tiled grid that packs every terminal in the workspace into the window. Spawn more terminals and the grid re-tiles to fit; close one and the remaining panes expand. No manual resizing, no window juggling. Each pane shows its git branch, live agent status, and a header with focus/close/move controls. Drag the resize handles if you want custom proportions; hit the toggle to flip the whole workspace into ADE.
 
 ### Git worktrees per terminal
 

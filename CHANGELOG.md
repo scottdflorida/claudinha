@@ -2,6 +2,39 @@
 
 All notable changes to Claudinha are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), and the project follows [Semantic Versioning](https://semver.org/).
 
+## 0.3.0 — 2026-05-11
+
+### Added
+
+- **Bulk Change (Completion Actions v2).** A new flow for promoting work from active terminals into reviewable, mergeable commits. The rail card has a "Changes Ready" link that opens a per-pane Turns modal listing every Claude-Code-authored turn since the base branch; you can split (including hunk-level via interactive rebase), discard with cascade rebase, reorder, or punt back to Claude. A repo-level Bulk Change modal aggregates every pane in a repo and runs selected bulk actions (merge / push / open PR) through a sequential pipeline with per-pane progress, multi-conflict handling, no-FF for sequential merges, and PR URL surfacing. A per-repo Publish-path config controls whether direct merges go through a side-clone or the working tree.
+- **"On main" branch layout.** New workspace option that runs panes directly on the base branch with no worktrees — each turn becomes a commit on `main`. The launch form disables per-pane branch naming when this layout is selected.
+- **Redesigned repo rail.** Per-pane cards grouped by repo, with a draggable width handle, the active pane's last-message as the card subtitle, Planning/Working state labels that animate with cycling dots, and a "Changes Ready" link that opens the Turns modal.
+- **Plan-mode column ("Planning" / "Plan Ready").** Panes in `ExitPlanMode` land in their own column instead of being misfiled as Working or Awaiting Orders. The status pill speaks the same column vocabulary as the board.
+- **Inspector summary pinned to Haiku at low effort** for speed and cost.
+- **New-workspace form remembers advanced choices** across launches.
+
+### Changed
+
+- **"ADE" replaces "Kanban" in user-facing labels.** View-mode toggle, launch-form picker, Configuration view, keyboard-shortcuts overlay, and hint copy now read "ADE." Internal IPC values still use `'kanban'`, so no migration is needed.
+- **Dark mode is locked.** The title-bar theme toggle is hidden and the app stays dark regardless of system theme.
+- **Status pill speaks the column vocabulary** (Working, Awaiting Orders, Planning, etc.) instead of generic states.
+- **Tactile slide-up + card-move animations** on the ADE view, including cross-column transitions and column refreshes.
+- **Per-terminal modal polish.** Shipped-state checkboxes disabled, the close-confirm counts ahead-of-origin, the sequence dialog is wider.
+- **Merge button is explicit about the destination** — "Merge to origin/<base>".
+- **Dialogs cap at viewport height** with internal scrolling instead of running off-screen.
+- **Dev launches.** The dev icon is badged "DEV" so it's distinguishable from the installed app in the Dock, and dev launches no longer collide with the installed app's user-data directory.
+
+### Fixed
+
+- **Phantom-working states.** Idle redraws no longer flip fresh agents to "working"; the phantom-working bridge is narrowed to actual thinking words.
+- **Worktree git hygiene.** `.worktrees/` and `.claude/` are written to `.git/info/exclude` on spawn so the turn recorder's `git add -A` no longer fails on those paths.
+- **Push gate.** The status pill clears its "↑N to push" indicator immediately after a push, and the ADE Push affordance requires an engaged agent.
+- **Workspace creation re-validates the repo path**, so a deleted-and-recreated path isn't held stale in memory.
+- **Window-bound focus.** `WORKSPACE_FOCUS_PANE` is now allowed through preload and repaints the ADE pane on show.
+- **TURNS_GET** stops short-circuiting on `pane.isWorktree`, so on-main panes list their turns correctly.
+- **Failed-merge recovery** surfaces in the ADE view instead of being buried.
+- **CI.** Permissions/metrics tests are cross-platform; the Windows test gate is re-enabled. GitHub Actions bumped to current majors.
+
 ## 0.2.0 — 2026-04-27
 
 ### Added
