@@ -163,7 +163,10 @@ function makePaneRepo(): string {
   panePaths.push(root)
   execFileSync('git', ['init', '--initial-branch=main', '-q'], { cwd: root })
   for (const cfg of [
-    ['user.email', 't@t.com'], ['user.name', 't'], ['commit.gpgsign', 'false']
+    ['user.email', 't@t.com'], ['user.name', 't'], ['commit.gpgsign', 'false'],
+    // Pin LF so Windows git's autocrlf doesn't reshape our \n fixture
+    // content under us between commits and discards.
+    ['core.autocrlf', 'false']
   ]) {
     execFileSync('git', ['config', cfg[0]!, cfg[1]!], { cwd: root })
   }
@@ -188,6 +191,10 @@ function commitTurn(repoRoot: string, index: number, summary: string, edit: () =
 // ----------------------------------------------------------------------------
 
 describe('runBulkAction — discard-all', () => {
+  // 30s ceiling: this test sequentially discards 3 turns across 2 panes,
+  // each running a real `git rebase --onto` round-trip. On Windows that's
+  // ~1-2s per discard (mostly process spawn overhead from git/node);
+  // vitest's 5s default isn't enough.
   it('drops every publishable turn on each pane and emits one BULK_COMPLETED', async () => {
     const repoA = makePaneRepo()
     const repoB = makePaneRepo()
@@ -238,7 +245,7 @@ describe('runBulkAction — discard-all', () => {
     expect(progress[0]!.completed).toBe(1)
     expect(progress[0]!.total).toBe(2)
     expect(progress[1]!.completed).toBe(2)
-  })
+  }, 30_000)
 
   it('records errors for unknown panes and still drains', async () => {
     const repoA = makePaneRepo()

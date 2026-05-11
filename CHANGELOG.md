@@ -2,6 +2,14 @@
 
 All notable changes to Claudinha are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), and the project follows [Semantic Versioning](https://semver.org/).
 
+## 0.3.4 — 2026-05-11
+
+Same runtime as 0.3.1 through 0.3.3; only the test suite changed. 0.3.3's Windows CI surfaced one more issue: the bulk-action-pipeline discard test ran past vitest's 5-second default timeout on Windows (cumulative `git rebase --onto` overhead across three turns, two panes).
+
+### Fixed (tests only)
+
+- **Bulk-pipeline discard test timeout bumped to 30s and fixture pins LF.** `tests/bulk-action-pipeline.integration.test.ts` now allows up to 30 seconds for the discard-all test (it sequentially discards three turns across two panes; each rebase round-trip is ~1–2 s on Windows, ~50 ms on macOS), and the per-pane fixture init runs `git config core.autocrlf false` for the same reason the engine fixtures already did.
+
 ## 0.3.3 — 2026-05-11
 
 Same runtime as 0.3.1 and 0.3.2; only the test suite changed. 0.3.2 fixed three Windows test-fixture issues but Windows CI surfaced a fourth: a timing race in the per-engine broadcast-emission stubs.
