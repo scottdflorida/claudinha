@@ -2,6 +2,14 @@
 
 All notable changes to Claudinha are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), and the project follows [Semantic Versioning](https://semver.org/).
 
+## 0.3.3 — 2026-05-11
+
+Same runtime as 0.3.1 and 0.3.2; only the test suite changed. 0.3.2 fixed three Windows test-fixture issues but Windows CI surfaced a fourth: a timing race in the per-engine broadcast-emission stubs.
+
+### Fixed (tests only)
+
+- **Engine test stubs filter by IPC channel.** `tests/split-engine.integration.test.ts` and `tests/discard-engine.integration.test.ts` ship in-memory stubs that count `TURN_PENDING_ACTION` broadcasts. The stubs were filtering by "payload has a `pendingAction` field," which inadvertently included `TURNS_UPDATED` broadcasts too (same field on a different channel). On macOS that async broadcast hadn't finished by the time the test ran its assertion, so the count came out right by accident; Windows file I/O is slower in the rebase path, the broadcast landed first, and the stub recorded one extra emission. Filtering by `IPC.TURN_PENDING_ACTION` removes the race entirely. Production behavior unchanged.
+
 ## 0.3.2 — 2026-05-11
 
 Same runtime as 0.3.1; only the test suite changed. 0.3.1 ships the same Windows fix but its prebuilt installers never made it onto GitHub because three Windows-only test-fixture issues (unrelated to the engine fix itself) failed CI, which skipped the installer-bundling step. 0.3.2 fixes those test fixtures so the Windows installer build can complete.

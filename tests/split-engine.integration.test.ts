@@ -29,6 +29,7 @@ import { execFileSync } from 'child_process'
 import { splitTurn } from '../src/main/publish-engine'
 import { readDiscardedSidecar } from '../src/main/turn-projection'
 import { formatTurnCommitMessage } from '../src/main/turn-recorder'
+import { IPC } from '../src/shared/ipc-channels'
 import type { PaneState, TurnPendingAction } from '../src/shared/types'
 import type { HunkSelection } from '../src/shared/ipc-channels'
 
@@ -69,7 +70,13 @@ function makeStubs(pane: PaneState): {
     getWindow: () => ({
       isDestroyed: () => false,
       webContents: {
-        send: (_channel: string, payload: unknown) => {
+        send: (channel: string, payload: unknown) => {
+          // Only count TURN_PENDING_ACTION emissions. broadcastTurnsUpdated
+          // *also* carries a `pendingAction` field on its payload (channel
+          // TURNS_UPDATED) — filtering by channel keeps this stub measuring
+          // the broadcast-pending-action call site instead of being subject
+          // to a timing race against the async TURNS_UPDATED broadcast.
+          if (channel !== IPC.TURN_PENDING_ACTION) return
           const p = payload as { paneId?: string; pendingAction?: TurnPendingAction | null }
           if (p && typeof p === 'object' && 'pendingAction' in p) {
             emitted.push({
