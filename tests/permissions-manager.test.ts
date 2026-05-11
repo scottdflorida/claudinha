@@ -684,8 +684,12 @@ describe('PermissionsManager.markFolderTrusted', () => {
 
     pm.markFolderTrusted('/tmp/worktree-a')
 
-    const { path, config } = getTrustWrite()
-    expect(path).toBe('/home/test/.claude.json')
+    const { path: actualPath, config } = getTrustWrite()
+    // Build the expected path the same way the production code does so the
+    // assertion uses the platform's native separator (`\` on Windows, `/`
+    // elsewhere). Hardcoding the POSIX literal fails Windows CI even though
+    // the production behavior is correct.
+    expect(actualPath).toBe(path.join('/home/test', '.claude.json'))
     const projects = config.projects as Record<string, Record<string, unknown>>
     expect(projects['/tmp/worktree-a']).toBeDefined()
     expect(projects['/tmp/worktree-a'].hasTrustDialogAccepted).toBe(true)

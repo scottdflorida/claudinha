@@ -114,6 +114,11 @@ function gitInit(repoRoot: string): void {
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoRoot })
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repoRoot })
   execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: repoRoot })
+  // Pin line endings to LF so the fixture's `\n` content survives Windows
+  // git's autocrlf checkout (default: true on Git for Windows). Tests read
+  // files back and assert exact content; without this, Windows CI sees
+  // `\r\n` and fails on assertions that are correct on every other platform.
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: repoRoot })
   // Initial commit on main so HEAD is real.
   fs.writeFileSync(path.join(repoRoot, 'README.md'), 'init\n')
   execFileSync('git', ['add', 'README.md'], { cwd: repoRoot })

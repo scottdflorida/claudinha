@@ -2,6 +2,15 @@
 
 All notable changes to Claudinha are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), and the project follows [Semantic Versioning](https://semver.org/).
 
+## 0.3.2 — 2026-05-11
+
+Same runtime as 0.3.1; only the test suite changed. 0.3.1 ships the same Windows fix but its prebuilt installers never made it onto GitHub because three Windows-only test-fixture issues (unrelated to the engine fix itself) failed CI, which skipped the installer-bundling step. 0.3.2 fixes those test fixtures so the Windows installer build can complete.
+
+### Fixed (tests only)
+
+- **Test fixtures pin line endings to LF.** `tests/discard-engine.integration.test.ts` and `tests/split-engine.integration.test.ts` now run `git config core.autocrlf false` in their per-test repo init, so file content written as `\n` survives Windows git's default `core.autocrlf=true` round-trip intact. Production engines were always fine — only the test assertions were Unix-shaped.
+- **Permissions-manager test compares paths with `path.join`.** The "writes `~/.claude.json`" assertion was hardcoded to `/home/test/.claude.json` and failed on Windows where Node's `path.join` produces `\home\test\.claude.json`. Now uses `path.join` for the expected value so the test asserts the platform's native separator.
+
 ## 0.3.1 — 2026-05-11
 
 ### Fixed
