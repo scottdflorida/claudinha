@@ -54,7 +54,6 @@ export function createMockIpcDeps() {
       activateWorkspace: vi.fn(),
       deactivateWorkspace: vi.fn(),
       deleteWorkspace: vi.fn(),
-      renameWorkspace: vi.fn(),
       addPaneToHive: vi.fn(),
       removePaneFromHive: vi.fn(),
       getPausedTerminals: vi.fn(() => []),

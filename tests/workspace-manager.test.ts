@@ -129,7 +129,7 @@ describe('WorkspaceManager', () => {
       expect(c.name).toBe('Workspace 3')
     })
 
-    it('repo and worktree-branch workspaces also default to Workspace N', () => {
+    it('repo workspace auto-name is "<repo>: main"; worktree-branch is "<repo>: <branch>"', () => {
       const repo = workspaceManager.createWorkspace({
         type: 'repo',
         constraint: { repoPath: '/home/user/claudio' },
@@ -141,8 +141,8 @@ describe('WorkspaceManager', () => {
         windowId: 'win-2'
       })
 
-      expect(repo.name).toBe('Workspace 1')
-      expect(branch.name).toBe('Workspace 2')
+      expect(repo.name).toBe('claudio: main')
+      expect(branch.name).toBe('repo: feature/auth')
     })
 
     it('uses custom name when provided', () => {
@@ -196,27 +196,6 @@ describe('WorkspaceManager', () => {
 
     it('falls back to "Claudinha" when the workspace is missing', () => {
       expect(workspaceManager.computeWorkspaceTitle('does-not-exist')).toBe('Claudinha')
-    })
-  })
-
-  describe('renameWorkspace', () => {
-    it('persists a trimmed new name', () => {
-      const workspace = workspaceManager.createWorkspace({ type: 'general', constraint: {}, windowId: 'win-1' })
-      expect(workspaceManager.renameWorkspace(workspace.id, '  Scratch  ')).toBe(true)
-      expect(workspaceManager.getWorkspace(workspace.id)?.name).toBe('Scratch')
-    })
-
-    it('reverts to the default Workspace N when the name is blank', () => {
-      const workspace = workspaceManager.createWorkspace({ type: 'general', constraint: {}, windowId: 'win-1' })
-      workspaceManager.renameWorkspace(workspace.id, 'Scratch')
-      workspaceManager.renameWorkspace(workspace.id, '   ')
-      expect(workspaceManager.getWorkspace(workspace.id)?.name).toBe(`Workspace ${workspace.workspaceNumber}`)
-    })
-
-    it('caps the name at 64 characters', () => {
-      const workspace = workspaceManager.createWorkspace({ type: 'general', constraint: {}, windowId: 'win-1' })
-      workspaceManager.renameWorkspace(workspace.id, 'x'.repeat(200))
-      expect(workspaceManager.getWorkspace(workspace.id)?.name.length).toBe(64)
     })
   })
 
@@ -566,18 +545,6 @@ describe('WorkspaceManager', () => {
     })
   })
 
-  describe('renameWorkspace', () => {
-    it('renames a workspace', () => {
-      const workspace = workspaceManager.createWorkspace({ type: 'general', constraint: {}, windowId: 'win-1' })
-      workspaceManager.renameWorkspace(workspace.id, 'New Name')
-      expect(workspace.name).toBe('New Name')
-    })
-
-    it('returns false for non-existent workspace', () => {
-      expect(workspaceManager.renameWorkspace('nonexistent', 'Name')).toBe(false)
-    })
-  })
-
   describe('managerWindow', () => {
     it('tracks manager window ID', () => {
       expect(workspaceManager.managerWindowId).toBeNull()
@@ -642,7 +609,8 @@ describe('WorkspaceManager', () => {
         sessionTitle: 'auth refactor',
         status: 'working',
         activeToolName: 'Edit',
-        initialPrompt: 'Refactor login to drop session tokens'
+        initialPrompt: 'Refactor login to drop session tokens',
+        lastActiveAt: 0
       })
     })
 

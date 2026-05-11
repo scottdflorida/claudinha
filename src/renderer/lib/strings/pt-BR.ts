@@ -157,7 +157,7 @@ export const ptBR: Strings = {
   },
 
   managerWindow: {
-    title: 'Claudinha: Gerenciamento',
+    title: 'Claudinha Launcher',
     submitFeedback: 'Enviar Feedback',
     submitFeedbackTooltip: 'Enviar feedback (⌘⇧I)'
   },

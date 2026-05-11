@@ -223,6 +223,10 @@ export interface ActivePaneSummary {
   status: PaneStatus
   activeToolName: string | null
   initialPrompt: string | null
+  /** Last activity time (epoch ms). Tracks PaneState.statusChangedAt so the
+   *  Launcher sidebar's expanded card can show "active 3m ago" / "idle 12m"
+   *  next to each agent row. */
+  lastActiveAt: number
 }
 
 // ---------------------------------------------------------------------------

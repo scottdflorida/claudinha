@@ -9,6 +9,7 @@ import {
 import type { RendererWorkspace } from '../../shared/types'
 import { ClaudinhaIcon } from './ui/ClaudinhaIcon'
 import { useStrings } from '../lib/strings'
+import { WorkspaceCard } from './WorkspaceCard'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,72 +19,16 @@ interface ManagerSidebarProps {
   activeWorkspaces: RendererWorkspace[]
   dormantWorkspaces: RendererWorkspace[]
   archivedWorkspaces: RendererWorkspace[]
+  /** Right-pane selection ('home' | 'permissions' | 'config'). Workspaces are
+   *  no longer "selected" — they're expanded inline and jumped to. */
   selectedId: string | null
-  onSelect: (id: string) => void
+  onSelectView: (id: string) => void
+  onJumpToWorkspace: (workspaceId: string) => void
+  onJumpToAgent: (workspaceId: string, paneId: string) => void
+  onArchiveWorkspace: (workspace: RendererWorkspace) => void
+  onUnarchiveWorkspace: (workspace: RendererWorkspace) => void
+  onDeleteWorkspace: (workspace: RendererWorkspace) => void
   searchRef?: React.RefObject<HTMLInputElement>
-}
-
-// ---------------------------------------------------------------------------
-// Workspace row
-// ---------------------------------------------------------------------------
-
-interface WorkspaceRowProps {
-  workspace: RendererWorkspace
-  isActive: boolean
-  isDormant: boolean
-  isArchived: boolean
-  isSelected: boolean
-  onClick: () => void
-}
-
-function WorkspaceRow({ workspace, isActive, isDormant, isArchived, isSelected, onClick }: WorkspaceRowProps): React.JSX.Element {
-  const paneCount = isActive ? workspace.activePaneCount : workspace.pausedTerminals.length
-
-  const labelClass = isArchived
-    ? 'font-[450] text-fg-muted'
-    : isActive
-      ? 'font-[500] text-fg-primary'
-      : isDormant
-        ? 'font-[450] text-fg-secondary'
-        : 'font-[450] text-fg-secondary'
-
-  return (
-    <div
-      role="option"
-      aria-selected={isSelected}
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
-      className={`group relative flex items-center gap-2 pl-6 pr-3 cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]
-        ${isSelected ? 'bg-raised' : 'hover:bg-overlay'}
-      `}
-      style={{ height: 36 }}
-    >
-      {/* Leading 2px rail — accent when selected, accent-subtle on hover */}
-      <div
-        className={`absolute left-0 top-0 bottom-0 ${isSelected ? 'bg-accent' : 'bg-transparent group-hover:bg-accent-subtle'}`}
-        style={{ width: 2 }}
-      />
-
-      {/* Status dot slot — reserved for all rows to keep name left-edge aligned across groups */}
-      <div className="w-1.5 h-1.5 flex-shrink-0">
-        {isActive && (
-          <div className="w-full h-full rounded-full" style={{ backgroundColor: 'var(--color-accent)' }} />
-        )}
-      </div>
-
-      {/* Name */}
-      <span className={`flex-1 text-[13px] truncate ${labelClass} ${!isSelected ? 'group-hover:text-fg-primary' : ''}`}>
-        {workspace.name}
-      </span>
-
-      {/* Pane count */}
-      <span className="flex items-center gap-0.5 text-[11px] font-[500] text-fg-muted tabular-nums flex-shrink-0">
-        <ClaudinhaIcon size={12} className="text-fg-muted" />
-        <span>{paneCount}</span>
-      </span>
-    </div>
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -126,13 +71,19 @@ export function ManagerSidebar({
   dormantWorkspaces,
   archivedWorkspaces,
   selectedId,
-  onSelect,
+  onSelectView,
+  onJumpToWorkspace,
+  onJumpToAgent,
+  onArchiveWorkspace,
+  onUnarchiveWorkspace,
+  onDeleteWorkspace,
   searchRef: externalSearchRef
 }: ManagerSidebarProps): React.JSX.Element {
   const t = useStrings()
   const [search, setSearch] = useState('')
-  const [activeExpanded, setActiveExpanded] = useState(true)
-  const [dormantExpanded, setDormantExpanded] = useState(false)
+  // Open + Closed expanded by default; Archived collapsed.
+  const [openExpanded, setOpenExpanded] = useState(true)
+  const [closedExpanded, setClosedExpanded] = useState(true)
   const [archivedExpanded, setArchivedExpanded] = useState(false)
 
   const internalSearchRef = useRef<HTMLInputElement>(null)
@@ -223,50 +174,52 @@ export function ManagerSidebar({
 
       {/* Zone 2: Nav groups (scrollable) */}
       <div role="listbox" aria-label={t.managerSidebar.workspacesListLabel} className="flex-1 min-h-0 overflow-y-auto">
-        {/* Active Workspaces */}
+        {/* Open (formerly Active) */}
         <div className="pt-1">
           <GroupHeader
-            label={t.managerSidebar.groupActive}
+            label="Open"
             count={filteredActive.length}
-            expanded={activeExpanded}
-            onToggle={() => setActiveExpanded((v) => !v)}
+            expanded={openExpanded}
+            onToggle={() => setOpenExpanded((v) => !v)}
           />
-          {activeExpanded && filteredActive.map((workspace) => (
-            <WorkspaceRow
+          {openExpanded && filteredActive.map((workspace) => (
+            <WorkspaceCard
               key={workspace.id}
               workspace={workspace}
-              isActive={true}
-              isDormant={false}
-              isArchived={false}
-              isSelected={selectedId === workspace.id}
-              onClick={() => onSelect(workspace.id)}
+              group="open"
+              onJumpToWorkspace={() => onJumpToWorkspace(workspace.id)}
+              onJumpToAgent={(paneId) => onJumpToAgent(workspace.id, paneId)}
+              onArchive={() => onArchiveWorkspace(workspace)}
+              onUnarchive={() => onUnarchiveWorkspace(workspace)}
+              onDelete={() => onDeleteWorkspace(workspace)}
             />
           ))}
-          {activeExpanded && filteredActive.length === 0 && search && (
+          {openExpanded && filteredActive.length === 0 && search && (
             <div className="px-3 py-1 text-xs text-fg-muted italic">{t.managerSidebar.noMatches}</div>
           )}
         </div>
 
-        {/* Dormant */}
+        {/* Closed (formerly Dormant) */}
         <div className="pt-3">
           <GroupHeader
-            label={t.managerSidebar.groupDormant}
+            label="Closed"
             count={filteredDormant.length}
-            expanded={dormantExpanded}
-            onToggle={() => setDormantExpanded((v) => !v)}
+            expanded={closedExpanded}
+            onToggle={() => setClosedExpanded((v) => !v)}
           />
-          {dormantExpanded && filteredDormant.map((workspace) => (
-            <WorkspaceRow
+          {closedExpanded && filteredDormant.map((workspace) => (
+            <WorkspaceCard
               key={workspace.id}
               workspace={workspace}
-              isActive={false}
-              isDormant={true}
-              isArchived={false}
-              isSelected={selectedId === workspace.id}
-              onClick={() => onSelect(workspace.id)}
+              group="closed"
+              onJumpToWorkspace={() => onJumpToWorkspace(workspace.id)}
+              onJumpToAgent={(paneId) => onJumpToAgent(workspace.id, paneId)}
+              onArchive={() => onArchiveWorkspace(workspace)}
+              onUnarchive={() => onUnarchiveWorkspace(workspace)}
+              onDelete={() => onDeleteWorkspace(workspace)}
             />
           ))}
-          {dormantExpanded && filteredDormant.length === 0 && search && (
+          {closedExpanded && filteredDormant.length === 0 && search && (
             <div className="px-3 py-1 text-xs text-fg-muted italic">{t.managerSidebar.noMatches}</div>
           )}
         </div>
@@ -274,20 +227,21 @@ export function ManagerSidebar({
         {/* Archived */}
         <div className="pt-3">
           <GroupHeader
-            label={t.managerSidebar.groupArchived}
+            label="Archived"
             count={filteredArchived.length}
             expanded={archivedExpanded}
             onToggle={() => setArchivedExpanded((v) => !v)}
           />
           {archivedExpanded && filteredArchived.map((workspace) => (
-            <WorkspaceRow
+            <WorkspaceCard
               key={workspace.id}
               workspace={workspace}
-              isActive={false}
-              isDormant={false}
-              isArchived={true}
-              isSelected={selectedId === workspace.id}
-              onClick={() => onSelect(workspace.id)}
+              group="archived"
+              onJumpToWorkspace={() => onJumpToWorkspace(workspace.id)}
+              onJumpToAgent={(paneId) => onJumpToAgent(workspace.id, paneId)}
+              onArchive={() => onArchiveWorkspace(workspace)}
+              onUnarchive={() => onUnarchiveWorkspace(workspace)}
+              onDelete={() => onDeleteWorkspace(workspace)}
             />
           ))}
           {archivedExpanded && filteredArchived.length === 0 && search && (
@@ -300,7 +254,7 @@ export function ManagerSidebar({
       <div className="shrink-0 border-t border-[var(--color-border-subtle)]">
         <button
           type="button"
-          onClick={() => onSelect('home')}
+          onClick={() => onSelectView('home')}
           className={`w-full flex items-center gap-2 px-3 cursor-pointer select-none transition-colors duration-[80ms]
             ${selectedId === 'home'
               ? 'bg-[color-mix(in_oklch,var(--color-accent)_18%,transparent)]'
@@ -318,7 +272,7 @@ export function ManagerSidebar({
         {/* Permissions */}
         <button
           type="button"
-          onClick={() => onSelect('permissions')}
+          onClick={() => onSelectView('permissions')}
           className={`group w-full flex items-center gap-2 px-3 cursor-pointer select-none hover:bg-overlay transition-colors duration-[80ms] relative
             ${selectedId === 'permissions' ? 'bg-raised' : ''}
           `}
@@ -336,7 +290,7 @@ export function ManagerSidebar({
         {/* Configuration */}
         <button
           type="button"
-          onClick={() => onSelect('config')}
+          onClick={() => onSelectView('config')}
           className={`group w-full flex items-center gap-2 px-3 cursor-pointer select-none hover:bg-overlay transition-colors duration-[80ms] relative
             ${selectedId === 'config' ? 'bg-raised' : ''}
           `}

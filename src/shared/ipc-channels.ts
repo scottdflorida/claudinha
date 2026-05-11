@@ -151,7 +151,6 @@ export const IPC = {
   WORKSPACE_ACTIVATE: 'workspace:activate',
   WORKSPACE_DEACTIVATE: 'workspace:deactivate',
   WORKSPACE_DELETE: 'workspace:delete',
-  WORKSPACE_RENAME: 'workspace:rename',
   WORKSPACE_ARCHIVE: 'workspace:archive',
   WORKSPACE_UNARCHIVE: 'workspace:unarchive',
   WORKSPACE_DELETE_ARCHIVED: 'workspace:delete-archived',
@@ -773,12 +772,6 @@ export interface WorkspaceDeleteArchivedResult {
   error: string | null
 }
 
-/** workspace:rename — rename a workspace */
-export interface WorkspaceRenamePayload {
-  workspaceId: string
-  name: string
-}
-
 /** workspace:dormant-terminals — get dormant terminals for a workspace */
 export interface WorkspacePausedTerminalsPayload {
   workspaceId: string
@@ -1314,6 +1307,15 @@ export interface WorkspaceCreateWithTerminalsPayload {
   worktreeMode: 'each-own' | 'shared' | 'main'
   namingMode: 'auto' | 'manual'
   manualNames?: string[]
+  /**
+   * Explicit branch name for the new worktree. Used by the new Launcher form:
+   * when the user picks an existing branch or names a new one, that name flows
+   * through here and overrides `namingMode: 'auto'` worktree-suffix generation.
+   * Ignored when `worktreeMode === 'main'`. When the branch already has a
+   * worktree on disk, the spawn helper attaches to it instead of creating a
+   * new one.
+   */
+  branchName?: string
   effort?: EffortLevel
   /** Claude model for all spawned terminals (passed via --model on spawn) */
   model?: Model
@@ -1604,14 +1606,26 @@ export interface GitRewordCommitResult {
  * worktree's own branch with an "(on this)" marker rather than offering it
  * as a merge target. The picker filters `current` out of the selectable list.
  */
+/**
+ * Branch listing. Either form is accepted:
+ *  - `paneId`: list branches for the pane's worktreePath (legacy caller —
+ *    ChangesReadyModal's merge-target picker).
+ *  - `repoPath`: list branches directly for a repo root (Launcher form's
+ *    branch popover, where no pane exists yet).
+ */
 export interface GitListBranchesPayload {
-  paneId: string
+  paneId?: string
+  repoPath?: string
 }
 
 export interface GitListBranchesResult {
   error: string | null
   branches: string[]
   current: string | null
+  /** Resolved default branch (`origin/HEAD`) — e.g. `main`, `master`, `trunk`.
+   *  Returned when computable, null when the repo has no remote or detection
+   *  fails. The Launcher form labels its "main" popover entry with this. */
+  defaultBranch: string | null
 }
 
 // ---------------------------------------------------------------------------

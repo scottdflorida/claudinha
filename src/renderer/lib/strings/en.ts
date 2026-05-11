@@ -144,7 +144,7 @@ export const en = {
   },
 
   managerWindow: {
-    title: 'Claudinha: Management',
+    title: 'Claudinha Launcher',
     submitFeedback: 'Submit Feedback',
     submitFeedbackTooltip: 'Send feedback (⌘⇧I)'
   },

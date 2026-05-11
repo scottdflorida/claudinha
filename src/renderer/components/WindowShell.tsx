@@ -115,13 +115,9 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   } | null>(null)
   const [closeInFlight, setCloseInFlight] = useState(false)
   const [mergeCloseError, setMergeCloseError] = useState<string | null>(null)
-  // workspace name is editable in-place. Seed from the WINDOW_INIT prop; subsequent
-  // edits update optimistically and the main process persists + re-titles the
-  // BrowserWindow via the WORKSPACE_RENAME handler.
+  // Workspace name is read-only post-Launcher-rework — it's auto-generated as
+  // `<repo>: <branch>` at create time and cannot be edited.
   const [displayName, setDisplayName] = useState<string>(workspaceName ?? '')
-  const [isEditingName, setIsEditingName] = useState(false)
-  const [draftName, setDraftName] = useState<string>('')
-  const nameInputRef = useRef<HTMLInputElement>(null)
   // Top-level view mode (Wall vs Kanban). Seeded from WINDOW_INIT (L-014 — the
   // workspace-window IPC payload arrives once on mount, so any later listener
   // would miss it). Optimistic local update + persist via WORKSPACE_SET_VIEW_MODE.
@@ -406,31 +402,6 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
   useEffect(() => {
     if (workspaceName !== undefined) setDisplayName(workspaceName)
   }, [workspaceName])
-
-  const commitGroveName = useCallback(() => {
-    if (!workspaceId) { setIsEditingName(false); return }
-    const trimmed = draftName.trim().slice(0, 64)
-    const nextName = trimmed.length > 0 ? trimmed : displayName
-    setDisplayName(nextName)
-    setIsEditingName(false)
-    if (trimmed.length === 0 && nextName === displayName) return
-    ipcInvoke(IPC.WORKSPACE_RENAME, { workspaceId, name: trimmed })
-      .catch((err) => console.warn('[WindowShell] rename failed', err))
-  }, [workspaceId, draftName, displayName])
-
-  const cancelGroveName = useCallback(() => {
-    setIsEditingName(false)
-  }, [])
-
-  const startEditingGroveName = useCallback(() => {
-    if (!workspaceId) return
-    setDraftName(displayName)
-    setIsEditingName(true)
-    requestAnimationFrame(() => {
-      nameInputRef.current?.focus()
-      nameInputRef.current?.select()
-    })
-  }, [workspaceId, displayName])
 
   // On first render: query consent state and show consent dialog if pending (B-084)
   useEffect(() => {
@@ -867,41 +838,15 @@ export function WindowShell({ workspaceId, workspaceName, workspaceType, workspa
             )}
           </div>
         )}
-        {/* Centered title — absolute so traffic lights don't offset it.
-            Click the name to rename the workspace inline; Enter commits, Esc cancels,
-            blank reverts to the default `Workspace N`. */}
-        <div className="absolute inset-x-0 flex justify-center items-center gap-0 pointer-events-none">
+        {/* Centered title — absolute so traffic lights don't offset it. The
+            workspace name is read-only after the Launcher rework. */}
+        <div className="absolute inset-x-0 flex justify-center items-center gap-1 pointer-events-none">
           {workspaceId ? (
             <>
               <span className="text-[16px] font-[600] text-fg-secondary select-none">Claudinha:</span>
-              {isEditingName ? (
-                <input
-                  ref={nameInputRef}
-                  type="text"
-                  value={draftName}
-                  onChange={(e) => setDraftName(e.target.value)}
-                  onBlur={commitGroveName}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); commitGroveName() }
-                    else if (e.key === 'Escape') { e.preventDefault(); cancelGroveName() }
-                  }}
-                  maxLength={64}
-                  aria-label={t.windowShell.workspaceNameAria}
-                  className="pointer-events-auto bg-raised text-fg-primary text-[16px] font-[600] text-center px-2 py-0.5 rounded border border-[var(--color-border-subtle)] outline-none"
-                  style={{ WebkitAppRegion: 'no-drag', width: '16rem' } as React.CSSProperties}
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={startEditingGroveName}
-                  title="Click to rename workspace"
-                  aria-label={`Rename workspace (currently ${displayName || 'unnamed'})`}
-                  className="pointer-events-auto text-[16px] font-[600] text-fg-secondary hover:text-fg-primary pl-0.5 pr-2 py-0.5 rounded hover:bg-raised transition-colors duration-[80ms] select-none"
-                  style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                >
-                  {displayName || 'unnamed'}
-                </button>
-              )}
+              <span className="text-[16px] font-[600] text-fg-secondary select-none">
+                {displayName || 'unnamed'}
+              </span>
             </>
           ) : (
             <span className="text-[16px] font-[600] text-fg-secondary select-none">Claudinha</span>

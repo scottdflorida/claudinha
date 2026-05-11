@@ -7,7 +7,6 @@ import { ConfigurationView } from './ConfigurationView'
 import { ArchiveWorkspaceConfirmModal } from './ArchiveWorkspaceConfirmModal'
 import { PermanentDeleteWorkspaceConfirmModal } from './PermanentDeleteWorkspaceConfirmModal'
 import { ManagerSidebar } from './ManagerSidebar'
-import { WorkspaceView } from './WorkspaceView'
 import { HomeView } from './HomeView'
 import { LanguageFlagToggle } from './LanguageFlagToggle'
 import { useStrings } from '../lib/strings'
@@ -113,58 +112,32 @@ export function ManagerWindow({ claudeFound }: ManagerWindowProps): React.JSX.El
   }, [])
 
   function renderMainArea(): React.JSX.Element {
-    if (!selectedId || selectedId === 'home') {
-      return <HomeView onLaunched={() => setSelectedId('home')} nextWorkspaceNumber={nextWorkspaceNumber} />
-    }
-
     if (selectedId === 'permissions') {
       return <PermissionsManagerView onClose={() => setSelectedId('home')} />
     }
-
     if (selectedId === 'config') {
       return <ConfigurationView />
     }
-
-    // Workspace view — fall back to Home if the workspace is gone
-    const allHives = [...activeWorkspaces, ...dormantWorkspaces, ...archivedWorkspaces]
-    const workspace = allHives.find((h) => h.id === selectedId)
-    if (!workspace) {
-      return <HomeView onLaunched={() => setSelectedId('home')} nextWorkspaceNumber={nextWorkspaceNumber} />
-    }
-
-    const isActive = activeWorkspaces.some((h) => h.id === selectedId)
-    const isArchived = archivedWorkspaces.some((h) => h.id === selectedId)
-    const isDormant = !isActive && !isArchived
-
-    return (
-      <WorkspaceView
-        workspace={workspace}
-        isActive={isActive}
-        isDormant={isDormant}
-        isArchived={isArchived}
-        onOpenGrove={() => {
-          if (isActive) {
-            focusWorkspace(workspace.id)
-          } else {
-            activateWorkspace(workspace.id)
-          }
-        }}
-        onOpenPane={(paneId) => {
-          // Active: ask the workspace window to switch its active pane and
-          // raise itself. Dormant: reactivate just that terminal (existing
-          // activate-with-filter path).
-          if (isActive) {
-            focusTerminal(workspace.id, paneId)
-          } else {
-            activateWorkspace(workspace.id, [paneId])
-          }
-        }}
-        onArchive={() => setArchiveConfirmWorkspace(workspace)}
-        onDelete={() => setPermanentDeleteWorkspace(workspace)}
-        onUnarchive={() => unarchiveWorkspace(workspace.id)}
-      />
-    )
+    // Default: Launch New Workspace form. Workspaces no longer take over the
+    // right pane — interactions on a card (expand, jump, overflow) are inline.
+    return <HomeView onLaunched={() => setSelectedId('home')} nextWorkspaceNumber={nextWorkspaceNumber} />
   }
+
+  const handleJumpToWorkspace = useCallback((workspaceId: string) => {
+    if (activeWorkspaces.some((w) => w.id === workspaceId)) {
+      focusWorkspace(workspaceId)
+    } else {
+      activateWorkspace(workspaceId)
+    }
+  }, [activeWorkspaces, focusWorkspace, activateWorkspace])
+
+  const handleJumpToAgent = useCallback((workspaceId: string, paneId: string) => {
+    if (activeWorkspaces.some((w) => w.id === workspaceId)) {
+      focusTerminal(workspaceId, paneId)
+    } else {
+      activateWorkspace(workspaceId, [paneId])
+    }
+  }, [activeWorkspaces, focusTerminal, activateWorkspace])
 
   return (
     <div className="w-screen h-screen overflow-hidden bg-canvas flex flex-col relative">
@@ -200,7 +173,12 @@ export function ManagerWindow({ claudeFound }: ManagerWindowProps): React.JSX.El
           dormantWorkspaces={dormantWorkspaces}
           archivedWorkspaces={archivedWorkspaces}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelectView={setSelectedId}
+          onJumpToWorkspace={handleJumpToWorkspace}
+          onJumpToAgent={handleJumpToAgent}
+          onArchiveWorkspace={(w) => setArchiveConfirmWorkspace(w)}
+          onUnarchiveWorkspace={(w) => unarchiveWorkspace(w.id)}
+          onDeleteWorkspace={(w) => setPermanentDeleteWorkspace(w)}
           searchRef={searchInputRef}
         />
         <main className="flex-1 min-h-0 bg-canvas px-6 py-6 flex flex-col">

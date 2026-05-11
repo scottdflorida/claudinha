@@ -128,7 +128,7 @@ import type {
   PaneRehydrateEntry
 } from '../shared/ipc-channels'
 import type { CompletionPolicy, AppConfig } from '../shared/types'
-import type { PaneState, SessionHistoryEntry, EffortLevel, Model } from '../shared/types'
+import type { PaneState, SessionHistoryEntry, EffortLevel, Model, Workspace } from '../shared/types'
 import type { WindowManager } from './window-manager'
 import type { SessionRegistry } from './session-registry'
 import type { PtyPool } from './pty-pool'
@@ -212,6 +212,7 @@ import type {
 } from '../shared/ipc-channels'
 import { spawnTerminalsIntoWorkspace, isMainModeForRepoInWorkspace } from './spawn-terminals-helper'
 import { effortLevelForSettings } from './effort-translation'
+import { detectBranchAttach } from './branch-attach'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1695,14 +1696,6 @@ export function registerIpcHandlers(
     return { error: null }
   })
 
-  // workspace:rename — rename a workspace
-  ipcMain.handle(IPC.WORKSPACE_RENAME, (_event, payload: { workspaceId: string; name: string }) => {
-    const success = workspaceManager.renameWorkspace(payload.workspaceId, payload.name)
-    if (!success) return { error: 'Workspace not found.' }
-    workspaceManager.pushManagerUpdate()
-    return { error: null }
-  })
-
   // workspace:set-view-mode — flip a workspace between Wall and Kanban (Kanban v1)
   ipcMain.handle(
     IPC.WORKSPACE_SET_VIEW_MODE,
@@ -2452,11 +2445,19 @@ export function registerIpcHandlers(
   ipcMain.handle(
     IPC.GIT_LIST_BRANCHES,
     async (_event, payload: GitListBranchesPayload): Promise<GitListBranchesResult> => {
-      const { paneId } = payload
-      const pane = sessionRegistry.getPane(paneId)
-      if (!pane) return { error: `Unknown pane: ${paneId}`, branches: [], current: null }
-      const result = await listBranches(pane.worktreePath)
-      return { error: null, branches: result.branches, current: result.current }
+      let lookupPath: string | null = null
+      if (payload.paneId) {
+        const pane = sessionRegistry.getPane(payload.paneId)
+        if (!pane) return { error: `Unknown pane: ${payload.paneId}`, branches: [], current: null, defaultBranch: null }
+        lookupPath = pane.worktreePath
+      } else if (payload.repoPath) {
+        lookupPath = payload.repoPath
+      } else {
+        return { error: 'paneId or repoPath required', branches: [], current: null, defaultBranch: null }
+      }
+      const result = await listBranches(lookupPath)
+      const defaultBranch = await detectMainBranch(lookupPath).catch(() => null)
+      return { error: null, branches: result.branches, current: result.current, defaultBranch }
     }
   )
 
@@ -2492,7 +2493,7 @@ export function registerIpcHandlers(
   // -------------------------------------------------------------------------
 
   ipcMain.handle(IPC.WORKSPACE_CREATE_WITH_TERMINALS, (event, payload: WorkspaceCreateWithTerminalsPayload): WorkspaceCreateWithTerminalsResult => {
-    const { repoPath, repoPaths, terminalCount, worktreeMode, namingMode, manualNames, effort, model, viewMode, name } = payload
+    const { repoPath, repoPaths, terminalCount, worktreeMode, namingMode, manualNames, effort, model, viewMode, name, branchName } = payload
 
     if (terminalCount < 1 || terminalCount > 32) return { error: 'Terminal count must be between 1 and 32.' }
 
@@ -2542,20 +2543,32 @@ export function registerIpcHandlers(
       treeRepoPaths = Array(terminalCount).fill(repoPath)
     }
 
-    // Create the workspace. Per-pane mode spans multiple repos, so the workspace has no
-    // single `repoPath` constraint — use 'general' type with a name hint.
+    // Create the workspace. The Launcher form is single-repo and pins exactly
+    // one working directory: either main (no worktree) or a single named
+    // branch (one worktree). Per-pane multi-repo mode (perTree) is legacy.
     const trimmedName = name?.trim() || undefined
-    const workspace = perTree
-      ? workspaceManager.createWorkspace({
-          type: 'general',
-          name: trimmedName,
-          constraint: {}
-        })
-      : workspaceManager.createWorkspace({
-          type: 'repo',
-          name: trimmedName,
-          constraint: { repoPath }
-        })
+    let workspace: Workspace
+    if (perTree) {
+      workspace = workspaceManager.createWorkspace({
+        type: 'general',
+        name: trimmedName,
+        constraint: {}
+      })
+    } else if (branchName && worktreeMode === 'each-own') {
+      // Workspace pinned to a specific branch — type 'worktree-branch'.
+      workspace = workspaceManager.createWorkspace({
+        type: 'worktree-branch',
+        name: trimmedName,
+        constraint: { repoPath, branchName }
+      })
+    } else {
+      // Workspace pinned to the repo (main mode or auto-named worktrees).
+      workspace = workspaceManager.createWorkspace({
+        type: 'repo',
+        name: trimmedName,
+        constraint: { repoPath }
+      })
+    }
 
     // Apply the LaunchForm's view-mode choice (Kanban v1). Defaults to 'kanban'
     // when omitted by older payloads (workspace-manager creates with 'kanban').
@@ -2644,6 +2657,9 @@ export function registerIpcHandlers(
           const droneSuffix = Math.random().toString(16).slice(2, 8)
           const autoName = `wt-${droneSuffix}`
           let spawnPayload: PaneSpawnPayload
+          // Flag for shared+branchName: when the named branch already exists,
+          // `git worktree add` runs without `-b` (attach existing).
+          let attachExistingBranch = false
 
           const sanitizeName = (raw: string, fallback: string): string =>
             raw
@@ -2682,16 +2698,32 @@ export function registerIpcHandlers(
                 workspaceId: workspace.id
               }
             } else if (i === 0) {
-              // Same repo + shared: first terminal creates the shared worktree
-              const rawName = (namingMode === 'manual' && manualNames?.[0]?.trim())
+              // Same repo + shared: first terminal creates (or attaches) the
+              // shared worktree. When the Launcher passed `branchName` and a
+              // worktree already exists for that branch, attach to it instead
+              // of creating a sibling — see decision 4 in the Launcher rework.
+              const rawName = branchName?.trim()
+                || (namingMode === 'manual' && manualNames?.[0]?.trim())
                 || `wt-${droneSuffix}`
               const wtName = sanitizeName(rawName, `wt-${droneSuffix}`)
-              spawnPayload = {
-                mode: 'new-worktree',
-                repoPath: droneRepoPath,
-                worktreeName: wtName,
-                effort: effortLevel,
-                workspaceId: workspace.id
+              const attach = branchName ? detectBranchAttach(droneRepoPath, wtName) : null
+              if (attach?.existingWorktreePath) {
+                spawnPayload = {
+                  mode: 'existing-worktree',
+                  repoPath: droneRepoPath,
+                  worktreePath: attach.existingWorktreePath,
+                  effort: effortLevel,
+                  workspaceId: workspace.id
+                }
+              } else {
+                if (attach?.branchExists) attachExistingBranch = true
+                spawnPayload = {
+                  mode: 'new-worktree',
+                  repoPath: droneRepoPath,
+                  worktreeName: wtName,
+                  effort: effortLevel,
+                  workspaceId: workspace.id
+                }
               }
             } else {
               // Same repo + shared: subsequent terminals reuse the shared worktree path
@@ -2726,7 +2758,11 @@ export function registerIpcHandlers(
             const wtName = spawnPayload.worktreeName!
             fs.mkdirSync(path.join(droneRepoPath, '.worktrees'), { recursive: true })
             const wtPath = path.join(droneRepoPath, '.worktrees', wtName)
-            execFileSync('git', ['worktree', 'add', wtPath, '-b', wtName], {
+            // attachExistingBranch → drop the `-b`; otherwise create a new branch.
+            const wtAddArgs = attachExistingBranch
+              ? ['worktree', 'add', wtPath, wtName]
+              : ['worktree', 'add', wtPath, '-b', wtName]
+            execFileSync('git', wtAddArgs, {
               cwd: droneRepoPath,
               timeout: 15_000,
               stdio: 'pipe'

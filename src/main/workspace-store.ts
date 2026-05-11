@@ -71,6 +71,27 @@ export function migrateLegacyKeys(): void {
  * Called from main/index.ts at app startup, after `migrateLegacyKeys` and
  * before any other workspace-store consumer.
  */
+/**
+ * Delete any persisted workspaces with `type: 'general'` from the store.
+ * The Launcher rework dropped the 'general' workspace flavor — a workspace is
+ * now always pinned to a specific repo (and optionally a specific branch's
+ * worktree). Existing general workspaces would render as orphans in the new
+ * card UI, so we nuke them on startup. Idempotent; runs after the legacy-key
+ * migration in main/index.ts.
+ */
+export function migrateRemoveGeneralWorkspaces(): void {
+  const all = store.get('workspaces.all', [] as Workspace[])
+  if (all.length === 0) return
+  const survivors = all.filter((ws) => ws.type !== 'general')
+  const removed = all.length - survivors.length
+  if (removed > 0) {
+    store.set('workspaces.all', survivors)
+    console.log(
+      `[workspace-store] removed ${removed} legacy general workspace(s); ${survivors.length} remain.`
+    )
+  }
+}
+
 export function migrateCompletionActionsV2(): void {
   const all = store.get('workspaces.all', [] as Workspace[])
   if (all.length === 0) return

@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import path from 'path'
 import type { BrowserWindow } from 'electron'
 import type { Workspace, WorkspaceType, WorkspaceConstraint, WorkspaceStatus, TerminalSnapshot, RendererWorkspace, ActivePaneSummary, PaneState, CompletionPolicy } from '../shared/types'
 import type { WindowInitPayload } from '../shared/ipc-channels'
@@ -17,6 +18,24 @@ import {
   setNextWorkspaceNumber
 } from './workspace-store'
 import { getGlobalCompletionPolicy } from './completion-policy-store'
+
+/**
+ * Auto-generate a workspace display name when the caller doesn't provide one.
+ * Format: `"<repo>: <branch>"` for repo / worktree-branch workspaces, falling
+ * back to `"Workspace N"` for legacy general workspaces or repos with no
+ * constraint info. Branch defaults to `"main"` when not explicitly known.
+ */
+function autoWorkspaceName(
+  opts: { type: WorkspaceType; constraint: WorkspaceConstraint },
+  workspaceNumber: number
+): string {
+  if (opts.constraint.repoPath) {
+    const repo = path.basename(opts.constraint.repoPath)
+    const branch = opts.constraint.branchName ?? 'main'
+    return `${repo}: ${branch}`
+  }
+  return `Workspace ${workspaceNumber}`
+}
 
 /**
  * WorkspaceManager — central orchestrator for workspace lifecycle.
@@ -131,7 +150,7 @@ export class WorkspaceManager {
     const id = randomUUID()
     const now = Date.now()
     const workspaceNumber = getNextWorkspaceNumber()
-    const name = opts.name?.trim() || `Workspace ${workspaceNumber}`
+    const name = opts.name?.trim() || autoWorkspaceName(opts, workspaceNumber)
 
     const workspace: Workspace = {
       id,
@@ -451,20 +470,6 @@ export class WorkspaceManager {
     return true
   }
 
-  /**
-   * Rename a workspace. A blank/whitespace-only name reverts to the default
-   * `Workspace ${workspaceNumber}`. Names are trimmed and capped at 64 characters.
-   */
-  renameWorkspace(workspaceId: string, name: string): boolean {
-    const workspace = this.workspaceMap.get(workspaceId)
-    if (!workspace) return false
-    const trimmed = name.trim().slice(0, 64)
-    workspace.name = trimmed.length > 0 ? trimmed : `Workspace ${workspace.workspaceNumber}`
-    saveWorkspace(workspace)
-    this.applyWindowTitle(workspace.windowId)
-    return true
-  }
-
   // ---------------------------------------------------------------------------
   // Window title computation
   // ---------------------------------------------------------------------------
@@ -581,7 +586,8 @@ export class WorkspaceManager {
       sessionTitle: p.metrics.sessionTitle,
       status: p.status,
       activeToolName: p.activeToolName,
-      initialPrompt: p.metrics.initialPrompt
+      initialPrompt: p.metrics.initialPrompt,
+      lastActiveAt: p.statusChangedAt
     })
 
     const toRendererHive = (workspace: Workspace): RendererWorkspace => ({

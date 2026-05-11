@@ -45,7 +45,7 @@ import { registerIpcHandlers, checkClaudeInstalled } from './ipc-handlers'
 import { buildMenu } from './menu'
 import { getMenuStrings } from './menu-strings'
 import { WorkspaceManager } from './workspace-manager'
-import { migrateLegacyKeys, migrateCompletionActionsV2 } from './workspace-store'
+import { migrateLegacyKeys, migrateCompletionActionsV2, migrateRemoveGeneralWorkspaces } from './workspace-store'
 import { GitStatusPoller } from './git-status-poller'
 import { CompletionExecutor } from './completion-executor'
 import { TurnRecorder } from './turn-recorder'
@@ -95,6 +95,8 @@ if (!gotTheLock) {
 
 migrateLegacyKeys()
 migrateCompletionActionsV2()
+// Launcher rework: legacy `general`-type workspaces are gone.
+migrateRemoveGeneralWorkspaces()
 
 // ---------------------------------------------------------------------------
 // Module-level singletons — created once, shared by all IPC handlers
@@ -206,7 +208,7 @@ let claudeFoundCache: boolean | null = null
 
 function createManagerWindow(): BrowserWindow {
   const win = windowManager.createWindow({
-    title: 'Claudinha: Management',
+    title: 'Claudinha Launcher',
     width: 900,
     height: 700
   })
