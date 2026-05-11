@@ -2,6 +2,14 @@
 
 All notable changes to Claudinha are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), and the project follows [Semantic Versioning](https://semver.org/).
 
+## 0.3.1 — 2026-05-11
+
+### Fixed
+
+- **Windows: Bulk Change Split and Discard no longer fail silently.** The 0.3.0 publish and discard engines drove `git rebase -i` with a `#!/usr/bin/env bash` shell script written to a `.sh` file, set `GIT_EDITOR='true'`, and pointed `core.hooksPath` at `/dev/null` — all Unix-only idioms. On Windows neither the `.sh` shebang nor the `true` command nor `/dev/null` resolves, so Split and Discard returned errors instead of completing. The rebase editor is now a portable Node script invoked via `process.execPath` (Electron's bundled runtime, opted in with `ELECTRON_RUN_AS_NODE`); `GIT_EDITOR` is a no-op Node invocation; and `core.hooksPath` points at an empty temp directory we already create for the editor script. macOS and Linux behavior is unchanged.
+
+Recommendation: Windows users on `claudinha@0.3.0` should `npm install -g claudinha@0.3.1` to pick up Split/Discard. macOS and Linux users are not affected by the bug and can upgrade at their leisure.
+
 ## 0.3.0 — 2026-05-11
 
 ### Added

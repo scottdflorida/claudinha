@@ -36,6 +36,7 @@ import type { BrowserWindow } from 'electron'
 import {
   detectMainBranch,
   getCurrentBranch,
+  portableGitEditorEnv,
   runGitWithLockRetry
 } from './git-status'
 import {
@@ -153,7 +154,10 @@ export async function discardTurn(args: {
       // First attempt: try to drop the target and replay dependents on top.
       // `--autostash` is redundant given our explicit pre-stash above,
       // but harmless and safer if pre-stash was a no-op for any reason.
-      const env = { ...process.env, GIT_EDITOR: 'true' }
+      // `portableGitEditorEnv()` neutralises GIT_EDITOR in a way that works
+      // on Windows too (the prior `GIT_EDITOR='true'` was Unix-only and
+      // is the reason 0.3.0 Discard silently failed on Windows).
+      const env = { ...process.env, ...portableGitEditorEnv() }
       try {
         await execFileAsync(
           'git',

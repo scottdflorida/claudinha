@@ -31,7 +31,7 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs/promises'
 import type { BrowserWindow } from 'electron'
-import { detectMainBranch, getCurrentBranch, runGitWithLockRetry } from './git-status'
+import { detectMainBranch, getCurrentBranch, portableGitEditorEnv, runGitWithLockRetry } from './git-status'
 import { broadcastTurnsUpdated, projectTurnsForPane, readDiscardedSidecar, writeDiscardedSidecar } from './turn-projection'
 import { buildLeftSubPatch, getTurnDiff } from './turn-diff'
 import { runDirectMerge } from './merge-runner'
@@ -390,24 +390,16 @@ async function scriptedRebaseSquash(args: {
   // lines, leave the first as-is and convert the next (squashCount - 1) to
   // `squash`. Lines past that are left untouched (they're commits NOT in
   // our selection — for example, follow-on turns the user committed after
-  // the selection).
-  const editorScript = [
-    '#!/usr/bin/env bash',
-    'set -euo pipefail',
-    'todo="$1"',
-    `count_to_squash=$((${squashCount} - 1))`,
-    'awk -v c="$count_to_squash" \'',
-    '  /^pick / && picked < 1 { print; picked = 1; next }',
-    '  /^pick / && picked >= 1 && squashed < c { sub(/^pick /, "squash "); print; squashed += 1; next }',
-    '  { print }',
-    '\' "$todo" > "$todo.tmp"',
-    'mv "$todo.tmp" "$todo"'
-  ].join('\n') + '\n'
+  // the selection). Written as portable Node (see portableGitEditorEnv
+  // for why bash is off the table) — count comes via env so the script
+  // body itself is constant.
+  const editorScript = SQUASH_REBASE_EDITOR_JS
 
-  // Materialise the editor script in a temp file.
-  const scriptPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudinha-seq-'))
-    .then((dir) => path.join(dir, 'rebase-editor.sh'))
-  await fs.writeFile(scriptPath, editorScript, { mode: 0o755 })
+  // Materialise the editor script in a temp dir we also use as
+  // `core.hooksPath` (no hook files in here ⇒ git skips every hook).
+  const scriptDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claudinha-seq-'))
+  const scriptPath = path.join(scriptDir, 'rebase-editor.js')
+  await fs.writeFile(scriptPath, editorScript, 'utf8')
 
   try {
     // We can't use the lock-retry wrapper here because it doesn't support
@@ -418,9 +410,11 @@ async function scriptedRebaseSquash(args: {
     //
     // Flags:
     //   `--autostash` so the rebase doesn't refuse on a dirty working tree.
-    //   `-c core.hooksPath=/dev/null` disables every git hook for the
-    //     duration of the rebase. The squash step writes a NEW commit
-    //     (combining the picked commits) and that commit fires
+    //   `-c core.hooksPath=<scriptDir>` disables every git hook for the
+    //     duration of the rebase (the dir has no hook files in it).
+    //     Pre-0.3.1 this was `/dev/null`, which is Unix-only — on
+    //     Windows git refused the path. The squash step writes a NEW
+    //     commit (combining the picked commits) and that commit fires
     //     pre-commit / commit-msg / post-commit hooks. If the user has a
     //     hook that runs tests, prompts for input, or makes a network
     //     call, the rebase blocks indefinitely with no way to cancel.
@@ -432,15 +426,14 @@ async function scriptedRebaseSquash(args: {
     // `timeout: 60_000` is a hard cap so a hung rebase fails loudly
     // instead of silently parking the modal. Most rebases finish in
     // <2s; 60s is a generous ceiling.
-    await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', 'rebase', '-i', '--autostash', parent], {
+    await execFileAsync('git', ['-c', `core.hooksPath=${scriptDir}`, 'rebase', '-i', '--autostash', parent], {
       cwd: worktreePath,
       env: {
         ...process.env,
-        GIT_SEQUENCE_EDITOR: scriptPath,
-        // Force a non-interactive editor for any prompts that fall through
-        // (e.g. squash combined-message editor — `git commit --amend` after
-        // the rebase replaces the message anyway).
-        GIT_EDITOR: 'true',
+        ...portableGitEditorEnv(scriptPath),
+        // The Node editor reads its count from the environment, keeping
+        // the script body constant across calls.
+        CLAUDINHA_SQUASH_COUNT: String(squashCount - 1),
         // Belt-and-braces: refuse credential prompts on any git step
         // the rebase happens to invoke (e.g., a fetch from a hook).
         GIT_TERMINAL_PROMPT: '0'
@@ -456,10 +449,60 @@ async function scriptedRebaseSquash(args: {
     // Remove the temp script + its parent dir.
     try {
       await fs.unlink(scriptPath)
-      await fs.rmdir(path.dirname(scriptPath))
+      await fs.rmdir(scriptDir)
     } catch { /* ignore */ }
   }
 }
+
+/**
+ * Sequence-editor script for the squash rebase. Reads the rebase TODO file
+ * passed as argv[2], converts the next (CLAUDINHA_SQUASH_COUNT) `pick` lines
+ * after the first one into `squash`, and writes the file back. Pure Node so
+ * it runs identically on every platform we ship to.
+ */
+const SQUASH_REBASE_EDITOR_JS = `'use strict'
+const fs = require('fs')
+const todo = process.argv[2]
+const countToSquash = parseInt(process.env.CLAUDINHA_SQUASH_COUNT || '0', 10)
+const lines = fs.readFileSync(todo, 'utf8').split('\\n')
+let picked = 0
+let squashed = 0
+const out = []
+for (const line of lines) {
+  if (line.indexOf('pick ') === 0 && picked < 1) {
+    out.push(line)
+    picked = 1
+  } else if (line.indexOf('pick ') === 0 && picked >= 1 && squashed < countToSquash) {
+    out.push('squash' + line.slice(4))
+    squashed += 1
+  } else {
+    out.push(line)
+  }
+}
+fs.writeFileSync(todo, out.join('\\n'))
+`
+
+/**
+ * Sequence-editor script for the split rebase. Reads the rebase TODO file
+ * passed as argv[2] and converts the `pick <abbrev-sha> ...` line whose
+ * abbreviated sha is a prefix of CLAUDINHA_TARGET_SHA into `edit`. The
+ * TODO uses git's abbreviated shas, so prefix-matching against the full
+ * sha works regardless of how many chars git decided to print.
+ */
+const SPLIT_REBASE_EDITOR_JS = `'use strict'
+const fs = require('fs')
+const todo = process.argv[2]
+const targetSha = process.env.CLAUDINHA_TARGET_SHA || ''
+const lines = fs.readFileSync(todo, 'utf8').split('\\n')
+const out = lines.map(function (line) {
+  const m = line.match(/^pick (\\S+) /)
+  if (m && targetSha.indexOf(m[1]) === 0) {
+    return 'edit' + line.slice(4)
+  }
+  return line
+})
+fs.writeFileSync(todo, out.join('\\n'))
+`
 
 /**
  * Split a single turn into two contiguous publish-commits, splitting by
@@ -666,32 +709,19 @@ async function runSplitChoreography(args: {
   //
   //    The TODO file uses git's *abbreviated* commit shas (typically 7-12
   //    characters depending on `core.abbrev` and uniqueness needs). We
-  //    pass the FULL sha and use awk's `index()` to check whether the
-  //    TODO's abbreviation is a prefix of our target — works regardless
-  //    of how many chars git chose.
-  const editorScript = [
-    '#!/usr/bin/env bash',
-    'set -euo pipefail',
-    'todo="$1"',
-    `target="${target.commitSha}"`,
-    'awk -v sha="$target" \'',
-    '  $1 == "pick" {',
-    '    if (index(sha, $2) == 1) sub(/^pick /, "edit ")',
-    '    print',
-    '    next',
-    '  }',
-    '  { print }',
-    '\' "$todo" > "$todo.tmp"',
-    'mv "$todo.tmp" "$todo"'
-  ].join('\n') + '\n'
+  //    pass the FULL sha via env and check whether the TODO's abbreviation
+  //    is a prefix of our target — works regardless of how many chars git
+  //    chose. Written as portable Node (see portableGitEditorEnv for why
+  //    bash is off the table).
+  const editorScript = SPLIT_REBASE_EDITOR_JS
 
-  const scriptPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudinha-split-'))
-    .then((dir) => path.join(dir, 'rebase-editor.sh'))
-  await fs.writeFile(scriptPath, editorScript, { mode: 0o755 })
+  const scriptDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claudinha-split-'))
+  const scriptPath = path.join(scriptDir, 'rebase-editor.js')
+  await fs.writeFile(scriptPath, editorScript, 'utf8')
   const env = {
     ...process.env,
-    GIT_SEQUENCE_EDITOR: scriptPath,
-    GIT_EDITOR: 'true',
+    ...portableGitEditorEnv(scriptPath),
+    CLAUDINHA_TARGET_SHA: target.commitSha,
     GIT_TERMINAL_PROMPT: '0'
   }
 
@@ -710,11 +740,12 @@ async function runSplitChoreography(args: {
     // If the stash pop conflicts at the end (rare — the user's dirty
     // state would have to overlap with the new tip), the stash stays in
     // `git stash list` and surfaces in the rebase output.
-    // `-c core.hooksPath=/dev/null` disables every git hook for the
-    // duration of the rebase so user-installed pre-commit / commit-msg
-    // / post-commit hooks (husky, etc.) can't block on tests, prompts,
-    // or network calls. Matches the `--no-verify` we already pass on
-    // the LEFT/RIGHT commits below.
+    // `-c core.hooksPath=<scriptDir>` disables every git hook for the
+    // duration of the rebase (the dir has no hook files in it) so
+    // user-installed pre-commit / commit-msg / post-commit hooks (husky,
+    // etc.) can't block on tests, prompts, or network calls. Pre-0.3.1
+    // this was `/dev/null`, which is Unix-only. Matches the `--no-verify`
+    // we already pass on the LEFT/RIGHT commits below.
     // `timeout: 60_000` is a hard cap on the start step; replay can
     // take longer on a long dependent chain so `--continue` keeps its
     // own (longer) timeout below.
@@ -722,7 +753,7 @@ async function runSplitChoreography(args: {
     try {
       await execFileAsync(
         'git',
-        ['-c', 'core.hooksPath=/dev/null', 'rebase', '-i', '--autostash', target.parentCommitSha],
+        ['-c', `core.hooksPath=${scriptDir}`, 'rebase', '-i', '--autostash', target.parentCommitSha],
         {
           cwd: worktreePath,
           env,
@@ -802,7 +833,7 @@ async function runSplitChoreography(args: {
 
     // 7. Continue the rebase to replay dependents.
     try {
-      await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', 'rebase', '--continue'], {
+      await execFileAsync('git', ['-c', `core.hooksPath=${scriptDir}`, 'rebase', '--continue'], {
         cwd: worktreePath,
         env,
         maxBuffer: 4 * 1024 * 1024,

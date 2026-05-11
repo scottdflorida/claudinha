@@ -18,6 +18,45 @@ export const CLAUDINHA_INFRASTRUCTURE_DIRS = ['.worktrees', '.claude'] as const
 /** Timeout for git commands (ms) */
 const GIT_TIMEOUT = 5_000
 
+/**
+ * Build a cross-platform env block that suppresses git's interactive editor
+ * (always) and optionally drives `git rebase -i` non-interactively via a
+ * scripted sequence editor.
+ *
+ * Why this exists: pre-0.3.1, publish/discard engines set
+ * `GIT_EDITOR='true'` and pointed `GIT_SEQUENCE_EDITOR` at a `#!/usr/bin/env
+ * bash` script written to a `.sh` file. Both rely on the Unix shell to
+ * resolve commands and shebangs. On Windows neither works: `true` is not an
+ * .exe, and Git for Windows invokes the editor via the platform's
+ * `CreateProcess` which does NOT honor shebangs — so the `.sh` was an
+ * unrunnable blob. Split/Discard silently failed on Windows in 0.3.0.
+ *
+ * The portable replacement: drive both editor slots with the Node runtime
+ * we already ship (Electron's bundled Node, opted in via
+ * `ELECTRON_RUN_AS_NODE`). `GIT_EDITOR` becomes a Node invocation that
+ * evaluates an empty program, leaving the editor file alone. The optional
+ * `scriptPath` argument is invoked as `<node> <script> <todo-file>` so the
+ * sequence-editor script can rewrite the rebase TODO before git resumes.
+ */
+export function portableGitEditorEnv(scriptPath?: string): {
+  GIT_EDITOR: string
+  GIT_SEQUENCE_EDITOR?: string
+  ELECTRON_RUN_AS_NODE?: '1'
+} {
+  const quote = (p: string) => `"${p.replace(/"/g, '\\"')}"`
+  const exe = quote(process.execPath)
+  const env: {
+    GIT_EDITOR: string
+    GIT_SEQUENCE_EDITOR?: string
+    ELECTRON_RUN_AS_NODE?: '1'
+  } = {
+    GIT_EDITOR: `${exe} -e ""`
+  }
+  if (scriptPath) env.GIT_SEQUENCE_EDITOR = `${exe} ${quote(scriptPath)}`
+  if ((process.versions as { electron?: string }).electron) env.ELECTRON_RUN_AS_NODE = '1'
+  return env
+}
+
 /** Cap on the per-status file-name list shipped to the renderer. The full count
  *  remains accurate; only the displayable list is bounded so the IPC payload
  *  doesn't balloon on large refactors. */
