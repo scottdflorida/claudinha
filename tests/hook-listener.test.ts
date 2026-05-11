@@ -887,4 +887,94 @@ describe('HookListener', () => {
       expect(inspector.broadcastSummary).not.toHaveBeenCalled()
     })
   })
+
+  // -------------------------------------------------------------------------
+  // SessionStart one-shot listener
+  //
+  // Used by spawn paths to inject `/effort max` once Claude Code's TUI is up
+  // and listening for slash commands. Each listener fires exactly once and
+  // is automatically removed.
+  // -------------------------------------------------------------------------
+
+  describe('SessionStart one-shot listener', () => {
+    it('fires the registered callback when SessionStart arrives for the pane', async () => {
+      const cb = vi.fn()
+      listener.onNextSessionStart('pane-1', cb)
+
+      await sendPayload(socketPath, {
+        hookEventName: 'SessionStart',
+        paneId: 'pane-1'
+      })
+
+      expect(cb).toHaveBeenCalledOnce()
+    })
+
+    it('does not fire when SessionStart arrives for a different pane', async () => {
+      const cb = vi.fn()
+      listener.onNextSessionStart('pane-1', cb)
+
+      await sendPayload(socketPath, {
+        hookEventName: 'SessionStart',
+        paneId: 'pane-2'
+      })
+
+      expect(cb).not.toHaveBeenCalled()
+    })
+
+    it('fires only on the first SessionStart, not on subsequent ones', async () => {
+      const cb = vi.fn()
+      listener.onNextSessionStart('pane-1', cb)
+
+      await sendPayload(socketPath, {
+        hookEventName: 'SessionStart',
+        paneId: 'pane-1'
+      })
+      await sendPayload(socketPath, {
+        hookEventName: 'SessionStart',
+        paneId: 'pane-1'
+      })
+
+      expect(cb).toHaveBeenCalledOnce()
+    })
+
+    it('can be unsubscribed before SessionStart arrives', async () => {
+      const cb = vi.fn()
+      const unsubscribe = listener.onNextSessionStart('pane-1', cb)
+      unsubscribe()
+
+      await sendPayload(socketPath, {
+        hookEventName: 'SessionStart',
+        paneId: 'pane-1'
+      })
+
+      expect(cb).not.toHaveBeenCalled()
+    })
+
+    it('supports multiple listeners on the same pane, firing all of them once', async () => {
+      const cb1 = vi.fn()
+      const cb2 = vi.fn()
+      listener.onNextSessionStart('pane-1', cb1)
+      listener.onNextSessionStart('pane-1', cb2)
+
+      await sendPayload(socketPath, {
+        hookEventName: 'SessionStart',
+        paneId: 'pane-1'
+      })
+
+      expect(cb1).toHaveBeenCalledOnce()
+      expect(cb2).toHaveBeenCalledOnce()
+    })
+
+    it('does not fire on non-SessionStart hook events', async () => {
+      const cb = vi.fn()
+      listener.onNextSessionStart('pane-1', cb)
+
+      await sendPayload(socketPath, {
+        hookEventName: 'UserPromptSubmit',
+        paneId: 'pane-1'
+      })
+
+      expect(cb).not.toHaveBeenCalled()
+    })
+  })
 })

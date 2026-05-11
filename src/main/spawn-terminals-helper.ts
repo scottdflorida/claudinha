@@ -418,6 +418,24 @@ export function spawnTerminalsIntoWorkspace(
       registerPaneSpawnMode(paneId, spawnPayload.mode)
       trackPaneSpawned(spawnPayload.mode, sessionRegistry.getPanesForWindow(windowId).length)
 
+      // Effort=max: settings.json carries xhigh as the baseline (the schema
+      // doesn't accept 'max'). To actually run at max, inject `/effort max`
+      // once Claude Code's SessionStart hook fires — that's the earliest
+      // point we know the TUI is up and listening for slash commands.
+      if (effortLevel === 'max') {
+        const injectPaneId = paneId
+        hookListener.onNextSessionStart(injectPaneId, () => {
+          try {
+            ptyPool.write(injectPaneId, '/effort max\r')
+          } catch (err) {
+            console.warn(
+              '[spawn-terminals-helper] failed to inject /effort max for pane',
+              injectPaneId, err
+            )
+          }
+        })
+      }
+
       // Notify the renderer
       const spawnedPayload: PaneSpawnedPayload = {
         paneId, repoName, worktreeName, worktreePath: resolvedWorktreePath,

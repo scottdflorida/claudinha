@@ -211,6 +211,7 @@ import type {
   WorkspaceRevealPathResult
 } from '../shared/ipc-channels'
 import { spawnTerminalsIntoWorkspace, isMainModeForRepoInWorkspace } from './spawn-terminals-helper'
+import { effortLevelForSettings } from './effort-translation'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -219,7 +220,12 @@ import { spawnTerminalsIntoWorkspace, isMainModeForRepoInWorkspace } from './spa
 /**
  * Write the effortLevel field to the global ~/.claude/settings.json before
  * spawning a Claude Code process, so it starts with the correct effort.
- * Claude Code reads this on startup; PTY injection is too late. (PE-03)
+ * Claude Code reads this on startup. (PE-03)
+ *
+ * `'max'` is NOT a valid settings.json value — Claude Code's schema enum is
+ * `low | medium | high | xhigh`. `'max'` is reachable only via the `/effort
+ * max` slash command in-session, so callers wanting max also inject the
+ * slash command into the PTY after SessionStart (see spawn handlers).
  */
 function writeGlobalEffortLevel(effort: EffortLevel): void {
   const settingsPath = path.join(os.homedir(), '.claude', 'settings.json')
@@ -230,7 +236,7 @@ function writeGlobalEffortLevel(effort: EffortLevel): void {
     } catch {
       // File doesn't exist or is malformed — start fresh
     }
-    settings.effortLevel = effort
+    settings.effortLevel = effortLevelForSettings(effort)
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf8')
   } catch (err) {
     console.error('[ipc] failed to write effortLevel to global settings:', err)
@@ -706,6 +712,19 @@ export function registerIpcHandlers(
     trackPaneSpawned(mode, sessionRegistry.getPanesForWindow(windowId).length)
     trackSpawnModeSelected(mode)
 
+    // Effort=max needs /effort max injected after SessionStart — see
+    // effort-translation.ts and writeGlobalEffortLevel above.
+    if (effortLevel === 'max') {
+      const injectPaneId = paneId
+      hookListener.onNextSessionStart(injectPaneId, () => {
+        try {
+          ptyPool.write(injectPaneId, '/effort max\r')
+        } catch (err) {
+          console.warn('[ipc] failed to inject /effort max for pane', injectPaneId, err)
+        }
+      })
+    }
+
     const spawnedPayload: PaneSpawnedPayload = {
       paneId,
       repoName,
@@ -867,7 +886,20 @@ export function registerIpcHandlers(
     metricsCollector.watchPane(paneId)
 
     // Set effort level in global settings before respawn (PE-03)
-    writeGlobalEffortLevel(pane.effort ?? 'high')
+    const respawnEffort = pane.effort ?? 'high'
+    writeGlobalEffortLevel(respawnEffort)
+
+    // Effort=max needs /effort max injected after SessionStart — settings.json
+    // can't carry 'max' (see effort-translation.ts).
+    if (respawnEffort === 'max') {
+      hookListener.onNextSessionStart(paneId, () => {
+        try {
+          ptyPool.write(paneId, '/effort max\r')
+        } catch (err) {
+          console.warn('[ipc] failed to inject /effort max on respawn for pane', paneId, err)
+        }
+      })
+    }
 
     // Spawn new PTY in the same worktree, preserving the user's model choice
     // (set originally on PANE_SPAWN, possibly updated live via PANE_MODEL).

@@ -114,6 +114,47 @@ export class HookListener {
   }
 
   /**
+   * Per-pane one-shot listeners that fire the first time a SessionStart hook
+   * arrives for that pane. Used by spawn paths to inject `/effort max` once
+   * Claude Code is actually up and listening for slash commands. Each listener
+   * fires exactly once and is removed afterwards.
+   */
+  private readonly oneShotSessionStartListeners = new Map<string, Set<() => void>>()
+
+  /**
+   * Register a callback that fires the next time SessionStart arrives for the
+   * given pane. Fires exactly once and is then removed. Returns an unsubscribe
+   * function so the caller can detach early.
+   */
+  onNextSessionStart(paneId: string, listener: () => void): () => void {
+    let set = this.oneShotSessionStartListeners.get(paneId)
+    if (!set) {
+      set = new Set()
+      this.oneShotSessionStartListeners.set(paneId, set)
+    }
+    set.add(listener)
+    return () => {
+      const current = this.oneShotSessionStartListeners.get(paneId)
+      if (!current) return
+      current.delete(listener)
+      if (current.size === 0) this.oneShotSessionStartListeners.delete(paneId)
+    }
+  }
+
+  private fireSessionStartListeners(paneId: string): void {
+    const listeners = this.oneShotSessionStartListeners.get(paneId)
+    if (!listeners) return
+    this.oneShotSessionStartListeners.delete(paneId)
+    for (const listener of listeners) {
+      try {
+        listener()
+      } catch (err) {
+        console.warn('[hook-listener] one-shot session-start listener threw:', err)
+      }
+    }
+  }
+
+  /**
    * Register a callback to be invoked on every hook event arrival.
    * Used by StatusDetector (B-054) to cancel the PTY fallback timer.
    */
@@ -283,9 +324,13 @@ export class HookListener {
     // Notify callback (B-054): allows StatusDetector to cancel the fallback timer
     this.onHookEvent?.(paneId)
 
-    // Store session_id from SessionStart for future correlation
-    if (hookEventName === 'SessionStart' && payload.session_id) {
-      this.sessionRegistry.updatePaneSessionId(paneId, payload.session_id)
+    // Store session_id from SessionStart for future correlation and fire any
+    // one-shot session-start listeners (used to inject /effort max post-spawn).
+    if (hookEventName === 'SessionStart') {
+      if (payload.session_id) {
+        this.sessionRegistry.updatePaneSessionId(paneId, payload.session_id)
+      }
+      this.fireSessionStartListeners(paneId)
     }
 
     // Store transcript path from Stop or StopFailure event
