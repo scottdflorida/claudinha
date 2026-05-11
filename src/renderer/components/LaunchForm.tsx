@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, Check, Plus } from 'lucide-react'
+import { ChevronDown, Check, Plus, FolderOpen } from 'lucide-react'
 import { IPC } from '../../shared/ipc-channels'
 import type {
   WorkspaceCreateWithTerminalsPayload,
@@ -31,10 +31,19 @@ const MODEL_OPTIONS: { value: Model; label: string }[] = [
   { value: 'opus', label: 'Opus' }
 ]
 
+const YES_NO_OPTIONS: { value: 'yes' | 'no'; label: string }[] = [
+  { value: 'yes', label: 'Yes' },
+  { value: 'no', label: 'No' }
+]
+
 const LS_KEY_LAST_REPO = 'claudinha:lastRepoPath'
 const LS_KEY_LAST_MODEL = 'claudinha:lastModel'
 const LS_KEY_LAST_EFFORT = 'claudinha:lastEffort'
 const LS_KEY_LAST_EFFORT_ENABLED = 'claudinha:lastEffortEnabled'
+
+/** Default field width (~half the 720px content column) so the form reads as
+ *  a centered stack rather than a wall-to-wall sheet. */
+const FIELD_HALF_WIDTH = 'w-full max-w-[360px]'
 
 function readLast<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -44,16 +53,32 @@ function readLast<T extends string>(key: string, allowed: readonly T[], fallback
   return fallback
 }
 
+/** Cap for the persisted last-effort that this model can actually run. */
+function effortCapForModel(m: Model): EffortLevel {
+  return m === 'opus' ? 'max' : 'high'
+}
+
+function clampEffortToModel(level: EffortLevel, m: Model): EffortLevel {
+  if (m === 'opus') return level
+  if (level === 'xhigh' || level === 'max') return 'high'
+  return level
+}
+
+/** Initial effort for a given model: persisted last → otherwise xhigh for
+ *  Opus, high for Sonnet/Haiku. Clamped to what the chosen model can run. */
+function initialEffortFor(m: Model): EffortLevel {
+  const persisted = readLast<EffortLevel | ''>(LS_KEY_LAST_EFFORT, ['low', 'medium', 'high', 'xhigh', 'max', ''], '')
+  if (persisted) return clampEffortToModel(persisted as EffortLevel, m)
+  return m === 'opus' ? 'xhigh' : 'high'
+}
+
 // ---------------------------------------------------------------------------
 // BranchPicker — main / + New / existing branches popover
 // ---------------------------------------------------------------------------
 
 interface BranchPickerProps {
   repoPath: string | null
-  /** Selected branch name, or null when the user picked "main" (run on the
-   *  repo's default branch with no worktree). */
   branch: string | null
-  /** Sentinel: user is creating a new branch and has typed `pendingNewBranch`. */
   pendingNewBranch: string | null
   onSelect: (selection: { branch: string | null; pendingNewBranch: string | null }) => void
 }
@@ -132,7 +157,7 @@ function BranchPicker({ repoPath, branch, pendingNewBranch, onSelect }: BranchPi
     close()
   }
 
-  const handleCommitNew = () => {
+  const commitNew = () => {
     const trimmed = newDraft.trim()
     if (trimmed.length === 0) {
       setEnteringNew(false)
@@ -181,8 +206,24 @@ function BranchPicker({ repoPath, branch, pendingNewBranch, onSelect }: BranchPi
                   value={newDraft}
                   onChange={(e) => setNewDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); handleCommitNew() }
-                    else if (e.key === 'Escape') { e.preventDefault(); setEnteringNew(false); setNewDraft('') }
+                    // Enter and Tab both commit — Tab is the natural "finish
+                    // this field and move on" key, and committing is what
+                    // moving on means here.
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      commitNew()
+                    } else if (e.key === 'Tab') {
+                      e.preventDefault()
+                      commitNew()
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault()
+                      setEnteringNew(false)
+                      setNewDraft('')
+                    }
+                  }}
+                  onBlur={() => {
+                    if (newDraft.trim().length > 0) commitNew()
+                    else setEnteringNew(false)
                   }}
                   placeholder="branch name"
                   className="w-full h-7 px-2 rounded border border-[var(--color-border-subtle)] bg-[var(--color-bg-sunken)] text-[13px] text-fg-primary outline-none focus:border-[var(--color-border-strong)] focus:ring-2 focus:ring-[var(--color-focus-ring)]"
@@ -246,26 +287,46 @@ export function LaunchForm({ onLaunched }: LaunchFormProps): React.JSX.Element {
   const [branch, setBranch] = useState<string | null>(null)
   const [pendingNewBranch, setPendingNewBranch] = useState<string | null>(null)
   const [agentCount, setAgentCount] = useState(1)
-  const [model, setModel] = useState<Model>(() => readLast<Model>(LS_KEY_LAST_MODEL, ['haiku', 'sonnet', 'opus'], 'opus'))
-  const [effortEnabled, setEffortEnabled] = useState(() => {
-    try { return localStorage.getItem(LS_KEY_LAST_EFFORT_ENABLED) === '1' } catch { return false }
-  })
-  const [effort, setEffort] = useState<EffortLevel>(() =>
-    readLast<EffortLevel>(LS_KEY_LAST_EFFORT, ['low', 'medium', 'high', 'xhigh', 'max'], 'high')
+  const [model, setModel] = useState<Model>(() =>
+    readLast<Model>(LS_KEY_LAST_MODEL, ['haiku', 'sonnet', 'opus'], 'opus')
   )
+  // Effort toggle defaults to Yes; the underlying effort level is always
+  // populated so the disabled selector reads correctly when toggled off.
+  const [effortEnabled, setEffortEnabled] = useState(() => {
+    try {
+      const stored = localStorage.getItem(LS_KEY_LAST_EFFORT_ENABLED)
+      if (stored === null) return true
+      return stored === '1'
+    } catch { return true }
+  })
+  const [effort, setEffort] = useState<EffortLevel>(() => initialEffortFor(
+    readLast<Model>(LS_KEY_LAST_MODEL, ['haiku', 'sonnet', 'opus'], 'opus')
+  ))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Effort clamp: non-opus models cap at 'high'.
   useEffect(() => {
-    if (model !== 'opus' && (effort === 'xhigh' || effort === 'max')) {
-      setEffort('high')
-    }
-  }, [model, effort])
+    setEffort((cur) => clampEffortToModel(cur, model))
+  }, [model])
 
   const branchSelection = useCallback((s: { branch: string | null; pendingNewBranch: string | null }) => {
     setBranch(s.branch)
     setPendingNewBranch(s.pendingNewBranch)
+  }, [])
+
+  const handleBrowseRepo = useCallback(async () => {
+    try {
+      const picked = await ipcInvoke(IPC.FOLDER_BROWSE) as string | null
+      if (picked && typeof picked === 'string') {
+        setRepoPath(picked)
+        // Reset branch selection — branches belong to a specific repo.
+        setBranch(null)
+        setPendingNewBranch(null)
+      }
+    } catch (err) {
+      console.warn('[LaunchForm] folder browse failed:', err)
+    }
   }, [])
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -313,27 +374,48 @@ export function LaunchForm({ onLaunched }: LaunchFormProps): React.JSX.Element {
     }
   }, [agentCount, branch, effort, effortEnabled, model, onLaunched, pendingNewBranch, repoPath, submitting])
 
-  const maxEffortForModel: EffortLevel = model === 'opus' ? 'max' : 'high'
-  const effortOptionsForModel = EFFORT_OPTIONS.filter((o) => {
-    if (model === 'opus') return true
-    return o.value === 'low' || o.value === 'medium' || o.value === 'high'
-  })
+  const effortOptionsForModel = EFFORT_OPTIONS.map((o) => ({
+    ...o,
+    disabled: !effortEnabled || (model !== 'opus' && (o.value === 'xhigh' || o.value === 'max'))
+  }))
+  // Make sure the displayed effort is a level this model can actually run.
+  const displayedEffort: EffortLevel =
+    model !== 'opus' && (effort === 'xhigh' || effort === 'max') ? 'high' : effort
+
+  const launchLabel = submitting
+    ? 'Launching…'
+    : agentCount === 1
+      ? 'Launch workspace with 1 agent'
+      : `Launch workspace with ${agentCount} agents`
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex flex-col items-center gap-5">
       {/* Repo */}
-      <div className="flex flex-col gap-1.5">
+      <div className="w-full max-w-[600px] flex flex-col gap-1.5">
         <label className="text-[12px] font-[600] text-fg-secondary uppercase tracking-wide">Repository</label>
-        <TextInput
-          value={repoPath}
-          onChange={(e) => setRepoPath(e.target.value)}
-          placeholder="/path/to/repo"
-          autoFocus
-        />
+        <div className="flex items-center gap-2">
+          <TextInput
+            value={repoPath}
+            onChange={(e) => setRepoPath(e.target.value)}
+            placeholder="/path/to/repo"
+            autoFocus
+            className="flex-1"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            onClick={handleBrowseRepo}
+            aria-label="Browse for repository folder"
+          >
+            <FolderOpen size={14} />
+            <span className="ml-1.5">Browse</span>
+          </Button>
+        </div>
       </div>
 
       {/* Branch */}
-      <div className="flex flex-col gap-1.5">
+      <div className={`${FIELD_HALF_WIDTH} flex flex-col gap-1.5`}>
         <label className="text-[12px] font-[600] text-fg-secondary uppercase tracking-wide">Branch</label>
         <BranchPicker
           repoPath={repoPath.trim() || null}
@@ -348,7 +430,7 @@ export function LaunchForm({ onLaunched }: LaunchFormProps): React.JSX.Element {
       </div>
 
       {/* Agents to spawn */}
-      <div className="flex flex-col gap-1.5">
+      <div className={`${FIELD_HALF_WIDTH} flex flex-col gap-1.5`}>
         <label className="text-[12px] font-[600] text-fg-secondary uppercase tracking-wide">Agents to spawn</label>
         <div className="flex items-center gap-2">
           <Button
@@ -378,7 +460,7 @@ export function LaunchForm({ onLaunched }: LaunchFormProps): React.JSX.Element {
       </div>
 
       {/* Model */}
-      <div className="flex flex-col gap-1.5">
+      <div className={`${FIELD_HALF_WIDTH} flex flex-col gap-1.5`}>
         <label className="text-[12px] font-[600] text-fg-secondary uppercase tracking-wide">Model</label>
         <SegmentedControl
           options={MODEL_OPTIONS}
@@ -389,45 +471,42 @@ export function LaunchForm({ onLaunched }: LaunchFormProps): React.JSX.Element {
       </div>
 
       {/* Effort */}
-      <div className="flex flex-col gap-1.5">
+      <div className={`${FIELD_HALF_WIDTH} flex flex-col gap-1.5`}>
         <div className="flex items-center justify-between gap-3">
           <label className="text-[12px] font-[600] text-fg-secondary uppercase tracking-wide">Set global effort?</label>
-          <label className="inline-flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={effortEnabled}
-              onChange={(e) => setEffortEnabled(e.target.checked)}
-              className="h-4 w-4 accent-[var(--color-accent)]"
-            />
-            <span className="text-[13px] text-fg-secondary">{effortEnabled ? 'Yes' : 'No'}</span>
-          </label>
-        </div>
-        {effortEnabled && (
-          <>
+          <div className="w-[100px]">
             <SegmentedControl
-              options={effortOptionsForModel}
-              value={effortOptionsForModel.some((o) => o.value === effort) ? effort : maxEffortForModel}
-              onChange={setEffort}
+              options={YES_NO_OPTIONS}
+              value={effortEnabled ? 'yes' : 'no'}
+              onChange={(v) => setEffortEnabled(v === 'yes')}
               size="sm"
             />
-            {model !== 'opus' && (
-              <p className="text-[12px] text-fg-muted">
-                X High and Max effort require the Opus model.
-              </p>
-            )}
-          </>
+          </div>
+        </div>
+        <div className={effortEnabled ? '' : 'opacity-50 pointer-events-none'} aria-disabled={!effortEnabled}>
+          <SegmentedControl
+            options={effortOptionsForModel}
+            value={displayedEffort}
+            onChange={(v) => effortEnabled && setEffort(v)}
+            size="sm"
+          />
+        </div>
+        {effortEnabled && model !== 'opus' && (
+          <p className="text-[12px] text-fg-muted">
+            X High and Max effort require the Opus model.
+          </p>
         )}
       </div>
 
       {error && (
-        <div className="text-[13px] text-danger-fg bg-danger-subtle-bg border border-danger-fg/30 rounded px-3 py-2">
+        <div className={`${FIELD_HALF_WIDTH} text-[13px] text-danger-fg bg-danger-subtle-bg border border-danger-fg/30 rounded px-3 py-2`}>
           {error}
         </div>
       )}
 
-      <div className="flex justify-end pt-2">
+      <div className="flex justify-center pt-2">
         <Button type="submit" variant="primary" size="md" disabled={submitting}>
-          {submitting ? 'Launching…' : 'Launch workspace'}
+          {launchLabel}
         </Button>
       </div>
     </form>
